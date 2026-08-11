@@ -790,18 +790,38 @@ export default function App() {
     setTimeout(() => setSaveNote(""), 2200);
   }
 
+  async function persistProfile(rawForm) {
+    const cleaned = {
+      ...rawForm,
+      age: rawForm.age === "" ? "" : Number(rawForm.age),
+      height: rawForm.height === "" ? "" : Number(rawForm.height),
+      weight: rawForm.weight === "" ? "" : Number(rawForm.weight),
+    };
+    const res = await window.storage.set("profile", JSON.stringify(cleaned), false);
+    if (res) setProfile(cleaned);
+    return res;
+  }
+
+  // Auto-save: persist the profile ~700ms after the user stops editing, once
+  // the minimum required fields are present. This means data survives a
+  // refresh or tab switch even if the person never taps "儲存個人資料".
+  useEffect(() => {
+    if (loading) return;
+    if (!form.age || !form.height || !form.weight) return;
+    const timer = setTimeout(() => {
+      persistProfile(form).catch(() => {
+        /* silent: the explicit Save button will surface errors if this keeps failing */
+      });
+    }, 700);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, loading]);
+
   async function handleSaveProfile(e) {
     e.preventDefault();
-    const cleaned = {
-      ...form,
-      age: form.age === "" ? "" : Number(form.age),
-      height: form.height === "" ? "" : Number(form.height),
-      weight: form.weight === "" ? "" : Number(form.weight),
-    };
     try {
-      const res = await window.storage.set("profile", JSON.stringify(cleaned), false);
+      const res = await persistProfile(form);
       if (res) {
-        setProfile(cleaned);
         flashSaved("個人資料已儲存");
         setTab("overview");
       }
@@ -1873,6 +1893,9 @@ function ProfileTab({
     <form onSubmit={onSave}>
       <div className="card">
         <div className="section-title">基本資料</div>
+        <p style={{ fontSize: "11.5px", color: "var(--ink-soft)", margin: "-4px 0 12px" }}>
+          填寫年齡、身高、體重後會自動存檔，不用擔心忘記按儲存。
+        </p>
         <div className="field-row">
           <div className="field">
             <label>年齡</label>
