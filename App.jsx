@@ -342,15 +342,23 @@ function fileToBase64(file) {
   });
 }
 
-/** Sends a food photo to the Claude API for a rough calorie / traffic-light
+/** Sends a food photo to an AI vision model for a rough calorie / traffic-light
  * estimate. Returns a parsed JSON object, or throws on failure.
- * This standalone build calls the Anthropic API directly from the browser
- * using an API key the user enters and stores locally on their own device
- * (see Settings in the 個人資料 tab). The key never leaves the device except
- * in requests sent straight to api.anthropic.com. */
-async function analyzeFoodPhoto(base64Data, mediaType, apiKey) {
+ * This standalone build calls the provider's API directly from the browser
+ * using a key the user enters and stores locally on their own device (see
+ * Settings in the 個人資料 tab). The key never leaves the device except in
+ * requests sent straight to the provider's own API. Supports:
+ *  - "anthropic": Claude API (api.anthropic.com), paid, needs billing set up.
+ *  - "gemini": Google Gemini API (generativelanguage.googleapis.com), has a
+ *    genuine no-credit-card free tier via Google AI Studio.
+ */
+async function analyzeFoodPhoto(base64Data, mediaType, provider, apiKey, geminiModel) {
   if (!apiKey) {
-    throw new Error("尚未設定 Anthropic API Key，請先到「個人資料」頁下方的設定輸入金鑰。");
+    throw new Error(
+      provider === "gemini"
+        ? "尚未設定 Google Gemini API Key，請先到「個人資料」頁下方的設定輸入金鑰。"
+        : "尚未設定 Anthropic API Key，請先到「個人資料」頁下方的設定輸入金鑰。"
+    );
   }
 
   const prompt = `請你以營養師角度分析這張食物照片，並「只」回傳純 JSON（不要任何前後文字、不要 markdown 符號），格式如下：
@@ -363,6 +371,38 @@ async function analyzeFoodPhoto(base64Data, mediaType, apiKey) {
 
 若照片中有多種食物，estimatedCalories 等數值請加總為整餐估計。若無法辨識出食物，foodName 請填"無法辨識"，estimatedCalories 填 0，confidence 填 low。`;
 
+  if (provider === "gemini") {
+    const model = geminiModel && geminiModel.trim() ? geminiModel.trim() : "gemini-2.5-flash";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }, { inline_data: { mime_type: mediaType, data: base64Data } }],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 400 || response.status === 403)
+        throw new Error("Gemini API Key 無效，請到設定重新輸入，或確認金鑰有效。");
+      if (response.status === 404)
+        throw new Error(`找不到模型「${model}」，Google 可能已更新模型名稱，請到設定的「進階」欄位更新模型名稱。`);
+      if (response.status === 429) throw new Error("已達到 Gemini 免費額度上限（有速率限制），請稍後再試。");
+      throw new Error("辨識服務暫時無法使用，請稍後再試。");
+    }
+    const data = await response.json();
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const textPart = parts.find((p) => typeof p.text === "string");
+    if (!textPart) throw new Error("未取得辨識結果");
+    const cleaned = textPart.text.replace(/```json|```/g, "").trim();
+    return JSON.parse(cleaned);
+  }
+
+  // Anthropic Claude
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -594,9 +634,27 @@ export default function App() {
 
   const [apiKey, setApiKey] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [geminiKey, setGeminiKey] = useState("");
+  const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  const [geminiModel, setGeminiModel] = useState("");
+  const [geminiModelInput, setGeminiModelInput] = useState("");
+  const [aiProvider, setAiProvider] = useState("gemini");
+
+  useEffect(() => {
+    if (loading) return;
+    window.storage.set("last-tab", tab, false).catch(() => {});
+  }, [tab, loading]);
 
   useEffect(() => {
     (async () => {
+      try {
+        const lt = await window.storage.get("last-tab", false);
+        if (lt && lt.value && ["overview", "profile", "diet", "exercise", "tracking"].includes(lt.value)) {
+          setTab(lt.value);
+        }
+      } catch (e) {
+        /* no saved tab yet; default to overview */
+      }
       try {
         const p = await window.storage.get("profile", false);
         if (p && p.value) {
@@ -629,14 +687,51 @@ export default function App() {
       } catch (e) {
         /* no food log saved yet */
       }
+      let hasAnthropicKey = false;
       try {
         const k = await window.storage.get("anthropic-api-key", false);
         if (k && k.value) {
           setApiKey(k.value);
           setApiKeyInput(k.value);
+          hasAnthropicKey = true;
         }
       } catch (e) {
         /* no api key saved yet */
+      }
+      let hasGeminiKey = false;
+      try {
+        const gk = await window.storage.get("gemini-api-key", false);
+        if (gk && gk.value) {
+          setGeminiKey(gk.value);
+          setGeminiKeyInput(gk.value);
+          hasGeminiKey = true;
+        }
+      } catch (e) {
+        /* no gemini key saved yet */
+      }
+      try {
+        const gm = await window.storage.get("gemini-model", false);
+        if (gm && gm.value) {
+          setGeminiModel(gm.value);
+          setGeminiModelInput(gm.value);
+        }
+      } catch (e) {
+        /* no custom gemini model saved yet */
+      }
+      try {
+        const prov = await window.storage.get("ai-provider", false);
+        if (prov && prov.value) {
+          // explicit saved preference always wins
+          setAiProvider(prov.value);
+        } else if (hasAnthropicKey && !hasGeminiKey) {
+          // an existing user who already set up Anthropic before this
+          // feature existed shouldn't be silently switched to Gemini
+          setAiProvider("anthropic");
+        } else {
+          setAiProvider("gemini");
+        }
+      } catch (e) {
+        setAiProvider(hasAnthropicKey && !hasGeminiKey ? "anthropic" : "gemini");
       }
 
       // Auto-import support: an external automation (e.g. an iOS Shortcuts
@@ -796,7 +891,8 @@ export default function App() {
       const base64 = await fileToBase64(file);
       const mediaType = file.type || "image/jpeg";
       const imageDataUrl = `data:${mediaType};base64,${base64}`;
-      const result = await analyzeFoodPhoto(base64, mediaType, apiKey);
+      const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
+      const result = await analyzeFoodPhoto(base64, mediaType, aiProvider, activeKey, geminiModel);
       setAnalysisPreview({ imageDataUrl, result });
     } catch (e) {
       setAnalysisError(e.message || "照片分析失敗，請重新拍攝或改用手動輸入。");
@@ -933,6 +1029,57 @@ export default function App() {
     setApiKey("");
     setApiKeyInput("");
     flashSaved("已清除 API Key");
+  }
+
+  async function handleSaveGeminiKey() {
+    const trimmed = geminiKeyInput.trim();
+    try {
+      if (!trimmed) {
+        await window.storage.delete("gemini-api-key", false);
+        setGeminiKey("");
+        flashSaved("已清除 Gemini API Key");
+        return;
+      }
+      const res = await window.storage.set("gemini-api-key", trimmed, false);
+      if (res) {
+        setGeminiKey(trimmed);
+        flashSaved("Gemini API Key 已儲存在此裝置");
+      }
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
+    }
+  }
+
+  async function handleClearGeminiKey() {
+    try {
+      await window.storage.delete("gemini-api-key", false);
+    } catch (e) {}
+    setGeminiKey("");
+    setGeminiKeyInput("");
+    flashSaved("已清除 Gemini API Key");
+  }
+
+  async function handleSaveGeminiModel() {
+    const trimmed = geminiModelInput.trim();
+    try {
+      if (!trimmed) {
+        await window.storage.delete("gemini-model", false);
+        setGeminiModel("");
+        return;
+      }
+      await window.storage.set("gemini-model", trimmed, false);
+      setGeminiModel(trimmed);
+      flashSaved("模型名稱已更新");
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
+    }
+  }
+
+  async function handleChangeProvider(next) {
+    setAiProvider(next);
+    try {
+      await window.storage.set("ai-provider", next, false);
+    } catch (e) {}
   }
 
   const bmi = useMemo(() => calcBMI(profile?.weight, profile?.height), [profile]);
@@ -1490,11 +1637,21 @@ export default function App() {
               onSave={handleSaveProfile}
               onRequestReset={() => setShowReset(true)}
               hasProfile={!!profile}
+              aiProvider={aiProvider}
+              onChangeProvider={handleChangeProvider}
               apiKey={apiKey}
               apiKeyInput={apiKeyInput}
               setApiKeyInput={setApiKeyInput}
               onSaveApiKey={handleSaveApiKey}
               onClearApiKey={handleClearApiKey}
+              geminiKey={geminiKey}
+              geminiKeyInput={geminiKeyInput}
+              setGeminiKeyInput={setGeminiKeyInput}
+              onSaveGeminiKey={handleSaveGeminiKey}
+              onClearGeminiKey={handleClearGeminiKey}
+              geminiModelInput={geminiModelInput}
+              setGeminiModelInput={setGeminiModelInput}
+              onSaveGeminiModel={handleSaveGeminiModel}
             />
           )}
 
@@ -1696,11 +1853,21 @@ function ProfileTab({
   onSave,
   onRequestReset,
   hasProfile,
+  aiProvider,
+  onChangeProvider,
   apiKey,
   apiKeyInput,
   setApiKeyInput,
   onSaveApiKey,
   onClearApiKey,
+  geminiKey,
+  geminiKeyInput,
+  setGeminiKeyInput,
+  onSaveGeminiKey,
+  onClearGeminiKey,
+  geminiModelInput,
+  setGeminiModelInput,
+  onSaveGeminiModel,
 }) {
   return (
     <form onSubmit={onSave}>
@@ -1828,41 +1995,121 @@ function ProfileTab({
       <div className="card">
         <div className="section-title">AI 拍照分析設定</div>
         <p style={{ fontSize: "12px", color: "var(--ink-soft)", lineHeight: 1.6, margin: "0 0 10px" }}>
-          「拍照分析熱量」功能需要你自己的 Anthropic API Key 才能使用。前往{" "}
-          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
-            console.anthropic.com
-          </a>{" "}
-          建立金鑰（建議同時設定用量上限）。金鑰只會儲存在這台裝置的瀏覽器裡，不會上傳到任何伺服器；請避免在公用電腦上保存。
+          「拍照分析熱量」功能需要你自己申請 AI 服務的 API Key。金鑰只會儲存在這台裝置的瀏覽器裡，不會上傳到任何伺服器；請避免在公用電腦上保存。
         </p>
+
         <div className="field">
-          <label>Anthropic API Key</label>
-          <input
-            type="password"
-            value={apiKeyInput}
-            onChange={(e) => setApiKeyInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onSaveApiKey();
-              }
-            }}
-            placeholder="sk-ant-..."
-            autoComplete="off"
-          />
+          <label>選擇要使用的 AI 服務</label>
+          <div className="segmented">
+            <div className={`chip ${aiProvider === "gemini" ? "active" : ""}`} onClick={() => onChangeProvider("gemini")}>
+              Google Gemini（免費）
+            </div>
+            <div className={`chip ${aiProvider === "anthropic" ? "active" : ""}`} onClick={() => onChangeProvider("anthropic")}>
+              Anthropic Claude（付費）
+            </div>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={onSaveApiKey}>
-            儲存金鑰
-          </button>
-          {apiKey && (
-            <button type="button" className="btn btn-danger" onClick={onClearApiKey}>
-              清除
-            </button>
-          )}
-        </div>
-        <p style={{ fontSize: "11px", color: apiKey ? "var(--green)" : "var(--ink-soft)", marginTop: "8px" }}>
-          {apiKey ? "✓ 已設定金鑰，拍照分析功能可以使用" : "尚未設定金鑰，拍照分析功能暫時無法使用"}
-        </p>
+
+        {aiProvider === "gemini" ? (
+          <>
+            <p style={{ fontSize: "12px", color: "var(--ink-soft)", lineHeight: 1.6, margin: "10px 0" }}>
+              Google AI Studio 提供不需信用卡的免費額度（有速率限制）。前往{" "}
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">
+                aistudio.google.com
+              </a>{" "}
+              用 Google 帳號登入，點「Create API Key」建立金鑰即可。
+            </p>
+            <div className="field">
+              <label>Google Gemini API Key</label>
+              <input
+                type="password"
+                value={geminiKeyInput}
+                onChange={(e) => setGeminiKeyInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onSaveGeminiKey();
+                  }
+                }}
+                placeholder="AIza..."
+                autoComplete="off"
+              />
+            </div>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+              <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={onSaveGeminiKey}>
+                儲存金鑰
+              </button>
+              {geminiKey && (
+                <button type="button" className="btn btn-danger" onClick={onClearGeminiKey}>
+                  清除
+                </button>
+              )}
+            </div>
+            <details>
+              <summary style={{ fontSize: "12px", color: "var(--ink-soft)", cursor: "pointer" }}>進階：自訂模型名稱</summary>
+              <div className="field" style={{ marginTop: "8px" }}>
+                <label>Gemini 模型名稱（預設 gemini-2.5-flash）</label>
+                <input
+                  type="text"
+                  value={geminiModelInput}
+                  onChange={(e) => setGeminiModelInput(e.target.value)}
+                  onBlur={onSaveGeminiModel}
+                  placeholder="gemini-2.5-flash"
+                  autoComplete="off"
+                />
+              </div>
+              <p style={{ fontSize: "11px", color: "var(--ink-soft)", lineHeight: 1.5 }}>
+                如果辨識失敗並顯示「找不到模型」，表示 Google 可能已更新模型名稱，可到{" "}
+                <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noreferrer">
+                  官方模型列表
+                </a>{" "}
+                查詢目前可用的名稱並填在這裡。
+              </p>
+            </details>
+            <p style={{ fontSize: "11px", color: geminiKey ? "var(--green)" : "var(--ink-soft)", marginTop: "10px" }}>
+              {geminiKey ? "✓ 已設定 Gemini 金鑰，拍照分析功能可以使用" : "尚未設定金鑰，拍照分析功能暫時無法使用"}
+            </p>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: "12px", color: "var(--ink-soft)", lineHeight: 1.6, margin: "10px 0" }}>
+              前往{" "}
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
+                console.anthropic.com
+              </a>{" "}
+              建立金鑰（需要先加值/綁定付款方式，建議同時設定用量上限）。
+            </p>
+            <div className="field">
+              <label>Anthropic API Key</label>
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onSaveApiKey();
+                  }
+                }}
+                placeholder="sk-ant-..."
+                autoComplete="off"
+              />
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={onSaveApiKey}>
+                儲存金鑰
+              </button>
+              {apiKey && (
+                <button type="button" className="btn btn-danger" onClick={onClearApiKey}>
+                  清除
+                </button>
+              )}
+            </div>
+            <p style={{ fontSize: "11px", color: apiKey ? "var(--green)" : "var(--ink-soft)", marginTop: "8px" }}>
+              {apiKey ? "✓ 已設定金鑰，拍照分析功能可以使用" : "尚未設定金鑰，拍照分析功能暫時無法使用"}
+            </p>
+          </>
+        )}
       </div>
     </form>
   );
