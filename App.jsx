@@ -10,6 +10,7 @@ import {
   Info,
   RotateCcw,
   Camera,
+  Image as ImageIcon,
   Loader2,
   Check,
   RefreshCw,
@@ -604,6 +605,7 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [records, setRecords] = useState([]);
   const [showReset, setShowReset] = useState(false);
+  const [showCaptureMenu, setShowCaptureMenu] = useState(false);
   const [saveNote, setSaveNote] = useState("");
 
   const [form, setForm] = useState({
@@ -1615,8 +1617,50 @@ export default function App() {
           cursor:pointer;
           z-index:45;
           margin:0;
+          border:none;
+          padding:0;
+          font:inherit;
         }
         .fab:active{ transform:scale(0.96); }
+
+        .fab-menu-backdrop{
+          position:fixed;
+          inset:0;
+          z-index:44;
+          background:transparent;
+        }
+        .fab-menu{
+          position:absolute;
+          right:16px;
+          bottom:144px;
+          z-index:46;
+          display:flex;
+          flex-direction:column;
+          gap:8px;
+          align-items:flex-end;
+        }
+        .fab-menu-item{
+          display:flex;
+          align-items:center;
+          gap:8px;
+          background:#fff;
+          color:var(--ink);
+          border:1px solid var(--line);
+          border-radius:999px;
+          padding:10px 16px;
+          font-size:13px;
+          font-weight:700;
+          box-shadow:0 6px 16px rgba(0,0,0,.15);
+          white-space:nowrap;
+          cursor:pointer;
+        }
+
+        .two-btn-row{
+          display:flex;
+          gap:8px;
+          margin-bottom:10px;
+        }
+        .two-btn-row .btn{ flex:1; }
       `}</style>
 
       <div className="diabetes-app app-shell">
@@ -1731,20 +1775,47 @@ export default function App() {
           </button>
         </nav>
 
-        <label className="fab photo-input-label" title="拍照分析食物熱量">
+        {showCaptureMenu && (
+          <div className="fab-menu">
+            <label className="fab-menu-item photo-input-label">
+              <Camera size={17} /> 拍照
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  setShowCaptureMenu(false);
+                  handlePhotoFile(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <label className="fab-menu-item photo-input-label">
+              <ImageIcon size={17} /> 從相簿選擇
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  setShowCaptureMenu(false);
+                  handlePhotoFile(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+        )}
+        <button
+          className="fab"
+          title="拍照或選擇食物相片分析熱量"
+          onClick={() => setShowCaptureMenu((v) => !v)}
+        >
           <Camera size={22} />
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              handlePhotoFile(file);
-              e.target.value = "";
-            }}
-          />
-        </label>
+        </button>
       </div>
+
+      {showCaptureMenu && <div className="fab-menu-backdrop" onClick={() => setShowCaptureMenu(false)} />}
 
       <AnalysisModal
         analyzing={analyzing}
@@ -2203,19 +2274,33 @@ function DietTab({
       <div className="card">
         <div className="section-title">拍照分析熱量</div>
 
-        <label className="btn btn-primary btn-block photo-input-label">
-          <Camera size={16} /> 拍照或選擇食物相片
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              onPhotoFile(file);
-              e.target.value = "";
-            }}
-          />
-        </label>
+        <div className="two-btn-row">
+          <label className="btn btn-primary photo-input-label">
+            <Camera size={16} /> 拍照
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                onPhotoFile(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <label className="btn btn-secondary photo-input-label">
+            <ImageIcon size={16} /> 從相簿選擇
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                onPhotoFile(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
         <p style={{ fontSize: "11.5px", color: "var(--ink-soft)", margin: "0 0 4px" }}>
           拍照後會自動分析，結果會以彈出視窗顯示，確認無誤後即可加入今日紀錄。
         </p>
