@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>糖前哨 - 第二型糖尿病預防生活助手</title>
+
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#2F6F5E" />
+
+  <!-- iOS "Add to Home Screen" behaviour -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="糖前哨" />
+  <link rel="apple-touch-icon" href="./icon-180.png" />
+  <link rel="icon" href="./icon-192.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <style>
+    html, body { margin: 0; padding: 0; background: #F3F5F1; }
+    #root-loading {
+      display: flex; align-items: center; justify-content: center;
+      height: 100vh; font-family: sans-serif; color: #5B6960; font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div id="root-loading">載入中…</div>
+  </div>
+
+  <script src="./app.bundle.js"></script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("./sw.js").catch(function () {
+          /* offline caching is optional; ignore registration failures */
+        });
+      });
+    }
+  </script>
+</body>
+</html>
