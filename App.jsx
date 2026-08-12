@@ -61,6 +61,16 @@ const LIGHT_META = {
   red: { label: "紅燈　建議避免", className: "pill-red" },
 };
 
+const CONTENT_REVIEW = {
+  lastReviewed: "2026-08-12",
+  sources: [
+    "衛生福利部國民健康署《我的餐盤》飲食指南與「顧血糖4招」衛教資訊",
+    "衛生福利部國民健康署《糖尿病防治手冊》",
+    "台北榮民總醫院護理部衛教資訊《糖尿病與運動》",
+    "社團法人中華民國糖尿病學會《2022第2型糖尿病臨床照護指引》",
+  ],
+};
+
 const FOOD_DB = [
   {
     id: "grain",
@@ -222,6 +232,11 @@ function buildExercisePlan(profile) {
   }
   if (symptoms.includes("sedentary")) {
     cautions.push("目前活動量較少，建議先從每天10分鐘快走開始，再逐週增加時間與強度。");
+  }
+  if (symptoms.includes("prediabetes")) {
+    cautions.push(
+      "您已被醫師告知糖尿病前期／血糖偏高，建議避免空腹或飯前運動，隨身攜帶方糖等含糖食物以防低血糖；若有測血糖習慣，血糖高於250mg/dL或低於80mg/dL時不宜運動。"
+    );
   }
 
   const lowImpact = age >= 65 || cardioRisk || isObese;
@@ -451,6 +466,19 @@ function Disclaimer({ compact }) {
       <span>
         本內容僅提供健康生活型態參考，非醫療診斷。如有不適症狀或已確診疾病，請諮詢醫師或營養師。
       </span>
+    </div>
+  );
+}
+
+function ContentSources() {
+  return (
+    <div className="content-sources">
+      <div className="content-sources-title">資料來源與最後校對日期：{CONTENT_REVIEW.lastReviewed}</div>
+      <ul>
+        {CONTENT_REVIEW.sources.map((s, i) => (
+          <li key={i}>{s}</li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -736,53 +764,6 @@ export default function App() {
         setAiProvider(hasAnthropicKey && !hasGeminiKey ? "anthropic" : "gemini");
       }
 
-      // Auto-import support: an external automation (e.g. an iOS Shortcuts
-      // personal automation that reads today's Apple Health samples, such as
-      // weight/body fat synced from a smart scale app) can open this page
-      // with query params to silently log today's body-record fields.
-      // Supported params: wt (weight kg), bf (body fat %), vf (visceral fat),
-      // sm (skeletal muscle %), ba (body age), bmr (kcal), d (YYYY-MM-DD).
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const fieldMap = { wt: "weight", bf: "bodyFat", vf: "visceralFat", sm: "skeletalMuscle", ba: "bodyAge", bmr: "bmr" };
-        const hasAnyParam = Object.keys(fieldMap).some((k) => params.get(k) !== null);
-        if (hasAnyParam) {
-          const dateParam = params.get("d");
-          const targetDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayStr();
-          const existingIdx = loadedRecords.findIndex((rec) => rec.date === targetDate);
-          const base =
-            existingIdx >= 0
-              ? loadedRecords[existingIdx]
-              : { date: targetDate, weight: null, bodyFat: null, visceralFat: null, skeletalMuscle: null, bodyAge: null, bmr: null };
-
-          const merged = { ...base };
-          Object.keys(fieldMap).forEach((key) => {
-            const raw = params.get(key);
-            if (raw !== null && raw !== "" && !isNaN(Number(raw))) {
-              merged[fieldMap[key]] = Number(raw);
-            }
-          });
-
-          let nextRecords;
-          if (existingIdx >= 0) {
-            nextRecords = [...loadedRecords];
-            nextRecords[existingIdx] = merged;
-          } else {
-            nextRecords = [...loadedRecords, merged].sort((a, b) => (a.date < b.date ? -1 : 1));
-          }
-
-          await window.storage.set("body-records", JSON.stringify(nextRecords), false);
-          setRecords(nextRecords);
-          setTab("tracking");
-          flashSaved(`已自動匯入 ${targetDate} 的體態紀錄`);
-
-          // Clean the query string so refreshing the page doesn't re-import.
-          window.history.replaceState({}, "", window.location.pathname + window.location.hash);
-        }
-      } catch (e) {
-        /* malformed auto-import params; ignore and continue loading normally */
-      }
-
       setLoading(false);
     })();
   }, []);
@@ -1023,6 +1004,73 @@ export default function App() {
     });
     setShowReset(false);
     setTab("overview");
+  }
+
+  function handleExportBackup() {
+    try {
+      const backup = {
+        app: "tang-qian-shao",
+        exportedAt: new Date().toISOString(),
+        profile,
+        records,
+        foodLog,
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tang-qian-shao-backup-${todayStr()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      flashSaved("備份檔案已下載");
+    } catch (e) {
+      flashSaved("匯出失敗，請再試一次");
+    }
+  }
+
+  async function handleImportBackup(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      let restoredParts = [];
+
+      if (data.profile && typeof data.profile === "object") {
+        await window.storage.set("profile", JSON.stringify(data.profile), false);
+        setProfile(data.profile);
+        setForm({
+          age: "",
+          gender: "female",
+          height: "",
+          weight: "",
+          activityLevel: "light",
+          symptoms: [],
+          exerciseTypes: { dynamic: [], static: [] },
+          ...data.profile,
+        });
+        restoredParts.push("個人資料");
+      }
+      if (Array.isArray(data.records)) {
+        await window.storage.set("body-records", JSON.stringify(data.records), false);
+        setRecords(data.records);
+        restoredParts.push("體態紀錄");
+      }
+      if (Array.isArray(data.foodLog)) {
+        await window.storage.set("food-log", JSON.stringify(data.foodLog), false);
+        setFoodLog(data.foodLog);
+        restoredParts.push("飲食紀錄");
+      }
+
+      if (restoredParts.length === 0) {
+        flashSaved("這個檔案裡沒有可還原的資料");
+      } else {
+        flashSaved(`已還原：${restoredParts.join("、")}`);
+      }
+    } catch (e) {
+      flashSaved("還原失敗，檔案格式不正確");
+    }
   }
 
   async function handleSaveApiKey() {
@@ -1601,6 +1649,17 @@ export default function App() {
 
         .food-log-empty{ font-size:12.5px; color:var(--ink-soft); }
 
+        .content-sources{
+          font-size:11px;
+          color:var(--ink-soft);
+          line-height:1.6;
+          margin-top:6px;
+          padding:10px 12px;
+          border-top:1px solid var(--line);
+        }
+        .content-sources-title{ font-weight:700; margin-bottom:4px; }
+        .content-sources ul{ margin:0; padding-left:16px; }
+
         .fab{
           position:absolute;
           right:16px;
@@ -1716,6 +1775,8 @@ export default function App() {
               geminiModelInput={geminiModelInput}
               setGeminiModelInput={setGeminiModelInput}
               onSaveGeminiModel={handleSaveGeminiModel}
+              onExportBackup={handleExportBackup}
+              onImportBackup={handleImportBackup}
             />
           )}
 
@@ -1959,6 +2020,8 @@ function ProfileTab({
   geminiModelInput,
   setGeminiModelInput,
   onSaveGeminiModel,
+  onExportBackup,
+  onImportBackup,
 }) {
   return (
     <form onSubmit={onSave}>
@@ -2077,6 +2140,31 @@ function ProfileTab({
       <button type="submit" className="btn btn-primary btn-block">
         儲存個人資料
       </button>
+
+      <div className="card" style={{ marginTop: "14px" }}>
+        <div className="section-title">資料備份</div>
+        <p style={{ fontSize: "12px", color: "var(--ink-soft)", lineHeight: 1.6, margin: "0 0 10px" }}>
+          資料存在這台裝置的瀏覽器裡；建議偶爾匯出備份存起來，換裝置、清除瀏覽器資料，或
+          任何原因造成資料不見時，都可以用備份檔案救回。
+        </p>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={onExportBackup}>
+            匯出備份
+          </button>
+          <label className="btn btn-secondary photo-input-label" style={{ flex: 1 }}>
+            匯入備份
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                onImportBackup(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+      </div>
 
       {hasProfile && (
         <button type="button" className="btn btn-danger btn-block" style={{ marginTop: "10px" }} onClick={onRequestReset}>
@@ -2389,6 +2477,7 @@ function DietTab({
             ))}
           </div>
         ))}
+        <ContentSources />
       </div>
 
       <Disclaimer />
@@ -2437,6 +2526,7 @@ function ExerciseTab({ plan }) {
             <li key={i}>{h}</li>
           ))}
         </ul>
+        <ContentSources />
       </div>
 
       <Disclaimer />
