@@ -1,4 +1,8 @@
-const CACHE_NAME = "tang-qian-shao-v1";
+// v2 — switched from cache-first to network-first so that every future
+// update to app.bundle.js / index.html shows up immediately for anyone
+// online, instead of silently serving a stale cached copy forever.
+// Offline visitors still fall back to whatever was last cached.
+const CACHE_NAME = "tang-qian-shao-v2";
 const APP_SHELL = ["./", "./index.html", "./app.bundle.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -16,21 +20,22 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Never cache calls to the Anthropic API — always go to the network.
-  if (url.hostname.endsWith("anthropic.com")) return;
+  // Never intercept calls to AI provider APIs — always go straight to network.
+  if (url.hostname.endsWith("anthropic.com") || url.hostname.endsWith("googleapis.com")) return;
+  if (event.request.method !== "GET") return;
 
+  // Network-first: always try to fetch the latest version when online, and
+  // keep the cache updated as a side effect. Only fall back to the cache
+  // when the network request fails (i.e. actually offline).
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          if (event.request.method === "GET" && response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

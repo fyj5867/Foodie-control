@@ -373,7 +373,7 @@ async function analyzeFoodPhoto(base64Data, mediaType, provider, apiKey, geminiM
 若照片中有多種食物，estimatedCalories 等數值請加總為整餐估計。若無法辨識出食物，foodName 請填"無法辨識"，estimatedCalories 填 0，confidence 填 low。`;
 
   if (provider === "gemini") {
-    const model = geminiModel && geminiModel.trim() ? geminiModel.trim() : "gemini-2.5-flash";
+    const model = geminiModel && geminiModel.trim() ? geminiModel.trim() : "gemini-3.6-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const response = await fetch(url, {
       method: "POST",
@@ -2142,13 +2142,13 @@ function ProfileTab({
             <details>
               <summary style={{ fontSize: "12px", color: "var(--ink-soft)", cursor: "pointer" }}>進階：自訂模型名稱</summary>
               <div className="field" style={{ marginTop: "8px" }}>
-                <label>Gemini 模型名稱（預設 gemini-2.5-flash）</label>
+                <label>Gemini 模型名稱（預設 gemini-3.6-flash）</label>
                 <input
                   type="text"
                   value={geminiModelInput}
                   onChange={(e) => setGeminiModelInput(e.target.value)}
                   onBlur={onSaveGeminiModel}
-                  placeholder="gemini-2.5-flash"
+                  placeholder="gemini-3.6-flash"
                   autoComplete="off"
                 />
               </div>

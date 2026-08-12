@@ -31,7 +31,9 @@ source/         原始 React 原始碼，之後想修改功能可以從這裡改
 如果介意這點，可以改用下面的付費方案。
 
 如果之後 App 顯示「找不到模型」的錯誤，代表 Google 更新了模型名稱，可以到「進階：
-自訂模型名稱」欄位，依照 https://ai.google.dev/gemini-api/docs/models 上的名稱更新。
+自訂模型名稱」欄位，依照 https://ai.google.dev/gemini-api/docs/models 上的名稱更新
+（目前預設值是 `gemini-3.6-flash`；Google 的模型改版頻率頗高，如果之後又失效，一樣
+到官方頁面查最新可用名稱填進去即可，不需要重新打包 App）。
 
 ### 選項 B：Anthropic Claude（付費，需先加值）
 
