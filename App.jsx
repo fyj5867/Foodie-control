@@ -358,6 +358,38 @@ function fileToBase64(file) {
   });
 }
 
+/** Shrinks an image data URL down to a small JPEG thumbnail so photos can be
+ * stored alongside food-log entries without blowing up localStorage size. */
+function compressImageDataUrl(dataUrl, maxDim = 180, quality = 0.55) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height) {
+        if (width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        }
+      } else if (height > maxDim) {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => reject(new Error("圖片縮圖處理失敗"));
+    img.src = dataUrl;
+  });
+}
+
 /** Sends a food photo to an AI vision model for a rough calorie / traffic-light
  * estimate. Returns a parsed JSON object, or throws on failure.
  * This standalone build calls the provider's API directly from the browser
@@ -555,6 +587,27 @@ function CalorieBar({ target, consumed, remaining, zone }) {
       </div>
       <div className="cal-bar-track">
         <div className={`cal-bar-fill tone-${zone}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function MetricTrendChart({ title, dataKey, unit, color, chartData }) {
+  const points = chartData.filter((d) => d[dataKey] != null);
+  if (points.length < 2) return null;
+  return (
+    <div className="card">
+      <div className="section-title">{title}</div>
+      <div style={{ width: "100%", height: 180 }}>
+        <ResponsiveContainer>
+          <LineChart data={chartData} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
+            <CartesianGrid stroke="#DCE3DC" strokeDasharray="3 3" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} unit={unit} />
+            <Tooltip />
+            <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={{ r: 3 }} name={title} connectNulls />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );
@@ -878,8 +931,9 @@ export default function App() {
   }
 
   async function persistFoodLog(next) {
-    // keep the log bounded to the last 60 days
-    const cutoff = daysAgoStr(60);
+    // keep the log bounded (entries may now include a small photo thumbnail,
+    // so a shorter window keeps total storage size reasonable)
+    const cutoff = daysAgoStr(30);
     const trimmed = next.filter((e) => e.date >= cutoff);
     await window.storage.set("food-log", JSON.stringify(trimmed), false);
     setFoodLog(trimmed);
@@ -907,6 +961,12 @@ export default function App() {
   async function confirmAnalysisEntry() {
     if (!analysisPreview) return;
     const r = analysisPreview.result;
+    let photo = null;
+    try {
+      photo = await compressImageDataUrl(analysisPreview.imageDataUrl);
+    } catch (e) {
+      photo = null; // don't block saving the entry just because the thumbnail failed
+    }
     const entry = {
       id: `${Date.now()}`,
       date: todayStr(),
@@ -920,6 +980,7 @@ export default function App() {
       reason: r.reason || "",
       confidence: r.confidence || "medium",
       source: "photo",
+      photo,
     };
     try {
       await persistFoodLog([...foodLog, entry]);
@@ -1006,7 +1067,8 @@ export default function App() {
     setTab("overview");
   }
 
-  function handleExportBackup() {
+  async function handleExportBackup() {
+    let blob;
     try {
       const backup = {
         app: "tang-qian-shao",
@@ -1015,11 +1077,36 @@ export default function App() {
         records,
         foodLog,
       };
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    } catch (e) {
+      flashSaved("匯出失敗，請再試一次");
+      return;
+    }
+
+    const filename = `tang-qian-shao-backup-${todayStr()}.json`;
+
+    // Prefer the native share sheet when available (iOS Safari): this lets
+    // the person pick "Save to Drive" / "Save to Files → Google Drive"
+    // directly, instead of only downloading into the browser's Downloads.
+    try {
+      const file = new File([blob], filename, { type: "application/json" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "糖前哨資料備份" });
+        flashSaved("備份已開啟分享選單");
+        return;
+      }
+    } catch (e) {
+      // AbortError just means the person cancelled the share sheet — that's
+      // fine, don't fall back to a forced download in that case.
+      if (e && e.name === "AbortError") return;
+      /* otherwise fall through to the direct-download fallback below */
+    }
+
+    try {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `tang-qian-shao-backup-${todayStr()}.json`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1162,7 +1249,9 @@ export default function App() {
   const chartData = records.map((r) => ({
     date: r.date.slice(5),
     weight: r.weight,
-    bmi: profile?.height ? Number(calcBMI(r.weight, profile.height).toFixed(1)) : null,
+    bmi: profile?.height && r.weight ? Number(calcBMI(r.weight, profile.height).toFixed(1)) : null,
+    bodyFat: r.bodyFat != null ? r.bodyFat : null,
+    skeletalMuscle: r.skeletalMuscle != null ? r.skeletalMuscle : null,
   }));
 
   const dailyCalorieTarget = useMemo(() => calcDailyCalorieTarget(profile, latestRecord), [profile, latestRecord]);
@@ -1482,6 +1571,23 @@ export default function App() {
         .icon-btn{
           border:none; background:none; color:var(--ink-soft); cursor:pointer;
           padding:6px;
+        }
+
+        .food-log-row{ gap:10px; align-items:flex-start; }
+        .food-log-row-main{ flex:1; min-width:0; }
+        .food-log-thumb{
+          width:44px;
+          height:44px;
+          border-radius:10px;
+          object-fit:cover;
+          flex-shrink:0;
+          background:var(--brand-soft);
+        }
+        .food-log-thumb-placeholder{
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          color:var(--brand);
         }
 
         .save-toast{
@@ -2145,7 +2251,8 @@ function ProfileTab({
         <div className="section-title">資料備份</div>
         <p style={{ fontSize: "12px", color: "var(--ink-soft)", lineHeight: 1.6, margin: "0 0 10px" }}>
           資料存在這台裝置的瀏覽器裡；建議偶爾匯出備份存起來，換裝置、清除瀏覽器資料，或
-          任何原因造成資料不見時，都可以用備份檔案救回。
+          任何原因造成資料不見時，都可以用備份檔案救回。點「匯出備份」會跳出分享選單，
+          可以選擇存到 Google Drive、iCloud 雲端硬碟或其他雲端空間。
         </p>
         <div style={{ display: "flex", gap: "8px" }}>
           <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={onExportBackup}>
@@ -2432,8 +2539,15 @@ function DietTab({
         <div className="section-title">今日飲食紀錄</div>
         {todayEntries.length === 0 && <p className="food-log-empty">今天還沒有紀錄，拍張照片或手動輸入開始吧。</p>}
         {[...todayEntries].reverse().map((entry) => (
-          <div className="record-row" key={entry.id}>
-            <div>
+          <div className="record-row food-log-row" key={entry.id}>
+            {entry.photo ? (
+              <img src={entry.photo} alt={entry.foodName} className="food-log-thumb" />
+            ) : (
+              <div className="food-log-thumb food-log-thumb-placeholder">
+                <Utensils size={16} />
+              </div>
+            )}
+            <div className="food-log-row-main">
               <div className="record-date">
                 {entry.time}　{entry.foodName}
               </div>
@@ -2593,22 +2707,10 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
         </form>
       </div>
 
-      {chartData.length > 1 && (
-        <div className="card">
-          <div className="section-title">體重趨勢</div>
-          <div style={{ width: "100%", height: 200 }}>
-            <ResponsiveContainer>
-              <LineChart data={chartData} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke="#DCE3DC" strokeDasharray="3 3" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
-                <Tooltip />
-                <Line type="monotone" dataKey="weight" stroke="#2F6F5E" strokeWidth={2} dot={{ r: 3 }} name="體重(kg)" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
+      <MetricTrendChart title="體重趨勢" dataKey="weight" unit="kg" color="#2F6F5E" chartData={chartData} />
+      <MetricTrendChart title="BMI 趨勢" dataKey="bmi" unit="" color="#B8863A" chartData={chartData} />
+      <MetricTrendChart title="體脂肪率趨勢" dataKey="bodyFat" unit="%" color="#C63C34" chartData={chartData} />
+      <MetricTrendChart title="骨骼肌率趨勢" dataKey="skeletalMuscle" unit="%" color="#2F6F5E" chartData={chartData} />
 
       <div className="card">
         <div className="section-title">歷史紀錄</div>
