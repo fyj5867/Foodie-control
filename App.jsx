@@ -55,6 +55,20 @@ const EXERCISE_TYPE_OPTIONS = {
   static: [{ id: "strength", label: "肌耐力" }],
 };
 
+const ACTIVITY_LOG_OPTIONS = [
+  { id: "walk", label: "快走", category: "aerobic" },
+  { id: "jog", label: "慢跑", category: "aerobic" },
+  { id: "swim", label: "游泳", category: "aerobic" },
+  { id: "cycle", label: "騎自行車／飛輪", category: "aerobic" },
+  { id: "badminton", label: "羽球", category: "aerobic" },
+  { id: "leisure_walk", label: "散步／休閒活動", category: "aerobic" },
+  { id: "strength", label: "肌耐力／阻力訓練", category: "resistance" },
+  { id: "flex", label: "伸展／太極／瑜伽", category: "flexibility" },
+  { id: "other", label: "其他", category: "other" },
+];
+
+const ACTIVITY_CATEGORY_LABEL = { aerobic: "有氧", resistance: "阻力", flexibility: "柔軟度", other: "其他" };
+
 const LIGHT_META = {
   green: { label: "綠燈　可安心食用", className: "pill-green" },
   yellow: { label: "黃燈　適量、留意份量", className: "pill-yellow" },
@@ -62,12 +76,13 @@ const LIGHT_META = {
 };
 
 const CONTENT_REVIEW = {
-  lastReviewed: "2026-08-12",
+  lastReviewed: "2026-08-13",
   sources: [
     "衛生福利部國民健康署《我的餐盤》飲食指南與「顧血糖4招」衛教資訊",
     "衛生福利部國民健康署《糖尿病防治手冊》",
     "台北榮民總醫院護理部衛教資訊《糖尿病與運動》",
     "社團法人中華民國糖尿病學會《2022第2型糖尿病臨床照護指引》",
+    "衛生福利部《國人膳食營養素參考攝取量》第九版飲水建議草案",
   ],
 };
 
@@ -278,6 +293,50 @@ function buildExercisePlan(profile) {
   return { cautions, weeklyTemplate, dailyHabits, weeklyMinutesTarget: 150 };
 }
 
+/** Compares actual logged exercise minutes (rolling 7 days) against the
+ * weekly target, and checks whether aerobic/resistance/flexibility work is
+ * reasonably balanced, returning a short list of encouraging suggestions. */
+function buildExerciseWeeklyFeedback(exerciseLog, weeklyMinutesTarget) {
+  const cutoff = daysAgoStr(6);
+  const weekEntries = exerciseLog.filter((e) => e.date >= cutoff);
+  const totalMinutes = weekEntries.reduce((s, e) => s + (Number(e.durationMin) || 0), 0);
+  const pct = weeklyMinutesTarget ? Math.round((totalMinutes / weeklyMinutesTarget) * 100) : 0;
+
+  const categoryCount = { aerobic: 0, resistance: 0, flexibility: 0, other: 0 };
+  weekEntries.forEach((e) => {
+    const opt = ACTIVITY_LOG_OPTIONS.find((o) => o.id === e.activityId);
+    const cat = opt ? opt.category : "other";
+    if (categoryCount[cat] != null) categoryCount[cat] += 1;
+  });
+
+  const suggestions = [];
+  if (totalMinutes === 0) {
+    suggestions.push("本週還沒有運動紀錄，先安排一次 10-15 分鐘的快走開始吧！");
+  } else if (pct >= 100) {
+    suggestions.push(`本週已累積 ${totalMinutes} 分鐘，達成 ${weeklyMinutesTarget} 分鐘目標，非常棒，繼續保持！`);
+  } else {
+    const remain = Math.max(weeklyMinutesTarget - totalMinutes, 0);
+    suggestions.push(`本週已累積 ${totalMinutes} 分鐘，還差 ${remain} 分鐘就能達成 ${weeklyMinutesTarget} 分鐘的目標。`);
+  }
+  if (categoryCount.resistance === 0) {
+    suggestions.push("本週還沒有阻力／肌耐力訓練的紀錄，建議安排一次 15-20 分鐘。");
+  }
+  if (categoryCount.aerobic === 0 && totalMinutes > 0) {
+    suggestions.push("本週還沒有有氧運動的紀錄，建議安排快走、游泳等活動。");
+  }
+
+  return { totalMinutes, pct: Math.min(pct, 999), categoryCount, suggestions };
+}
+
+function buildWeeklyExerciseChartData(exerciseLog) {
+  const days = [];
+  for (let i = 6; i >= 0; i--) days.push(daysAgoStr(i));
+  return days.map((d) => {
+    const total = exerciseLog.filter((e) => e.date === d).reduce((s, e) => s + (Number(e.durationMin) || 0), 0);
+    return { date: d.slice(5), total: Math.round(total) };
+  });
+}
+
 function todayStr() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, "0");
@@ -330,6 +389,33 @@ function calcDailyCalorieTarget(profile, latestRecord) {
 
   const floor = profile.gender === "male" ? 1500 : 1200;
   return Math.round(Math.max(target, floor));
+}
+
+/** Estimate a reference daily water intake target in ml. Uses the higher of
+ * two commonly-cited methods: (a) 30ml per kg body weight, and (b) Taiwan
+ * HPA's general adult baseline (male 2400ml / female 2100ml total fluid
+ * intake), then adds a modest allowance for activity level. This is a
+ * general wellness reference only — people with kidney disease, heart
+ * failure, or other conditions requiring fluid restriction should follow
+ * their doctor's guidance instead. */
+function calcWaterTarget(profile) {
+  if (!profile?.weight) return null;
+  const weight = Number(profile.weight);
+  if (!weight) return null;
+  const weightBased = weight * 30;
+  const genderBase = profile.gender === "male" ? 2400 : 2100;
+  let target = Math.max(weightBased, genderBase);
+  if (profile.activityLevel === "active") target += 500;
+  else if (profile.activityLevel === "light") target += 200;
+  target = Math.min(target, 4000);
+  return Math.round(target / 50) * 50;
+}
+
+function waterMood(pct) {
+  if (pct >= 100) return "party";
+  if (pct >= 60) return "happy";
+  if (pct >= 25) return "neutral";
+  return "sleepy";
 }
 
 function calorieZone(consumed, target) {
@@ -613,6 +699,167 @@ function MetricTrendChart({ title, dataKey, unit, color, chartData }) {
   );
 }
 
+const WATER_MOOD_META = {
+  sleepy: { label: "才剛開始，慢慢補充水分吧", face: "sleepy" },
+  neutral: { label: "有喝到一些了，繼續加油！", face: "neutral" },
+  happy: { label: "快達標了，再喝一點！", face: "happy" },
+  party: { label: "太棒了，今天的水分達標！", face: "party" },
+};
+
+function WaterMascot({ pct }) {
+  const fillPct = Math.max(0, Math.min(pct, 100));
+  const fillHeight = 128 * (fillPct / 100);
+  const fillY = 154 - fillHeight;
+  const mood = waterMood(pct);
+
+  return (
+    <svg viewBox="0 0 120 176" className="water-mascot-svg">
+      <defs>
+        <clipPath id="waterBottleClip">
+          <rect x="18" y="26" width="84" height="128" rx="20" />
+        </clipPath>
+      </defs>
+
+      {mood === "party" && (
+        <g className="water-sparkle">
+          <path d="M14 14 L17 20 L23 22 L17 24 L14 30 L11 24 L5 22 L11 20 Z" />
+          <path d="M100 8 L102 13 L107 15 L102 17 L100 22 L98 17 L93 15 L98 13 Z" />
+          <path d="M104 40 L106 44 L110 46 L106 48 L104 52 L102 48 L98 46 L102 44 Z" />
+        </g>
+      )}
+
+      <rect x="48" y="8" width="24" height="20" rx="6" className="water-bottle-outline" />
+      <rect x="18" y="26" width="84" height="128" rx="20" className="water-bottle-outline" />
+
+      <g clipPath="url(#waterBottleClip)">
+        <rect x="18" y={fillY} width="84" height={fillHeight + 12} className="water-fill" />
+      </g>
+
+      <rect x="18" y="26" width="84" height="128" rx="20" className="water-bottle-border" />
+
+      {mood === "sleepy" && (
+        <g className="water-face">
+          <path d="M40 80 Q46 75 52 80" className="water-face-line" />
+          <path d="M68 80 Q74 75 80 80" className="water-face-line" />
+          <path d="M53 101 L67 101" className="water-face-line" />
+          <text x="92" y="18" className="water-zzz">z z</text>
+        </g>
+      )}
+      {mood === "neutral" && (
+        <g className="water-face">
+          <circle cx="46" cy="80" r="5" className="water-face-fill" />
+          <circle cx="74" cy="80" r="5" className="water-face-fill" />
+          <path d="M48 101 L72 101" className="water-face-line" />
+        </g>
+      )}
+      {mood === "happy" && (
+        <g className="water-face">
+          <circle cx="40" cy="90" r="6" className="water-cheek" />
+          <circle cx="80" cy="90" r="6" className="water-cheek" />
+          <circle cx="46" cy="80" r="5" className="water-face-fill" />
+          <circle cx="74" cy="80" r="5" className="water-face-fill" />
+          <path d="M46 96 Q60 110 74 96" className="water-face-line water-face-line-thick" />
+        </g>
+      )}
+      {mood === "party" && (
+        <g className="water-face">
+          <circle cx="38" cy="90" r="7" className="water-cheek" />
+          <circle cx="82" cy="90" r="7" className="water-cheek" />
+          <circle cx="46" cy="79" r="5.5" className="water-face-fill" />
+          <circle cx="74" cy="79" r="5.5" className="water-face-fill" />
+          <path d="M42 94 Q60 116 78 94" className="water-face-line water-face-line-thick" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function WaterCard({ target, consumedToday, todayWaterEntries, onAddWater, onDeleteWaterEntry }) {
+  const [customAmount, setCustomAmount] = useState("");
+
+  if (target == null) {
+    return (
+      <div className="card">
+        <div className="section-title">今日喝水量</div>
+        <p style={{ fontSize: "12.5px", color: "var(--ink-soft)", margin: 0 }}>
+          請先在「個人資料」填寫性別與體重，即可估算今日建議飲水量。
+        </p>
+      </div>
+    );
+  }
+
+  const pct = Math.round((consumedToday / target) * 100);
+  const mood = waterMood(pct);
+
+  return (
+    <div className="card">
+      <div className="section-title">今日喝水量</div>
+      <div className="water-wrap">
+        <WaterMascot pct={pct} />
+        <div className="water-numbers">
+          <div className="water-value">
+            {consumedToday}
+            <span> / {target} ml</span>
+          </div>
+          <div className="water-mood-label">{WATER_MOOD_META[mood].label}</div>
+        </div>
+      </div>
+
+      <div className="water-quick-row">
+        <button type="button" className="water-quick-btn" onClick={() => onAddWater(200)}>
+          🥤 +200ml
+        </button>
+        <button type="button" className="water-quick-btn" onClick={() => onAddWater(350)}>
+          🍶 +350ml
+        </button>
+        <button type="button" className="water-quick-btn" onClick={() => onAddWater(600)}>
+          🧴 +600ml
+        </button>
+      </div>
+      <form
+        className="water-custom-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const v = Number(customAmount);
+          if (v > 0) {
+            onAddWater(v);
+            setCustomAmount("");
+          }
+        }}
+      >
+        <input
+          type="number"
+          value={customAmount}
+          onChange={(e) => setCustomAmount(e.target.value)}
+          placeholder="自訂毫升數"
+        />
+        <button type="submit" className="btn btn-secondary">
+          <Plus size={15} />
+        </button>
+      </form>
+
+      {todayWaterEntries.length > 0 && (
+        <div className="water-history">
+          {[...todayWaterEntries].reverse().map((entry) => (
+            <div className="water-history-row" key={entry.id}>
+              <span>
+                💧 {entry.time} ・ {entry.amountMl} ml
+              </span>
+              <button className="icon-btn" onClick={() => onDeleteWaterEntry(entry.id)}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p style={{ fontSize: "11px", color: "var(--ink-soft)", marginTop: "10px", lineHeight: 1.5 }}>
+        飲水量為一般成人參考值，若有腎臟疾病、心臟衰竭等需限制水分的情況，請依醫師指示調整，不套用本試算。
+      </p>
+    </div>
+  );
+}
+
 function AnalysisModal({ analyzing, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories }) {
   if (!analyzing && !analysisError && !analysisPreview) return null;
   const r = analysisPreview?.result;
@@ -710,6 +957,9 @@ export default function App() {
   });
 
   const [foodLog, setFoodLog] = useState([]);
+  const [waterLog, setWaterLog] = useState([]);
+  const [exerciseLog, setExerciseLog] = useState([]);
+  const [exerciseForm, setExerciseForm] = useState({ date: todayStr(), activityId: "walk", customLabel: "", durationMin: "" });
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
   const [analysisPreview, setAnalysisPreview] = useState(null); // { imageDataUrl, result }
@@ -769,6 +1019,18 @@ export default function App() {
         if (fl && fl.value) setFoodLog(JSON.parse(fl.value));
       } catch (e) {
         /* no food log saved yet */
+      }
+      try {
+        const wl = await window.storage.get("water-log", false);
+        if (wl && wl.value) setWaterLog(JSON.parse(wl.value));
+      } catch (e) {
+        /* no water log saved yet */
+      }
+      try {
+        const el = await window.storage.get("exercise-log", false);
+        if (el && el.value) setExerciseLog(JSON.parse(el.value));
+      } catch (e) {
+        /* no exercise log saved yet */
       }
       let hasAnthropicKey = false;
       try {
@@ -939,6 +1201,75 @@ export default function App() {
     setFoodLog(trimmed);
   }
 
+  async function persistWaterLog(next) {
+    const cutoff = daysAgoStr(60);
+    const trimmed = next.filter((e) => e.date >= cutoff);
+    await window.storage.set("water-log", JSON.stringify(trimmed), false);
+    setWaterLog(trimmed);
+  }
+
+  async function handleAddWater(amountMl) {
+    const amount = Math.round(Number(amountMl));
+    if (!amount || amount <= 0) return;
+    const entry = { id: `${Date.now()}`, date: todayStr(), time: nowTimeStr(), amountMl: amount };
+    try {
+      await persistWaterLog([...waterLog, entry]);
+      flashSaved(`已記錄 ${amount} ml`);
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
+    }
+  }
+
+  async function handleDeleteWaterEntry(id) {
+    const next = waterLog.filter((e) => e.id !== id);
+    try {
+      await persistWaterLog(next);
+    } catch (e) {
+      flashSaved("刪除失敗，請再試一次");
+    }
+  }
+
+  async function persistExerciseLog(next) {
+    const cutoff = daysAgoStr(90);
+    const trimmed = next.filter((e) => e.date >= cutoff);
+    await window.storage.set("exercise-log", JSON.stringify(trimmed), false);
+    setExerciseLog(trimmed);
+  }
+
+  async function handleAddExerciseEntry(e) {
+    e.preventDefault();
+    const duration = Number(exerciseForm.durationMin);
+    if (!duration || duration <= 0) {
+      flashSaved("請輸入運動時間（分鐘）");
+      return;
+    }
+    const opt = ACTIVITY_LOG_OPTIONS.find((o) => o.id === exerciseForm.activityId);
+    const label = exerciseForm.activityId === "other" ? exerciseForm.customLabel.trim() || "其他運動" : opt?.label || "運動";
+    const entry = {
+      id: `${Date.now()}`,
+      date: exerciseForm.date || todayStr(),
+      activityId: exerciseForm.activityId,
+      activityLabel: label,
+      durationMin: duration,
+    };
+    try {
+      await persistExerciseLog([...exerciseLog, entry]);
+      setExerciseForm({ date: todayStr(), activityId: "walk", customLabel: "", durationMin: "" });
+      flashSaved("已加入運動紀錄");
+    } catch (err) {
+      flashSaved("儲存失敗，請再試一次");
+    }
+  }
+
+  async function handleDeleteExerciseEntry(id) {
+    const next = exerciseLog.filter((e) => e.id !== id);
+    try {
+      await persistExerciseLog(next);
+    } catch (e) {
+      flashSaved("刪除失敗，請再試一次");
+    }
+  }
+
   async function handlePhotoFile(file) {
     if (!file) return;
     setAnalysisError("");
@@ -1051,9 +1382,17 @@ export default function App() {
     try {
       await window.storage.delete("food-log", false);
     } catch (e) {}
+    try {
+      await window.storage.delete("water-log", false);
+    } catch (e) {}
+    try {
+      await window.storage.delete("exercise-log", false);
+    } catch (e) {}
     setProfile(null);
     setRecords([]);
     setFoodLog([]);
+    setWaterLog([]);
+    setExerciseLog([]);
     setForm({
       age: "",
       gender: "female",
@@ -1076,6 +1415,8 @@ export default function App() {
         profile,
         records,
         foodLog,
+        waterLog,
+        exerciseLog,
       };
       blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     } catch (e) {
@@ -1148,6 +1489,16 @@ export default function App() {
         await window.storage.set("food-log", JSON.stringify(data.foodLog), false);
         setFoodLog(data.foodLog);
         restoredParts.push("飲食紀錄");
+      }
+      if (Array.isArray(data.waterLog)) {
+        await window.storage.set("water-log", JSON.stringify(data.waterLog), false);
+        setWaterLog(data.waterLog);
+        restoredParts.push("喝水紀錄");
+      }
+      if (Array.isArray(data.exerciseLog)) {
+        await window.storage.set("exercise-log", JSON.stringify(data.exerciseLog), false);
+        setExerciseLog(data.exerciseLog);
+        restoredParts.push("運動紀錄");
       }
 
       if (restoredParts.length === 0) {
@@ -1244,6 +1595,15 @@ export default function App() {
   const riskScore = useMemo(() => calcRiskScore(profile), [profile]);
   const zone = riskZone(riskScore);
   const exercisePlan = useMemo(() => buildExercisePlan(profile), [profile]);
+  const exerciseWeeklyFeedback = useMemo(
+    () => buildExerciseWeeklyFeedback(exerciseLog, exercisePlan.weeklyMinutesTarget),
+    [exerciseLog, exercisePlan.weeklyMinutesTarget]
+  );
+  const weeklyExerciseChartData = useMemo(() => buildWeeklyExerciseChartData(exerciseLog), [exerciseLog]);
+  const thisWeekExerciseEntries = useMemo(() => {
+    const cutoff = daysAgoStr(6);
+    return exerciseLog.filter((e) => e.date >= cutoff).sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [exerciseLog]);
   const latestRecord = records.length ? records[records.length - 1] : null;
 
   const chartData = records.map((r) => ({
@@ -1263,6 +1623,13 @@ export default function App() {
   const remainingToday = dailyCalorieTarget != null ? dailyCalorieTarget - consumedToday : null;
   const calZone = calorieZone(consumedToday, dailyCalorieTarget);
   const weeklyCalorieData = useMemo(() => buildWeeklyCalorieData(foodLog), [foodLog]);
+
+  const waterTarget = useMemo(() => calcWaterTarget(profile), [profile]);
+  const todayWaterEntries = useMemo(() => waterLog.filter((e) => e.date === todayStr()), [waterLog]);
+  const consumedWaterToday = useMemo(
+    () => todayWaterEntries.reduce((sum, e) => sum + (Number(e.amountMl) || 0), 0),
+    [todayWaterEntries]
+  );
 
   if (loading) {
     return (
@@ -1678,6 +2045,112 @@ export default function App() {
         .cal-bar-fill.tone-red{ background:var(--red); }
         .cal-bar-fill.tone-neutral{ background:var(--brand); }
 
+        .water-wrap{
+          display:flex;
+          align-items:center;
+          gap:16px;
+        }
+        .water-mascot-svg{ width:88px; height:auto; flex-shrink:0; }
+        .water-bottle-outline{ fill:none; }
+        .water-bottle-border{
+          fill:none;
+          stroke:#3A7CA5;
+          stroke-width:3;
+        }
+        .water-fill{ fill:#6FB6E0; }
+        .water-face-line{
+          fill:none;
+          stroke:#1E2A22;
+          stroke-width:2.5;
+          stroke-linecap:round;
+        }
+        .water-face-line-thick{ stroke-width:3; }
+        .water-face-fill{ fill:#1E2A22; }
+        .water-cheek{ fill:#F6A6A6; opacity:0.6; }
+        .water-zzz{ font-size:11px; font-weight:700; fill:#8FB8D6; font-family:'Noto Sans TC', sans-serif; }
+        .water-sparkle path{ fill:#FFC94A; }
+
+        .water-numbers{ flex:1; }
+        .water-value{
+          font-family:'JetBrains Mono', monospace;
+          font-weight:700;
+          font-size:24px;
+          color:#2C6E9B;
+        }
+        .water-value span{ font-size:13px; font-weight:500; color:var(--ink-soft); }
+        .water-mood-label{
+          font-size:12px;
+          color:var(--ink-soft);
+          margin-top:4px;
+          line-height:1.5;
+        }
+
+        .water-quick-row{
+          display:flex;
+          gap:8px;
+          margin-top:14px;
+        }
+        .water-quick-btn{
+          flex:1;
+          border:1px solid var(--line);
+          background:#F0F8FC;
+          border-radius:10px;
+          padding:9px 4px;
+          font-size:12.5px;
+          font-weight:700;
+          color:#2C6E9B;
+          cursor:pointer;
+        }
+        .water-quick-btn:active{ transform:scale(0.97); }
+
+        .water-custom-row{
+          display:flex;
+          gap:8px;
+          margin-top:8px;
+        }
+        .water-custom-row input{
+          flex:1;
+          border:1px solid var(--line);
+          border-radius:10px;
+          padding:9px 12px;
+          font-size:13px;
+        }
+        .water-custom-row .btn{ padding:8px 14px; }
+
+        .water-history{
+          margin-top:10px;
+          border-top:1px solid var(--line);
+          padding-top:8px;
+        }
+        .water-history-row{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          font-size:12px;
+          color:var(--ink-soft);
+          padding:4px 0;
+        }
+
+        .ex-bar-numbers{ margin-bottom:8px; }
+        .ex-bar-value{
+          font-family:'JetBrains Mono', monospace;
+          font-weight:700;
+          font-size:26px;
+          color:var(--brand);
+        }
+        .ex-bar-caption{ font-size:12px; color:var(--ink-soft); margin-top:2px; }
+        .ex-category-row{
+          display:flex;
+          justify-content:space-between;
+          gap:6px;
+          margin-top:10px;
+          font-size:12px;
+          color:var(--ink-soft);
+          background:var(--brand-soft);
+          border-radius:10px;
+          padding:8px 10px;
+        }
+
         .photo-input-label{
           cursor:pointer;
           margin-bottom:10px;
@@ -1850,6 +2323,11 @@ export default function App() {
               consumedToday={consumedToday}
               remainingToday={remainingToday}
               calZone={calZone}
+              waterTarget={waterTarget}
+              consumedWaterToday={consumedWaterToday}
+              todayWaterEntries={todayWaterEntries}
+              onAddWater={handleAddWater}
+              onDeleteWaterEntry={handleDeleteWaterEntry}
               goProfile={() => setTab("profile")}
               goDiet={() => setTab("diet")}
               goExercise={() => setTab("exercise")}
@@ -1904,7 +2382,18 @@ export default function App() {
             />
           )}
 
-          {tab === "exercise" && <ExerciseTab plan={exercisePlan} />}
+          {tab === "exercise" && (
+            <ExerciseTab
+              plan={exercisePlan}
+              feedback={exerciseWeeklyFeedback}
+              weeklyChartData={weeklyExerciseChartData}
+              thisWeekEntries={thisWeekExerciseEntries}
+              exerciseForm={exerciseForm}
+              setExerciseForm={setExerciseForm}
+              onAddExerciseEntry={handleAddExerciseEntry}
+              onDeleteExerciseEntry={handleDeleteExerciseEntry}
+            />
+          )}
 
           {tab === "tracking" && (
             <TrackingTab
@@ -2028,6 +2517,11 @@ function OverviewTab({
   consumedToday,
   remainingToday,
   calZone,
+  waterTarget,
+  consumedWaterToday,
+  todayWaterEntries,
+  onAddWater,
+  onDeleteWaterEntry,
   goProfile,
   goDiet,
   goExercise,
@@ -2059,6 +2553,14 @@ function OverviewTab({
         <div className="section-title">今日熱量</div>
         <CalorieBar target={dailyCalorieTarget} consumed={consumedToday} remaining={remainingToday} zone={calZone} />
       </div>
+
+      <WaterCard
+        target={waterTarget}
+        consumedToday={consumedWaterToday}
+        todayWaterEntries={todayWaterEntries}
+        onAddWater={onAddWater}
+        onDeleteWaterEntry={onDeleteWaterEntry}
+      />
 
       <div className="stat-grid">
         <div className="stat-box">
@@ -2144,14 +2646,14 @@ function ProfileTab({
               min="1"
               max="120"
               value={form.age}
-              onChange={(e) => setForm({ ...form, age: e.target.value })}
+              onChange={(e) => setForm((f) => ({ ...f, age: e.target.value }))}
               placeholder="例：45"
               required
             />
           </div>
           <div className="field">
             <label>性別</label>
-            <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+            <select value={form.gender} onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value }))}>
               <option value="female">女性</option>
               <option value="male">男性</option>
               <option value="other">其他／不透露</option>
@@ -2166,7 +2668,7 @@ function ProfileTab({
               min="100"
               max="230"
               value={form.height}
-              onChange={(e) => setForm({ ...form, height: e.target.value })}
+              onChange={(e) => setForm((f) => ({ ...f, height: e.target.value }))}
               placeholder="例：160"
               required
             />
@@ -2179,7 +2681,7 @@ function ProfileTab({
               max="250"
               step="0.1"
               value={form.weight}
-              onChange={(e) => setForm({ ...form, weight: e.target.value })}
+              onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))}
               placeholder="例：65"
               required
             />
@@ -2193,7 +2695,7 @@ function ProfileTab({
               <div
                 key={lvl.id}
                 className={`chip ${form.activityLevel === lvl.id ? "active" : ""}`}
-                onClick={() => setForm({ ...form, activityLevel: lvl.id })}
+                onClick={() => setForm((f) => ({ ...f, activityLevel: lvl.id }))}
               >
                 {lvl.label}
               </div>
@@ -2599,7 +3101,18 @@ function DietTab({
   );
 }
 
-function ExerciseTab({ plan }) {
+function ExerciseTab({
+  plan,
+  feedback,
+  weeklyChartData,
+  thisWeekEntries,
+  exerciseForm,
+  setExerciseForm,
+  onAddExerciseEntry,
+  onDeleteExerciseEntry,
+}) {
+  const pctForBar = Math.min(feedback.pct, 100);
+
   return (
     <>
       <div className="card">
@@ -2631,6 +3144,112 @@ function ExerciseTab({ plan }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="card">
+        <div className="section-title">本週運動達成率（近7天累積）</div>
+        <div className="ex-bar-numbers">
+          <div className="ex-bar-value">{feedback.totalMinutes}</div>
+          <div className="ex-bar-caption">已累積分鐘 ／ 目標 {plan.weeklyMinutesTarget} 分鐘（{feedback.pct}%）</div>
+        </div>
+        <div className="cal-bar-track">
+          <div className="cal-bar-fill tone-green" style={{ width: `${pctForBar}%` }} />
+        </div>
+
+        <div className="ex-category-row">
+          <span>🏃 有氧 {feedback.categoryCount.aerobic} 次</span>
+          <span>🏋️ 阻力 {feedback.categoryCount.resistance} 次</span>
+          <span>🧘 柔軟度 {feedback.categoryCount.flexibility} 次</span>
+        </div>
+
+        <ul className="caution-list" style={{ marginTop: "10px", color: "var(--ink-soft)" }}>
+          {feedback.suggestions.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ul>
+
+        {weeklyChartData.some((d) => d.total > 0) && (
+          <div style={{ width: "100%", height: 180, marginTop: "12px" }}>
+            <ResponsiveContainer>
+              <BarChart data={weeklyChartData} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke="#DCE3DC" strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Bar dataKey="total" fill="#2F6F5E" radius={[4, 4, 0, 0]} name="運動分鐘" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="section-title">新增運動紀錄</div>
+        <form onSubmit={onAddExerciseEntry}>
+          <div className="field">
+            <label>日期</label>
+            <input
+              type="date"
+              value={exerciseForm.date}
+              onChange={(e) => setExerciseForm((f) => ({ ...f, date: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>運動內容</label>
+            <div className="chip-grid">
+              {ACTIVITY_LOG_OPTIONS.map((opt) => (
+                <div
+                  key={opt.id}
+                  className={`chip ${exerciseForm.activityId === opt.id ? "active" : ""}`}
+                  onClick={() => setExerciseForm((f) => ({ ...f, activityId: opt.id }))}
+                >
+                  {opt.label}
+                </div>
+              ))}
+            </div>
+          </div>
+          {exerciseForm.activityId === "other" && (
+            <div className="field">
+              <label>自訂運動名稱</label>
+              <input
+                type="text"
+                value={exerciseForm.customLabel}
+                onChange={(e) => setExerciseForm((f) => ({ ...f, customLabel: e.target.value }))}
+                placeholder="例：登山、跳繩"
+              />
+            </div>
+          )}
+          <div className="field">
+            <label>運動時間（分鐘）</label>
+            <input
+              type="number"
+              value={exerciseForm.durationMin}
+              onChange={(e) => setExerciseForm((f) => ({ ...f, durationMin: e.target.value }))}
+              placeholder="例：30"
+            />
+          </div>
+          <button type="submit" className="btn btn-primary btn-block">
+            <Plus size={15} /> 加入紀錄
+          </button>
+        </form>
+      </div>
+
+      <div className="card">
+        <div className="section-title">本週運動紀錄</div>
+        {thisWeekEntries.length === 0 && <p className="food-log-empty">這週還沒有運動紀錄，記錄第一筆吧。</p>}
+        {thisWeekEntries.map((entry) => (
+          <div className="record-row" key={entry.id}>
+            <div>
+              <div className="record-date">
+                {entry.date.slice(5)}　{entry.activityLabel}
+              </div>
+              <div className="record-meta">{entry.durationMin} 分鐘</div>
+            </div>
+            <button className="icon-btn" onClick={() => onDeleteExerciseEntry(entry.id)}>
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
       </div>
 
       <div className="card">
