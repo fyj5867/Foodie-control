@@ -126,6 +126,21 @@ function skeletalMuscleZones(gender) {
   ];
 }
 
+/** Waist circumference reference zones per 衛生福利部國民健康署 metabolic
+ * syndrome criteria: male ≥90cm / female ≥80cm indicates elevated risk. */
+function waistZones(gender) {
+  if (gender === "male") {
+    return [
+      { y1: 55, y2: 90, bg: "#E4F5E7", label: "正常 <90cm" },
+      { y1: 90, y2: 130, bg: "#FAE6E3", label: "腰圍過大 ≥90cm" },
+    ];
+  }
+  return [
+    { y1: 50, y2: 80, bg: "#E4F5E7", label: "正常 <80cm" },
+    { y1: 80, y2: 120, bg: "#FAE6E3", label: "腰圍過大 ≥80cm" },
+  ];
+}
+
 const CONTENT_REVIEW = {
   lastReviewed: "2026-08-17",
   sources: [
@@ -136,6 +151,7 @@ const CONTENT_REVIEW = {
     "衛生福利部《國人膳食營養素參考攝取量》第九版飲水建議草案",
     "衛生福利部雙和醫院、國健署健康九九手冊：BMI／體脂肪率標準",
     "World Gym Taiwan、TVBS衛教報導：骨骼肌率參考範圍",
+    "衛生福利部國民健康署代謝症候群學習手冊：腰圍標準",
   ],
 };
 
@@ -1161,6 +1177,7 @@ export default function App() {
     date: todayStr(),
     weight: "",
     bmi: "",
+    waist: "",
     bodyFat: "",
     visceralFat: "",
     skeletalMuscle: "",
@@ -1376,6 +1393,7 @@ export default function App() {
       ...recordForm,
       weight: Number(recordForm.weight),
       bmi: recordForm.bmi === "" ? null : Number(recordForm.bmi),
+      waist: recordForm.waist === "" ? null : Number(recordForm.waist),
       bodyFat: recordForm.bodyFat === "" ? null : Number(recordForm.bodyFat),
       visceralFat: recordForm.visceralFat === "" ? null : Number(recordForm.visceralFat),
       skeletalMuscle: recordForm.skeletalMuscle === "" ? null : Number(recordForm.skeletalMuscle),
@@ -1393,6 +1411,7 @@ export default function App() {
           date: todayStr(),
           weight: "",
           bmi: "",
+          waist: "",
           bodyFat: "",
           visceralFat: "",
           skeletalMuscle: "",
@@ -1420,6 +1439,7 @@ export default function App() {
       date: record.date,
       weight: record.weight ?? "",
       bmi: record.bmi ?? "",
+      waist: record.waist ?? "",
       bodyFat: record.bodyFat ?? "",
       visceralFat: record.visceralFat ?? "",
       skeletalMuscle: record.skeletalMuscle ?? "",
@@ -1936,6 +1956,7 @@ export default function App() {
     date: r.date.slice(5),
     weight: r.weight,
     bmi: r.bmi != null ? r.bmi : profile?.height && r.weight ? Number(calcBMI(r.weight, profile.height).toFixed(1)) : null,
+    waist: r.waist != null ? r.waist : null,
     bodyFat: r.bodyFat != null ? r.bodyFat : null,
     skeletalMuscle: r.skeletalMuscle != null ? r.skeletalMuscle : null,
   }));
@@ -3884,11 +3905,15 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
               <input type="number" step="0.1" value={recordForm.bodyFat} onChange={(e) => setRecordForm({ ...recordForm, bodyFat: e.target.value })} />
             </div>
             <div className="field">
-              <label>內臟脂肪等級</label>
-              <input type="number" step="1" value={recordForm.visceralFat} onChange={(e) => setRecordForm({ ...recordForm, visceralFat: e.target.value })} />
+              <label>腰圍（cm）</label>
+              <input type="number" step="0.1" value={recordForm.waist} onChange={(e) => setRecordForm({ ...recordForm, waist: e.target.value })} />
             </div>
           </div>
           <div className="field-row">
+            <div className="field">
+              <label>內臟脂肪等級</label>
+              <input type="number" step="1" value={recordForm.visceralFat} onChange={(e) => setRecordForm({ ...recordForm, visceralFat: e.target.value })} />
+            </div>
             <div className="field">
               <label>骨骼肌率（%）</label>
               <input
@@ -3898,14 +3923,16 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
                 onChange={(e) => setRecordForm({ ...recordForm, skeletalMuscle: e.target.value })}
               />
             </div>
+          </div>
+          <div className="field-row">
             <div className="field">
               <label>體年齡</label>
               <input type="number" step="1" value={recordForm.bodyAge} onChange={(e) => setRecordForm({ ...recordForm, bodyAge: e.target.value })} />
             </div>
-          </div>
-          <div className="field">
-            <label>基礎代謝率（kcal）</label>
-            <input type="number" step="1" value={recordForm.bmr} onChange={(e) => setRecordForm({ ...recordForm, bmr: e.target.value })} />
+            <div className="field">
+              <label>基礎代謝率（kcal）</label>
+              <input type="number" step="1" value={recordForm.bmr} onChange={(e) => setRecordForm({ ...recordForm, bmr: e.target.value })} />
+            </div>
           </div>
           <button type="submit" className="btn btn-primary btn-block">
             <Plus size={15} /> {isEditing ? "更新紀錄" : "儲存紀錄"}
@@ -3942,6 +3969,16 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
         zoneExplain="背景顏色為一般參考範圍：黃色偏低、綠色正常（男性32-34%、女性28-30%）、藍色偏高（肌肉量較多）。"
       />
 
+      <MetricTrendChart
+        title="腰圍趨勢"
+        dataKey="waist"
+        unit="cm"
+        color="#8A5A3B"
+        chartData={chartData}
+        zones={waistZones(profile?.gender)}
+        zoneExplain="背景顏色代表衛福部代謝症候群腰圍標準：綠色正常、紅色腰圍過大（男性≥90cm、女性≥80cm，代謝症候群風險較高）。"
+      />
+
       <div className="card">
         <div className="section-title">歷史紀錄</div>
         <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>點任一筆可載入上方表單編輯。</p>
@@ -3955,6 +3992,7 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
                 <div className="record-meta">
                   體重 {fmtNum(r.weight)}kg
                   {rBmi != null ? ` ・ BMI ${fmtNum(rBmi)}` : ""}
+                  {r.waist != null ? ` ・ 腰圍 ${fmtNum(r.waist)}cm` : ""}
                   {r.bodyFat != null ? ` ・ 體脂 ${fmtNum(r.bodyFat)}%` : ""}
                   {r.visceralFat != null ? ` ・ 內臟脂肪 ${fmtNum(r.visceralFat, 0)}` : ""}
                 </div>
