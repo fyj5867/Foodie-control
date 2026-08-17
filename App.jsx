@@ -46,16 +46,19 @@ const SYMPTOM_OPTIONS = [
   { id: "waist", label: "腰圍過大（男≥90cm／女≥80cm）" },
 ];
 
-const ACTIVITY_LEVELS = [
-  { id: "sedentary", label: "幾乎不運動（久坐為主）" },
-  { id: "light", label: "偶爾運動（每週1-2次）" },
-  { id: "active", label: "規律運動（每週3次以上）" },
-];
-
-const EXERCISE_TYPE_OPTIONS = {
-  dynamic: [{ id: "badminton", label: "羽球" }],
-  static: [{ id: "strength", label: "肌耐力" }],
-};
+/** Derives a sedentary/light/active category from self-reported weekly
+ * exercise minutes by intensity, following the WHO/ADA weekly activity
+ * guideline (≥150min moderate or ≥75min vigorous, or an equivalent mix,
+ * counts as "active"). Downstream calorie/water/risk calculations key off
+ * this derived value the same way they did with the old direct selector. */
+function deriveActivityLevel(f) {
+  const vigMin = f?.vigorousChecked ? Number(f.vigorousMinutes) || 0 : 0;
+  const modMin = f?.moderateChecked ? Number(f.moderateMinutes) || 0 : 0;
+  const ligMin = f?.lightChecked ? Number(f.lightMinutes) || 0 : 0;
+  if (vigMin >= 75 || modMin >= 150 || vigMin * 2 + modMin >= 150) return "active";
+  if (vigMin > 0 || modMin > 0 || ligMin > 0) return "light";
+  return "sedentary";
+}
 
 const ACTIVITY_LOG_OPTIONS = [
   { id: "jog", label: "超慢跑", category: "aerobic" },
@@ -306,21 +309,9 @@ function buildExercisePlan(profile) {
 
   const lowImpact = age >= 65 || cardioRisk || isObese;
 
-  const dynamicPrefs = (profile?.exerciseTypes?.dynamic || [])
-    .map((id) => EXERCISE_TYPE_OPTIONS.dynamic.find((o) => o.id === id)?.label)
-    .filter(Boolean);
-  const staticPrefs = (profile?.exerciseTypes?.static || [])
-    .map((id) => EXERCISE_TYPE_OPTIONS.static.find((o) => o.id === id)?.label)
-    .filter(Boolean);
-
-  const aerobicBase = lowImpact ? ["超慢跑", "飛輪（固定式腳踏車）"] : ["超慢跑", "騎自行車", "羽球"];
-  const aerobicList = dynamicPrefs.length ? [...new Set([...dynamicPrefs, ...aerobicBase])] : aerobicBase;
-  const aerobic = aerobicList.join("／");
-
-  const resistanceLabel = staticPrefs.length
-    ? `${staticPrefs.join("、")}訓練（彈力帶或自身體重：深蹲、伏地挺身）`
-    : "阻力訓練（彈力帶或自身體重：深蹲、伏地挺身）";
-  const resistanceLabelShort = staticPrefs.length ? `${staticPrefs.join("、")}訓練` : "阻力訓練";
+  const aerobic = lowImpact ? "超慢跑／飛輪（固定式腳踏車）" : "超慢跑／騎自行車／羽球";
+  const resistanceLabel = "阻力訓練（彈力帶或自身體重：深蹲、伏地挺身）";
+  const resistanceLabelShort = "阻力訓練";
 
   const weeklyTemplate = [
     { day: "週一", activity: aerobic, duration: "30 分鐘", intensity: "中等（有點喘但仍可說話）" },
@@ -1157,9 +1148,13 @@ export default function App() {
     gender: "female",
     height: "",
     weight: "",
-    activityLevel: "light",
     symptoms: [],
-    exerciseTypes: { dynamic: [], static: [] },
+    vigorousChecked: false,
+    vigorousMinutes: "",
+    moderateChecked: false,
+    moderateMinutes: "",
+    lightChecked: false,
+    lightMinutes: "",
   });
 
   const [recordForm, setRecordForm] = useState({
@@ -1211,16 +1206,8 @@ export default function App() {
         const p = await window.storage.get("profile", false);
         if (p && p.value) {
           const parsed = JSON.parse(p.value);
-          const withDefaults = {
-            ...parsed,
-            exerciseTypes: {
-              dynamic: [],
-              static: [],
-              ...(parsed.exerciseTypes || {}),
-            },
-          };
-          setProfile(withDefaults);
-          setForm(withDefaults);
+          setProfile(parsed);
+          setForm((f) => ({ ...f, ...parsed }));
         }
       } catch (e) {
         /* no profile saved yet */
@@ -1336,6 +1323,7 @@ export default function App() {
       age: rawForm.age === "" ? "" : Number(rawForm.age),
       height: rawForm.height === "" ? "" : Number(rawForm.height),
       weight: rawForm.weight === "" ? "" : Number(rawForm.weight),
+      activityLevel: deriveActivityLevel(rawForm),
     };
     const res = await window.storage.set("profile", JSON.stringify(cleaned), false);
     if (res) setProfile(cleaned);
@@ -1375,15 +1363,6 @@ export default function App() {
       const has = f.symptoms.includes(id);
       const symptoms = has ? f.symptoms.filter((s) => s !== id) : [...f.symptoms, id];
       return { ...f, symptoms };
-    });
-  }
-
-  function toggleExerciseType(group, id) {
-    setForm((f) => {
-      const current = f.exerciseTypes?.[group] || [];
-      const has = current.includes(id);
-      const next = has ? current.filter((s) => s !== id) : [...current, id];
-      return { ...f, exerciseTypes: { ...f.exerciseTypes, [group]: next } };
     });
   }
 
@@ -1709,9 +1688,13 @@ export default function App() {
       gender: "female",
       height: "",
       weight: "",
-      activityLevel: "light",
       symptoms: [],
-      exerciseTypes: { dynamic: [], static: [] },
+      vigorousChecked: false,
+      vigorousMinutes: "",
+      moderateChecked: false,
+      moderateMinutes: "",
+      lightChecked: false,
+      lightMinutes: "",
     });
     setShowReset(false);
     setTab("overview");
@@ -1784,9 +1767,13 @@ export default function App() {
           gender: "female",
           height: "",
           weight: "",
-          activityLevel: "light",
           symptoms: [],
-          exerciseTypes: { dynamic: [], static: [] },
+          vigorousChecked: false,
+          vigorousMinutes: "",
+          moderateChecked: false,
+          moderateMinutes: "",
+          lightChecked: false,
+          lightMinutes: "",
           ...data.profile,
         });
         restoredParts.push("個人資料");
@@ -2229,6 +2216,36 @@ export default function App() {
 
         .segmented{ display:flex; gap:8px; }
         .segmented .chip{ flex:1; text-align:center; }
+
+        .intensity-row{
+          display:flex;
+          align-items:center;
+          gap:10px;
+          margin-bottom:8px;
+        }
+        .intensity-check{
+          display:flex;
+          align-items:center;
+          gap:6px;
+          font-size:13.5px;
+          font-weight:700;
+          color:var(--ink);
+          min-width:56px;
+        }
+        .intensity-check input[type="checkbox"]{
+          width:18px;
+          height:18px;
+          accent-color:var(--brand);
+        }
+        .intensity-minutes{
+          width:80px;
+          border:1px solid var(--line);
+          border-radius:8px;
+          padding:7px 10px;
+          font-size:13px;
+        }
+        .intensity-minutes:disabled{ background:var(--paper); color:var(--ink-soft); }
+        .intensity-unit{ font-size:12px; color:var(--ink-soft); }
 
         .pill{
           display:inline-flex;
@@ -2797,7 +2814,6 @@ export default function App() {
               form={form}
               setForm={setForm}
               toggleSymptom={toggleSymptom}
-              toggleExerciseType={toggleExerciseType}
               onSave={handleSaveProfile}
               onRequestReset={() => setShowReset(true)}
               hasProfile={!!profile}
@@ -3105,7 +3121,6 @@ function ProfileTab({
   form,
   setForm,
   toggleSymptom,
-  toggleExerciseType,
   onSave,
   onRequestReset,
   hasProfile,
@@ -3185,48 +3200,70 @@ function ProfileTab({
         </div>
 
         <div className="field">
-          <label>平時活動量</label>
-          <div className="segmented">
-            {ACTIVITY_LEVELS.map((lvl) => (
-              <div
-                key={lvl.id}
-                className={`chip ${form.activityLevel === lvl.id ? "active" : ""}`}
-                onClick={() => setForm((f) => ({ ...f, activityLevel: lvl.id }))}
-              >
-                {lvl.label}
-              </div>
-            ))}
+          <label>平時活動量（每週平均）</label>
+          <div className="intensity-row">
+            <label className="intensity-check">
+              <input
+                type="checkbox"
+                checked={form.vigorousChecked}
+                onChange={(e) => setForm((f) => ({ ...f, vigorousChecked: e.target.checked }))}
+              />
+              強度
+            </label>
+            <input
+              type="number"
+              min="0"
+              className="intensity-minutes"
+              value={form.vigorousMinutes}
+              onChange={(e) => setForm((f) => ({ ...f, vigorousMinutes: e.target.value }))}
+              placeholder="分鐘"
+              disabled={!form.vigorousChecked}
+            />
+            <span className="intensity-unit">分鐘／週</span>
           </div>
-        </div>
-
-        <div className="field">
-          <label>運動：動態項目（可複選）</label>
-          <div className="chip-grid">
-            {EXERCISE_TYPE_OPTIONS.dynamic.map((opt) => (
-              <div
-                key={opt.id}
-                className={`chip ${form.exerciseTypes?.dynamic?.includes(opt.id) ? "active" : ""}`}
-                onClick={() => toggleExerciseType("dynamic", opt.id)}
-              >
-                {opt.label}
-              </div>
-            ))}
+          <div className="intensity-row">
+            <label className="intensity-check">
+              <input
+                type="checkbox"
+                checked={form.moderateChecked}
+                onChange={(e) => setForm((f) => ({ ...f, moderateChecked: e.target.checked }))}
+              />
+              中度
+            </label>
+            <input
+              type="number"
+              min="0"
+              className="intensity-minutes"
+              value={form.moderateMinutes}
+              onChange={(e) => setForm((f) => ({ ...f, moderateMinutes: e.target.value }))}
+              placeholder="分鐘"
+              disabled={!form.moderateChecked}
+            />
+            <span className="intensity-unit">分鐘／週</span>
           </div>
-        </div>
-
-        <div className="field">
-          <label>運動：靜態項目（可複選）</label>
-          <div className="chip-grid">
-            {EXERCISE_TYPE_OPTIONS.static.map((opt) => (
-              <div
-                key={opt.id}
-                className={`chip ${form.exerciseTypes?.static?.includes(opt.id) ? "active" : ""}`}
-                onClick={() => toggleExerciseType("static", opt.id)}
-              >
-                {opt.label}
-              </div>
-            ))}
+          <div className="intensity-row">
+            <label className="intensity-check">
+              <input
+                type="checkbox"
+                checked={form.lightChecked}
+                onChange={(e) => setForm((f) => ({ ...f, lightChecked: e.target.checked }))}
+              />
+              輕度
+            </label>
+            <input
+              type="number"
+              min="0"
+              className="intensity-minutes"
+              value={form.lightMinutes}
+              onChange={(e) => setForm((f) => ({ ...f, lightMinutes: e.target.value }))}
+              placeholder="分鐘"
+              disabled={!form.lightChecked}
+            />
+            <span className="intensity-unit">分鐘／週</span>
           </div>
+          <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "6px 0 0" }}>
+            勾選你平常會做的運動強度，並填每週累積分鐘數，用來估算熱量、飲水量等每日建議值。
+          </p>
         </div>
       </div>
 
