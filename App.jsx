@@ -58,9 +58,7 @@ const EXERCISE_TYPE_OPTIONS = {
 };
 
 const ACTIVITY_LOG_OPTIONS = [
-  { id: "walk", label: "快走", category: "aerobic" },
-  { id: "jog", label: "慢跑", category: "aerobic" },
-  { id: "swim", label: "游泳", category: "aerobic" },
+  { id: "jog", label: "超慢跑", category: "aerobic" },
   { id: "cycle", label: "騎自行車／飛輪", category: "aerobic" },
   { id: "badminton", label: "羽球", category: "aerobic" },
   { id: "pickleball", label: "匹克球", category: "aerobic" },
@@ -88,14 +86,53 @@ const BMI_ZONES = [
   { y1: 27, y2: 32, bg: "#FAE6E3", label: "肥胖 ≥27" },
 ];
 
+/** Body fat % reference zones, commonly cited by Taiwan hospital patient
+ * education materials (e.g. 衛福部雙和醫院、國健署健康九九手冊）. Differs by
+ * gender since normal body fat % ranges are not the same for men and women. */
+function bodyFatZones(gender) {
+  if (gender === "male") {
+    return [
+      { y1: 5, y2: 15, bg: "#FBF0DC", label: "偏低 <15%" },
+      { y1: 15, y2: 25, bg: "#E4F5E7", label: "正常 15-25%" },
+      { y1: 25, y2: 45, bg: "#FAE6E3", label: "偏高 ≥25%" },
+    ];
+  }
+  return [
+    { y1: 10, y2: 20, bg: "#FBF0DC", label: "偏低 <20%" },
+    { y1: 20, y2: 30, bg: "#E4F5E7", label: "正常 20-30%" },
+    { y1: 30, y2: 50, bg: "#FAE6E3", label: "偏高 ≥30%" },
+  ];
+}
+
+/** Skeletal muscle % reference zones, commonly cited by Taiwan fitness/
+ * health media (e.g. World Gym Taiwan、TVBS 衛教報導). These are general
+ * population reference ranges, not a single strict government standard —
+ * shown as an approximate guide rather than a precise medical cutoff. */
+function skeletalMuscleZones(gender) {
+  if (gender === "male") {
+    return [
+      { y1: 15, y2: 32, bg: "#FBF0DC", label: "偏低 <32%" },
+      { y1: 32, y2: 34, bg: "#E4F5E7", label: "正常 32-34%" },
+      { y1: 34, y2: 50, bg: "#E4F0F8", label: "偏高 ≥34%" },
+    ];
+  }
+  return [
+    { y1: 12, y2: 28, bg: "#FBF0DC", label: "偏低 <28%" },
+    { y1: 28, y2: 30, bg: "#E4F5E7", label: "正常 28-30%" },
+    { y1: 30, y2: 46, bg: "#E4F0F8", label: "偏高 ≥30%" },
+  ];
+}
+
 const CONTENT_REVIEW = {
-  lastReviewed: "2026-08-13",
+  lastReviewed: "2026-08-17",
   sources: [
     "衛生福利部國民健康署《我的餐盤》飲食指南與「顧血糖4招」衛教資訊",
     "衛生福利部國民健康署《糖尿病防治手冊》",
     "台北榮民總醫院護理部衛教資訊《糖尿病與運動》",
     "社團法人中華民國糖尿病學會《2022第2型糖尿病臨床照護指引》",
     "衛生福利部《國人膳食營養素參考攝取量》第九版飲水建議草案",
+    "衛生福利部雙和醫院、國健署健康九九手冊：BMI／體脂肪率標準",
+    "World Gym Taiwan、TVBS衛教報導：骨骼肌率參考範圍",
   ],
 };
 
@@ -250,16 +287,16 @@ function buildExercisePlan(profile) {
   const cardioRisk = symptoms.includes("hypertension") || symptoms.includes("cardio");
 
   if (age >= 65) {
-    cautions.push("您的年齡建議優先選擇低衝擊運動（如快走、游泳、太極），運動前務必充分熱身。");
+    cautions.push("您的年齡建議優先選擇低衝擊運動（如超慢跑、太極），運動前務必充分熱身。");
   }
   if (cardioRisk) {
     cautions.push("您有心血管相關風險因子，建議先諮詢醫師評估合適的運動強度，運動中留意心跳與不適感。");
   }
   if (isObese) {
-    cautions.push("您的BMI偏高，建議優先選擇對關節負擔較小的運動，如游泳、飛輪、快走，待體能提升後再增加強度。");
+    cautions.push("您的BMI偏高，建議優先選擇對關節負擔較小的運動，如超慢跑、飛輪，待體能提升後再增加強度。");
   }
   if (symptoms.includes("sedentary")) {
-    cautions.push("目前活動量較少，建議先從每天10分鐘快走開始，再逐週增加時間與強度。");
+    cautions.push("目前活動量較少，建議先從每天10分鐘超慢跑開始，再逐週增加時間與強度。");
   }
   if (symptoms.includes("prediabetes")) {
     cautions.push(
@@ -276,9 +313,7 @@ function buildExercisePlan(profile) {
     .map((id) => EXERCISE_TYPE_OPTIONS.static.find((o) => o.id === id)?.label)
     .filter(Boolean);
 
-  const aerobicBase = lowImpact
-    ? ["快走", "游泳", "飛輪（固定式腳踏車）"]
-    : ["快走", "慢跑", "游泳", "騎自行車"];
+  const aerobicBase = lowImpact ? ["超慢跑", "飛輪（固定式腳踏車）"] : ["超慢跑", "騎自行車", "羽球"];
   const aerobicList = dynamicPrefs.length ? [...new Set([...dynamicPrefs, ...aerobicBase])] : aerobicBase;
   const aerobic = aerobicList.join("／");
 
@@ -324,7 +359,7 @@ function buildExerciseWeeklyFeedback(exerciseLog, weeklyMinutesTarget) {
 
   const suggestions = [];
   if (totalMinutes === 0) {
-    suggestions.push("本週還沒有運動紀錄，先安排一次 10-15 分鐘的快走開始吧！");
+    suggestions.push("本週還沒有運動紀錄，先安排一次 10-15 分鐘的超慢跑開始吧！");
   } else if (pct >= 100) {
     suggestions.push(`本週已累積 ${totalMinutes} 分鐘，達成 ${weeklyMinutesTarget} 分鐘目標，非常棒，繼續保持！`);
   } else {
@@ -335,7 +370,7 @@ function buildExerciseWeeklyFeedback(exerciseLog, weeklyMinutesTarget) {
     suggestions.push("本週還沒有阻力／肌耐力訓練的紀錄，建議安排一次 15-20 分鐘。");
   }
   if (categoryCount.aerobic === 0 && totalMinutes > 0) {
-    suggestions.push("本週還沒有有氧運動的紀錄，建議安排快走、游泳等活動。");
+    suggestions.push("本週還沒有有氧運動的紀錄，建議安排超慢跑、羽球等活動。");
   }
 
   return { totalMinutes, pct: Math.min(pct, 999), categoryCount, suggestions };
@@ -902,6 +937,7 @@ function WaterCard({
   consumedToday,
   todayWaterEntries,
   recentWaterEntries,
+  weeklyWaterChartData,
   onAddWater,
   onDeleteWaterEntry,
   onUpdateWaterEntry,
@@ -991,14 +1027,29 @@ function WaterCard({
         </button>
       </form>
 
+      {weeklyWaterChartData.some((d) => d.total > 0) && (
+        <div style={{ width: "100%", height: 160, marginTop: "12px" }}>
+          <ResponsiveContainer>
+            <BarChart data={weeklyWaterChartData} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
+              <CartesianGrid stroke="#DCE3DC" strokeDasharray="3 3" />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              {target != null && (
+                <ReferenceLine y={target} stroke="#2C6E9B" strokeDasharray="4 4" label={{ value: "目標", fontSize: 10, fill: "#2C6E9B", position: "insideTopRight" }} />
+              )}
+              <Bar dataKey="total" fill="#6FB6E0" radius={[4, 4, 0, 0]} name="喝水量(ml)" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
       {recentWaterEntries.length > 0 && (
         <div className="water-history">
-          <div className="water-history-title">最近7天紀錄（可直接修改毫升數）</div>
+          <div className="water-history-title">最近7天每日總量（可直接修改毫升數）</div>
           {recentWaterEntries.map((entry) => (
             <div className="water-history-row" key={entry.id}>
-              <span>
-                💧 {entry.date === todayStr() ? "今天" : entry.date.slice(5)} {entry.time}
-              </span>
+              <span>💧 {entry.date === todayStr() ? "今天" : entry.date.slice(5)}</span>
               <span className="water-history-edit">
                 <Pencil size={10} className="food-log-edit-icon" />
                 <input
@@ -1190,7 +1241,21 @@ export default function App() {
       }
       try {
         const wl = await window.storage.get("water-log", false);
-        if (wl && wl.value) setWaterLog(JSON.parse(wl.value));
+        if (wl && wl.value) {
+          const rawLog = JSON.parse(wl.value);
+          // Migrate any legacy multi-entry-per-day logs into one aggregated
+          // entry per date (older versions logged a separate timestamped
+          // entry per tap of the quick-add buttons).
+          const byDate = {};
+          rawLog.forEach((e) => {
+            byDate[e.date] = (byDate[e.date] || 0) + (Number(e.amountMl) || 0);
+          });
+          const migrated = Object.keys(byDate).map((d) => ({ id: d, date: d, amountMl: byDate[d] }));
+          setWaterLog(migrated);
+          if (migrated.length !== rawLog.length) {
+            window.storage.set("water-log", JSON.stringify(migrated), false).catch(() => {});
+          }
+        }
       } catch (e) {
         /* no water log saved yet */
       }
@@ -1404,9 +1469,17 @@ export default function App() {
   async function handleAddWater(amountMl) {
     const amount = Math.round(Number(amountMl));
     if (!amount || amount <= 0) return;
-    const entry = { id: `${Date.now()}`, date: todayStr(), time: nowTimeStr(), amountMl: amount };
+    const today = todayStr();
+    const existingIdx = waterLog.findIndex((e) => e.date === today);
+    let next;
+    if (existingIdx >= 0) {
+      next = [...waterLog];
+      next[existingIdx] = { ...next[existingIdx], amountMl: next[existingIdx].amountMl + amount };
+    } else {
+      next = [...waterLog, { id: `${Date.now()}`, date: today, amountMl: amount }];
+    }
     try {
-      await persistWaterLog([...waterLog, entry]);
+      await persistWaterLog(next);
       flashSaved(`已記錄 ${amount} ml`);
     } catch (e) {
       flashSaved("儲存失敗，請再試一次");
@@ -1906,12 +1979,15 @@ export default function App() {
   const todayWaterEntries = useMemo(() => waterLog.filter((e) => e.date === todayStr()), [waterLog]);
   const recentWaterEntries = useMemo(() => {
     const cutoff = daysAgoStr(6);
-    return waterLog
-      .filter((e) => e.date >= cutoff)
-      .sort((a, b) => {
-        if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-        return (b.time || "").localeCompare(a.time || "");
-      });
+    return waterLog.filter((e) => e.date >= cutoff).sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [waterLog]);
+  const weeklyWaterChartData = useMemo(() => {
+    const days = [];
+    for (let i = 6; i >= 0; i--) days.push(daysAgoStr(i));
+    return days.map((d) => {
+      const entry = waterLog.find((e) => e.date === d);
+      return { date: d.slice(5), total: entry ? Math.round(entry.amountMl) : 0 };
+    });
   }, [waterLog]);
   const consumedWaterToday = useMemo(
     () => todayWaterEntries.reduce((sum, e) => sum + (Number(e.amountMl) || 0), 0),
@@ -2704,6 +2780,7 @@ export default function App() {
               consumedWaterToday={consumedWaterToday}
               todayWaterEntries={todayWaterEntries}
               recentWaterEntries={recentWaterEntries}
+              weeklyWaterChartData={weeklyWaterChartData}
               onAddWater={handleAddWater}
               onDeleteWaterEntry={handleDeleteWaterEntry}
               onUpdateWaterEntry={handleUpdateWaterEntry}
@@ -2920,6 +2997,7 @@ function OverviewTab({
   consumedWaterToday,
   todayWaterEntries,
   recentWaterEntries,
+  weeklyWaterChartData,
   onAddWater,
   onDeleteWaterEntry,
   onUpdateWaterEntry,
@@ -2973,6 +3051,7 @@ function OverviewTab({
         consumedToday={consumedWaterToday}
         todayWaterEntries={todayWaterEntries}
         recentWaterEntries={recentWaterEntries}
+        weeklyWaterChartData={weeklyWaterChartData}
         onAddWater={onAddWater}
         onDeleteWaterEntry={onDeleteWaterEntry}
         onUpdateWaterEntry={onUpdateWaterEntry}
@@ -3758,7 +3837,7 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
               />
             </div>
             <div className="field">
-              <label>BMI（可直接填 OMRON 量測值）</label>
+              <label>BMI</label>
               <input type="number" step="0.1" value={recordForm.bmi} onChange={(e) => setRecordForm({ ...recordForm, bmi: e.target.value })} />
             </div>
           </div>
@@ -3807,8 +3886,24 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
         zones={BMI_ZONES}
         zoneExplain="背景顏色代表衛福部 BMI 分類區間：黃色過輕／過重、綠色正常、紅色肥胖，曲線落在綠色區塊代表體重在健康範圍內。"
       />
-      <MetricTrendChart title="體脂肪率趨勢" dataKey="bodyFat" unit="%" color="#C63C34" chartData={chartData} />
-      <MetricTrendChart title="骨骼肌率趨勢" dataKey="skeletalMuscle" unit="%" color="#2F6F5E" chartData={chartData} />
+      <MetricTrendChart
+        title="體脂肪率趨勢"
+        dataKey="bodyFat"
+        unit="%"
+        color="#C63C34"
+        chartData={chartData}
+        zones={bodyFatZones(profile?.gender)}
+        zoneExplain="背景顏色為常見醫療衛教標準：黃色偏低/偏高、綠色正常範圍（男性15-25%、女性20-30%）。"
+      />
+      <MetricTrendChart
+        title="骨骼肌率趨勢"
+        dataKey="skeletalMuscle"
+        unit="%"
+        color="#2F6F5E"
+        chartData={chartData}
+        zones={skeletalMuscleZones(profile?.gender)}
+        zoneExplain="背景顏色為一般參考範圍：黃色偏低、綠色正常（男性32-34%、女性28-30%）、藍色偏高（肌肉量較多）。"
+      />
 
       <div className="card">
         <div className="section-title">歷史紀錄</div>
