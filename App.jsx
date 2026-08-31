@@ -152,6 +152,7 @@ const CONTENT_REVIEW = {
     "衛生福利部雙和醫院、國健署健康九九手冊：BMI／體脂肪率標準",
     "World Gym Taiwan、TVBS衛教報導：骨骼肌率參考範圍",
     "衛生福利部國民健康署代謝症候群學習手冊：腰圍標準",
+    "衛生福利部食品藥物管理署《食品營養成分資料庫（新版）》：食物熱量查詢",
   ],
 };
 
@@ -2336,6 +2337,16 @@ export default function App() {
         .record-row:first-of-type{ border-top:none; }
         .record-row-clickable{ cursor:pointer; }
         .record-row-clickable:active{ background:var(--brand-soft); }
+        .history-month-header{
+          font-size:12px;
+          font-weight:700;
+          color:var(--brand);
+          background:var(--brand-soft);
+          border-radius:8px;
+          padding:5px 10px;
+          margin:12px 0 4px;
+        }
+        .history-month-header:first-child{ margin-top:0; }
         .record-date{ font-weight:700; font-size:13px; }
         .record-meta{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
         .icon-btn{
@@ -3603,6 +3614,15 @@ function DietTab({
           </button>
         </form>
 
+        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "8px 0 0", lineHeight: 1.6 }}>
+          不確定熱量多少？可以查{" "}
+          <a href="https://consumer.fda.gov.tw/Food/TFND.aspx?nodeID=178" target="_blank" rel="noreferrer">
+            衛福部食品藥物管理署「食品營養成分資料庫」
+          </a>
+          ，輸入食品分類或關鍵字即可查到官方標準熱量與營養成分，比 AI 拍照估算更準確
+          （包裝食品也建議直接看包裝上的營養標示）。
+        </p>
+
         <div className="disclaimer disclaimer-compact" style={{ marginTop: "12px" }}>
           <Info size={14} />
           <span>
@@ -3868,8 +3888,56 @@ function ExerciseTab({
 }
 
 function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord, onDeleteRecord, onEditRecord, chartData }) {
+  const [showFullHistory, setShowFullHistory] = useState(false);
   const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
   const isEditing = records.some((r) => r.date === recordForm.date);
+  const recentThree = sorted.slice(0, 3);
+
+  function monthLabel(key) {
+    const [y, m] = key.split("-");
+    return `${y}年${parseInt(m, 10)}月`;
+  }
+
+  function renderRecordRow(r) {
+    const rBmi = r.bmi != null ? r.bmi : profile?.height ? calcBMI(r.weight, profile.height) : null;
+    return (
+      <div className="record-row record-row-clickable" key={r.date} onClick={() => onEditRecord(r)}>
+        <div>
+          <div className="record-date">{r.date}</div>
+          <div className="record-meta">
+            體重 {fmtNum(r.weight)}kg
+            {rBmi != null ? ` ・ BMI ${fmtNum(rBmi)}` : ""}
+            {r.waist != null ? ` ・ 腰圍 ${fmtNum(r.waist)}cm` : ""}
+            {r.bodyFat != null ? ` ・ 體脂 ${fmtNum(r.bodyFat)}%` : ""}
+            {r.visceralFat != null ? ` ・ 內臟脂肪 ${fmtNum(r.visceralFat, 0)}` : ""}
+          </div>
+          <div className="record-meta">
+            {r.skeletalMuscle != null ? `骨骼肌 ${fmtNum(r.skeletalMuscle)}% ・ ` : ""}
+            {r.bodyAge != null ? `體年齡 ${fmtNum(r.bodyAge, 0)} ・ ` : ""}
+            {r.bmr != null ? `BMR ${fmtNum(r.bmr, 0)}kcal` : ""}
+          </div>
+        </div>
+        <button
+          className="icon-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteRecord(r.date);
+          }}
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  let monthGroups = null;
+  if (showFullHistory) {
+    monthGroups = {};
+    sorted.forEach((r) => {
+      const key = r.date.slice(0, 7);
+      (monthGroups[key] = monthGroups[key] || []).push(r);
+    });
+  }
 
   return (
     <>
@@ -3981,39 +4049,28 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
 
       <div className="card">
         <div className="section-title">歷史紀錄</div>
-        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>點任一筆可載入上方表單編輯。</p>
+        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
+          點任一筆可載入上方表單編輯。{!showFullHistory && "預設只顯示最新3天，"}
+        </p>
         {sorted.length === 0 && <p style={{ fontSize: "12.5px", color: "var(--ink-soft)" }}>尚無紀錄，新增第一筆體態資料吧。</p>}
-        {sorted.map((r) => {
-          const rBmi = r.bmi != null ? r.bmi : profile?.height ? calcBMI(r.weight, profile.height) : null;
-          return (
-            <div className="record-row record-row-clickable" key={r.date} onClick={() => onEditRecord(r)}>
-              <div>
-                <div className="record-date">{r.date}</div>
-                <div className="record-meta">
-                  體重 {fmtNum(r.weight)}kg
-                  {rBmi != null ? ` ・ BMI ${fmtNum(rBmi)}` : ""}
-                  {r.waist != null ? ` ・ 腰圍 ${fmtNum(r.waist)}cm` : ""}
-                  {r.bodyFat != null ? ` ・ 體脂 ${fmtNum(r.bodyFat)}%` : ""}
-                  {r.visceralFat != null ? ` ・ 內臟脂肪 ${fmtNum(r.visceralFat, 0)}` : ""}
-                </div>
-                <div className="record-meta">
-                  {r.skeletalMuscle != null ? `骨骼肌 ${fmtNum(r.skeletalMuscle)}% ・ ` : ""}
-                  {r.bodyAge != null ? `體年齡 ${fmtNum(r.bodyAge, 0)} ・ ` : ""}
-                  {r.bmr != null ? `BMR ${fmtNum(r.bmr, 0)}kcal` : ""}
-                </div>
+
+        {!showFullHistory && recentThree.map(renderRecordRow)}
+
+        {showFullHistory &&
+          Object.keys(monthGroups).map((key) => (
+            <div key={key}>
+              <div className="history-month-header">
+                {monthLabel(key)}（{monthGroups[key].length}筆）
               </div>
-              <button
-                className="icon-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteRecord(r.date);
-                }}
-              >
-                <Trash2 size={16} />
-              </button>
+              {monthGroups[key].map(renderRecordRow)}
             </div>
-          );
-        })}
+          ))}
+
+        {sorted.length > 3 && (
+          <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: "10px" }} onClick={() => setShowFullHistory((v) => !v)}>
+            {showFullHistory ? "收合紀錄" : `展開全部歷史紀錄（共 ${sorted.length} 筆，依月份歸納）`}
+          </button>
+        )}
       </div>
 
       <Disclaimer />
