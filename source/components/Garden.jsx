@@ -72,18 +72,18 @@ function layout(count) {
 function GroundCover() {
   return (
     <>
-      <ellipse cx="88" cy="238" rx="136" ry="36" fill="var(--soil)" opacity="0.7" />
-      <ellipse cx="300" cy="250" rx="118" ry="32" fill="var(--soil)" opacity="0.55" />
-      <ellipse cx="188" cy="288" rx="190" ry="48" fill="var(--soil-dk)" />
-      <ellipse cx="188" cy="281" rx="190" ry="45" fill="var(--soil)" />
-      <g stroke="var(--leaf-dk)" strokeWidth="2.4" strokeLinecap="round" fill="none" opacity="0.65">
+      <ellipse cx="88" cy="240" rx="140" ry="34" fill="var(--soil)" opacity="0.16" />
+      <ellipse cx="300" cy="252" rx="122" ry="30" fill="var(--soil)" opacity="0.13" />
+      <ellipse cx="188" cy="286" rx="196" ry="44" fill="var(--soil)" opacity="0.26" />
+      <path d="M0 262 Q90 246 188 254 Q286 262 358 250" stroke="var(--soil)" strokeWidth="1.6" fill="none" opacity="0.35" />
+      <g stroke="var(--leaf-dk)" strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.4">
         <path d="M40 268 C37 261 37 256 39 251" />
         <path d="M48 270 C47 263 49 258 53 254" />
         <path d="M330 266 C333 259 333 254 331 249" />
         <path d="M216 276 C214 270 215 265 218 261" />
       </g>
-      <ellipse cx="130" cy="274" rx="13" ry="7" fill="var(--stone)" opacity="0.85" />
-      <ellipse cx="286" cy="282" rx="10" ry="5.5" fill="var(--stone)" opacity="0.75" />
+      <ellipse cx="130" cy="274" rx="12" ry="6" fill="var(--stone)" opacity="0.4" />
+      <ellipse cx="286" cy="282" rx="9" ry="5" fill="var(--stone)" opacity="0.35" />
     </>
   );
 }
@@ -114,17 +114,34 @@ export default function Garden({ completedTrees = 0, currentStage = "seed", vita
       <GroundCover />
 
       {spots.map((spot) => (
-        <g
-          key={spot.seed}
-          transform={`translate(${spot.x - 100 * spot.scale},${spot.y - PLANT_BASE * spot.scale}) scale(${spot.scale})`}
-        >
-          <PlantBody stage="bloom" vitality="fair" leafTint={spot.tint} />
+        <g key={spot.seed}>
+          <ellipse
+            cx={spot.x}
+            cy={spot.y + 3 * spot.scale}
+            rx={34 * spot.scale}
+            ry={5.5 * spot.scale}
+            fill="var(--ink)"
+            opacity="0.08"
+          />
+          <g
+            transform={`translate(${spot.x - 100 * spot.scale},${spot.y - PLANT_BASE * spot.scale}) scale(${spot.scale})`}
+          >
+            <PlantBody stage="bloom" vitality="fair" leafTint={spot.tint} />
+          </g>
         </g>
       ))}
 
       {/* The tree still being grown, ringed so it is findable at a glance.
           Base sits at (GROWING_X, GROWING_Y) — the ring is centred a little
           above that, around the body of the plant rather than its roots. */}
+      <ellipse
+        cx={GROWING_X}
+        cy={GROWING_Y + 3 * GROWING_SCALE}
+        rx={34 * GROWING_SCALE}
+        ry={5.5 * GROWING_SCALE}
+        fill="var(--ink)"
+        opacity="0.08"
+      />
       <g
         transform={`translate(${GROWING_X - 100 * GROWING_SCALE},${GROWING_Y - PLANT_BASE * GROWING_SCALE}) scale(${GROWING_SCALE})`}
       >

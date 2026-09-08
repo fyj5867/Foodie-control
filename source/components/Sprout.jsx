@@ -206,11 +206,11 @@ function Flower({ x, y, s }) {
  *              whether the face is on a bean or on a crown
  */
 function Face({ cx, cy, scale, mood }) {
-  const eyeR = 4 * scale;
-  const eyeDx = 8.5 * scale;
+  const eyeR = 3.2 * scale;
+  const eyeDx = 7.6 * scale;
   const eyeY = cy - 1 * scale;
-  const mouthY = eyeY + 9 * scale;
-  const stroke = 2.4 * scale;
+  const mouthY = eyeY + 8 * scale;
+  const stroke = 1.9 * scale;
 
   if (mood === "sleepy") {
     return (
@@ -228,8 +228,8 @@ function Face({ cx, cy, scale, mood }) {
     <g>
       {cheeky ? (
         <>
-          <circle cx={cx - 16 * scale} cy={eyeY + 4.5 * scale} r={(mood === "party" ? 5 : 4.2) * scale} fill={CHEEK} opacity="0.85" />
-          <circle cx={cx + 16 * scale} cy={eyeY + 4.5 * scale} r={(mood === "party" ? 5 : 4.2) * scale} fill={CHEEK} opacity="0.85" />
+          <circle cx={cx - 14.5 * scale} cy={eyeY + 4 * scale} r={(mood === "party" ? 4.2 : 3.6) * scale} fill={CHEEK} opacity="0.7" />
+          <circle cx={cx + 14.5 * scale} cy={eyeY + 4 * scale} r={(mood === "party" ? 4.2 : 3.6) * scale} fill={CHEEK} opacity="0.7" />
         </>
       ) : null}
 
@@ -271,7 +271,7 @@ function star(x, y, s) {
  * has its own viewBox, and fixed points would fall outside the small ones.
  */
 function Sparkles({ vx, vy, vw, vh }) {
-  const s = vh / 42;
+  const s = vh / 58;
   return (
     <g fill={SPARKLE}>
       <path d={star(vx + vw * 0.11, vy + vh * 0.24, s)} />
@@ -323,7 +323,15 @@ export function PlantBody({ stage = "sapling", vitality = "fair", leafTint }) {
           {geo.canopy.front.map((c, i) => (
             <circle key={`cf${i}`} cx={c.cx} cy={c.cy} r={c.r} fill={leafFill} />
           ))}
-          <ellipse cx="80" cy={geo.canopy.front[0].cy - 16} rx="17" ry="9" fill="#FFFFFF" opacity="0.2" />
+          <ellipse cx="80" cy={geo.canopy.front[0].cy - 16} rx="17" ry="9" fill="#FFFFFF" opacity="0.16" />
+          <ellipse
+            cx="100"
+            cy={geo.canopy.front[0].cy + geo.canopy.front[0].r * 0.52}
+            rx={geo.canopy.front[0].r * 0.86}
+            ry={geo.canopy.front[0].r * 0.34}
+            fill="var(--leaf-dk)"
+            opacity="0.16"
+          />
         </g>
       ) : null}
 
@@ -332,11 +340,19 @@ export function PlantBody({ stage = "sapling", vitality = "fair", leafTint }) {
           <ellipse cx="100" cy={cy} rx={geo.body.rx} ry={geo.body.ry} fill={mood.bean} />
           <ellipse
             cx="96"
-            cy={cy - geo.body.ry * 0.4}
-            rx={geo.body.rx * 0.5}
-            ry={geo.body.ry * 0.3}
+            cy={cy - geo.body.ry * 0.42}
+            rx={geo.body.rx * 0.46}
+            ry={geo.body.ry * 0.26}
             fill="#FFFFFF"
-            opacity="0.35"
+            opacity="0.3"
+          />
+          <ellipse
+            cx="100"
+            cy={cy + geo.body.ry * 0.5}
+            rx={geo.body.rx * 0.78}
+            ry={geo.body.ry * 0.3}
+            fill="#9C8E63"
+            opacity="0.14"
           />
         </>
       ) : null}
@@ -379,7 +395,9 @@ export default function Sprout({
       className={className}
       role="img"
       aria-label={title || "豆苗"}
-      style={{ display: "block", width: "100%", height: "auto" }}
+      /* Size is the caller's business — see .growth-scene svg and the
+         avatar fallback. Setting it inline here overrode every stylesheet. */
+      style={{ display: "block" }}
     >
       {glow ? (
         <circle cx={vx + vw / 2} cy={vy + vh * 0.46} r={vh * 0.44} fill="var(--glow)" opacity="0.55" />
@@ -387,8 +405,8 @@ export default function Sprout({
 
       {ground ? (
         <>
-          <ellipse cx="100" cy={GROUND + 4} rx="56" ry="12" fill="var(--soil-dk)" />
-          <ellipse cx="100" cy={GROUND} rx="56" ry="11" fill="var(--soil)" />
+          <ellipse cx="100" cy={GROUND + 5} rx="44" ry="6.5" fill="var(--ink)" opacity="0.08" />
+          <ellipse cx="100" cy={GROUND + 3} rx="26" ry="3.6" fill="var(--ink)" opacity="0.07" />
         </>
       ) : null}
 

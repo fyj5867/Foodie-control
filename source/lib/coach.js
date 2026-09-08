@@ -12,12 +12,16 @@
  *   days when nothing was met, the thing that went right is opening the app.
  *
  * There is no push notification anywhere in this app — no backend to send one.
- * These appear when the app is opened in the morning or the evening.
+ * Both appear when the app is opened: the daily line during the day, the
+ * summary from the evening on.
  */
 
 import { WATER_GOAL_ML, EXERCISE_GOAL_MIN } from "./goals.js";
 
-/** Before this hour, the morning line. From EVENING_FROM, the summary. */
+/**
+ * Before this hour the line is greeted as 早安; after it, the same line stays
+ * but under a neutral title. From EVENING_FROM the summary takes over.
+ */
 export const MORNING_UNTIL = 11;
 export const EVENING_FROM = 19;
 
@@ -61,13 +65,18 @@ function pickByDate(list, dateStr, offset = 0) {
  * @param streak  current run of met days
  * @param nickname what to call the person, may be empty
  */
-export function morningMessage({ dateStr, streak = 0, nickname = "" }) {
+export function morningMessage({ dateStr, streak = 0, nickname = "", hour = null }) {
   const who = nickname ? `${nickname}，` : "";
+  /* The line is the same all day; only the heading changes. It used to vanish
+   * after 11am, which meant that on any ordinary afternoon the app showed no
+   * daily line at all — a feature nobody sees is indistinguishable from one
+   * that was never built. */
+  const title = hour == null || hour < MORNING_UNTIL ? "早安" : "今天的一句";
   if (streak >= 3) {
     const line = pickByDate(MORNING_LINES_ON_STREAK, dateStr).replace("{n}", String(streak));
-    return { title: "早安", body: `${who}${line}` };
+    return { title, body: `${who}${line}` };
   }
-  return { title: "早安", body: `${who}${pickByDate(MORNING_LINES, dateStr)}` };
+  return { title, body: `${who}${pickByDate(MORNING_LINES, dateStr)}` };
 }
 
 /** One concrete, small thing that would close this gap. */
@@ -148,15 +157,12 @@ export function eveningSummary({ day, garden, nickname = "" }) {
 }
 
 /**
- * Which message, if any, belongs on screen right now.
+ * Which message belongs on screen right now.
  *
- * Between late morning and evening there is nothing to say that the three
- * rows above do not already say better, so it shows nothing rather than
- * padding the screen.
+ * There is always one: the daily line until the evening, then the summary.
+ * An earlier version showed nothing between late morning and 7pm, which is
+ * most of the waking day — so the daily line was effectively invisible.
  */
 export function coachSlot(now = new Date()) {
-  const hour = now.getHours();
-  if (hour < MORNING_UNTIL) return "morning";
-  if (hour >= EVENING_FROM) return "evening";
-  return null;
+  return now.getHours() >= EVENING_FROM ? "evening" : "morning";
 }

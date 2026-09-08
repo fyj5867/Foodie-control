@@ -89,7 +89,7 @@ export default function GrowthPanel({ day, garden, onGoActivity }) {
 
       {view === "today" ? (
         <>
-          <div className="growth-scene">
+          <div className="growth-scene is-sprout">
             <Sprout
               stage={garden.stage.key}
               vitality={vitality}
@@ -134,7 +134,7 @@ export default function GrowthPanel({ day, garden, onGoActivity }) {
         </>
       ) : (
         <>
-          <div className="growth-scene">
+          <div className="growth-scene is-garden">
             <GardenScene
               completedTrees={garden.completedTrees}
               currentStage={garden.stage.key}

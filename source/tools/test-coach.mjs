@@ -45,12 +45,26 @@ function metDays(n) {
   return out;
 }
 
-/* --- which slot is on screen --- */
-check("early morning is the morning slot", coachSlot(new Date(2026, 8, 8, 7, 0)), "morning");
-check("just before the cutoff is still morning", coachSlot(new Date(2026, 8, 8, MORNING_UNTIL - 1, 59)), "morning");
-check("midday shows nothing", coachSlot(new Date(2026, 8, 8, 14, 0)), null);
+/* --- which slot is on screen ---
+ *
+ * There must always be one. Showing nothing between late morning and 7pm
+ * meant the daily line was invisible for most of the waking day, which is
+ * how a built feature comes to look like a missing one. */
+check("early morning is the daily line", coachSlot(new Date(2026, 8, 8, 7, 0)), "morning");
+check("late morning still shows the line", coachSlot(new Date(2026, 8, 8, MORNING_UNTIL, 30)), "morning");
+check("mid-afternoon still shows the line", coachSlot(new Date(2026, 8, 8, 14, 0)), "morning");
+check("an hour before the evening still shows the line", coachSlot(new Date(2026, 8, 8, EVENING_FROM - 1, 59)), "morning");
 check("evening cutoff shows the summary", coachSlot(new Date(2026, 8, 8, EVENING_FROM, 0)), "evening");
 check("late night is still evening", coachSlot(new Date(2026, 8, 8, 23, 30)), "evening");
+
+/* --- the heading follows the clock, the line does not --- */
+check("before 11 it greets you", morningMessage({ dateStr: D, hour: 7 }).title, "早安");
+check("after 11 the heading is neutral", morningMessage({ dateStr: D, hour: 15 }).title, "今天的一句");
+check(
+  "the line itself is the same either way",
+  morningMessage({ dateStr: D, hour: 7 }).body,
+  morningMessage({ dateStr: D, hour: 15 }).body
+);
 
 /* --- the morning line --- */
 const m = morningMessage({ dateStr: D, streak: 0, nickname: "小宜" });

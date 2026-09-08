@@ -1649,6 +1649,7 @@ export default function App() {
             dateStr: todayStr(),
             streak: garden.currentStreak,
             nickname: (profile && profile.nickname) || "",
+            hour: new Date().getHours(),
           })
         : null,
     [slot, garden.currentStreak, profile]
@@ -1851,10 +1852,22 @@ export default function App() {
           font-size:14px; font-family:inherit; cursor:pointer;
         }
         .growth-switch-btn.on{ background:var(--brand-soft); color:var(--brand); font-weight:600; }
+        /* Held to a fixed height so the illustration stays a modest header.
+           At full width it dominated the card, and every rough edge scaled up
+           with it. */
         .growth-scene{
           margin:10px 10px 0; border-radius:14px; overflow:hidden;
           background:var(--surface-2); border:1px solid var(--line);
         }
+        /* The sprout is capped so the illustration stays a modest header; at
+           full width it dominated the card and every rough edge scaled with it. */
+        .growth-scene.is-sprout{
+          height:150px; display:flex; align-items:center; justify-content:center;
+        }
+        .growth-scene.is-sprout svg{ height:100%; width:auto; max-width:100%; }
+        /* The garden is a landscape — it keeps its own aspect. */
+        .growth-scene.is-garden svg{ width:100%; height:auto; }
+        .avatar-fallback svg{ width:100%; height:auto; }
         .growth-status{ padding:14px 16px 0; text-align:center; }
         .growth-head{
           font-size:21px; font-weight:700; letter-spacing:-.01em; line-height:1.3;
@@ -2838,7 +2851,7 @@ export default function App() {
 
         <header className="app-header">
           <h1 className="app-title">
-            Healthy Care <small>第二型糖尿病預防生活助手</small>
+            Healthy Care
           </h1>
         </header>
 
