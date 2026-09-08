@@ -22,6 +22,7 @@ import {
   BarChart,
   Bar,
   ReferenceLine,
+  ReferenceArea,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -45,23 +46,28 @@ const SYMPTOM_OPTIONS = [
   { id: "waist", label: "腰圍過大（男≥90cm／女≥80cm）" },
 ];
 
-const ACTIVITY_LEVELS = [
-  { id: "sedentary", label: "幾乎不運動（久坐為主）" },
-  { id: "light", label: "偶爾運動（每週1-2次）" },
-  { id: "active", label: "規律運動（每週3次以上）" },
-];
-
-const EXERCISE_TYPE_OPTIONS = {
-  dynamic: [{ id: "badminton", label: "羽球" }],
-  static: [{ id: "strength", label: "肌耐力" }],
-};
+/** Derives a sedentary/light/active category from self-reported weekly
+ * exercise minutes by intensity, following the WHO/ADA weekly activity
+ * guideline (≥150min moderate or ≥75min vigorous, or an equivalent mix,
+ * counts as "active"). Downstream calorie/water/risk calculations key off
+ * this derived value the same way they did with the old direct selector. */
+function deriveActivityLevel(f) {
+  const vigMin = f?.vigorousChecked ? Number(f.vigorousMinutes) || 0 : 0;
+  const modMin = f?.moderateChecked ? Number(f.moderateMinutes) || 0 : 0;
+  const ligMin = f?.lightChecked ? Number(f.lightMinutes) || 0 : 0;
+  if (vigMin >= 75 || modMin >= 150 || vigMin * 2 + modMin >= 150) return "active";
+  if (vigMin > 0 || modMin > 0 || ligMin > 0) return "light";
+  return "sedentary";
+}
 
 const ACTIVITY_LOG_OPTIONS = [
-  { id: "walk", label: "快走", category: "aerobic" },
-  { id: "jog", label: "慢跑", category: "aerobic" },
-  { id: "swim", label: "游泳", category: "aerobic" },
+  { id: "jog", label: "超慢跑", category: "aerobic" },
   { id: "cycle", label: "騎自行車／飛輪", category: "aerobic" },
   { id: "badminton", label: "羽球", category: "aerobic" },
+  { id: "pickleball", label: "匹克球", category: "aerobic" },
+  { id: "hiking", label: "爬山", category: "aerobic" },
+  { id: "tennis_squash", label: "網球／壁球", category: "aerobic" },
+  { id: "table_tennis", label: "桌球", category: "aerobic" },
   { id: "leisure_walk", label: "散步／休閒活動", category: "aerobic" },
   { id: "strength", label: "肌耐力／阻力訓練", category: "resistance" },
   { id: "flex", label: "伸展／太極／瑜伽", category: "flexibility" },
@@ -76,14 +82,77 @@ const LIGHT_META = {
   red: { label: "紅燈　建議避免", className: "pill-red" },
 };
 
+const BMI_ZONES = [
+  { y1: 15, y2: 18.5, bg: "#FBF0DC", label: "過輕 <18.5" },
+  { y1: 18.5, y2: 24, bg: "#E4F5E7", label: "正常 18.5-24" },
+  { y1: 24, y2: 27, bg: "#FDEBD3", label: "過重 24-27" },
+  { y1: 27, y2: 32, bg: "#FAE6E3", label: "肥胖 ≥27" },
+];
+
+/** Body fat % reference zones, commonly cited by Taiwan hospital patient
+ * education materials (e.g. 衛福部雙和醫院、國健署健康九九手冊）. Differs by
+ * gender since normal body fat % ranges are not the same for men and women. */
+function bodyFatZones(gender) {
+  if (gender === "male") {
+    return [
+      { y1: 5, y2: 15, bg: "#FBF0DC", label: "偏低 <15%" },
+      { y1: 15, y2: 25, bg: "#E4F5E7", label: "正常 15-25%" },
+      { y1: 25, y2: 45, bg: "#FAE6E3", label: "偏高 ≥25%" },
+    ];
+  }
+  return [
+    { y1: 10, y2: 20, bg: "#FBF0DC", label: "偏低 <20%" },
+    { y1: 20, y2: 30, bg: "#E4F5E7", label: "正常 20-30%" },
+    { y1: 30, y2: 50, bg: "#FAE6E3", label: "偏高 ≥30%" },
+  ];
+}
+
+/** Skeletal muscle % reference zones, commonly cited by Taiwan fitness/
+ * health media (e.g. World Gym Taiwan、TVBS 衛教報導). These are general
+ * population reference ranges, not a single strict government standard —
+ * shown as an approximate guide rather than a precise medical cutoff. */
+function skeletalMuscleZones(gender) {
+  if (gender === "male") {
+    return [
+      { y1: 15, y2: 32, bg: "#FBF0DC", label: "偏低 <32%" },
+      { y1: 32, y2: 34, bg: "#E4F5E7", label: "正常 32-34%" },
+      { y1: 34, y2: 50, bg: "#E4F0F8", label: "偏高 ≥34%" },
+    ];
+  }
+  return [
+    { y1: 12, y2: 28, bg: "#FBF0DC", label: "偏低 <28%" },
+    { y1: 28, y2: 30, bg: "#E4F5E7", label: "正常 28-30%" },
+    { y1: 30, y2: 46, bg: "#E4F0F8", label: "偏高 ≥30%" },
+  ];
+}
+
+/** Waist circumference reference zones per 衛生福利部國民健康署 metabolic
+ * syndrome criteria: male ≥90cm / female ≥80cm indicates elevated risk. */
+function waistZones(gender) {
+  if (gender === "male") {
+    return [
+      { y1: 55, y2: 90, bg: "#E4F5E7", label: "正常 <90cm" },
+      { y1: 90, y2: 130, bg: "#FAE6E3", label: "腰圍過大 ≥90cm" },
+    ];
+  }
+  return [
+    { y1: 50, y2: 80, bg: "#E4F5E7", label: "正常 <80cm" },
+    { y1: 80, y2: 120, bg: "#FAE6E3", label: "腰圍過大 ≥80cm" },
+  ];
+}
+
 const CONTENT_REVIEW = {
-  lastReviewed: "2026-08-13",
+  lastReviewed: "2026-08-17",
   sources: [
     "衛生福利部國民健康署《我的餐盤》飲食指南與「顧血糖4招」衛教資訊",
     "衛生福利部國民健康署《糖尿病防治手冊》",
     "台北榮民總醫院護理部衛教資訊《糖尿病與運動》",
     "社團法人中華民國糖尿病學會《2022第2型糖尿病臨床照護指引》",
     "衛生福利部《國人膳食營養素參考攝取量》第九版飲水建議草案",
+    "衛生福利部雙和醫院、國健署健康九九手冊：BMI／體脂肪率標準",
+    "World Gym Taiwan、TVBS衛教報導：骨骼肌率參考範圍",
+    "衛生福利部國民健康署代謝症候群學習手冊：腰圍標準",
+    "衛生福利部食品藥物管理署《食品營養成分資料庫（新版）》：食物熱量查詢",
   ],
 };
 
@@ -238,16 +307,16 @@ function buildExercisePlan(profile) {
   const cardioRisk = symptoms.includes("hypertension") || symptoms.includes("cardio");
 
   if (age >= 65) {
-    cautions.push("您的年齡建議優先選擇低衝擊運動（如快走、游泳、太極），運動前務必充分熱身。");
+    cautions.push("您的年齡建議優先選擇低衝擊運動（如超慢跑、太極），運動前務必充分熱身。");
   }
   if (cardioRisk) {
     cautions.push("您有心血管相關風險因子，建議先諮詢醫師評估合適的運動強度，運動中留意心跳與不適感。");
   }
   if (isObese) {
-    cautions.push("您的BMI偏高，建議優先選擇對關節負擔較小的運動，如游泳、飛輪、快走，待體能提升後再增加強度。");
+    cautions.push("您的BMI偏高，建議優先選擇對關節負擔較小的運動，如超慢跑、飛輪，待體能提升後再增加強度。");
   }
   if (symptoms.includes("sedentary")) {
-    cautions.push("目前活動量較少，建議先從每天10分鐘快走開始，再逐週增加時間與強度。");
+    cautions.push("目前活動量較少，建議先從每天10分鐘超慢跑開始，再逐週增加時間與強度。");
   }
   if (symptoms.includes("prediabetes")) {
     cautions.push(
@@ -257,23 +326,9 @@ function buildExercisePlan(profile) {
 
   const lowImpact = age >= 65 || cardioRisk || isObese;
 
-  const dynamicPrefs = (profile?.exerciseTypes?.dynamic || [])
-    .map((id) => EXERCISE_TYPE_OPTIONS.dynamic.find((o) => o.id === id)?.label)
-    .filter(Boolean);
-  const staticPrefs = (profile?.exerciseTypes?.static || [])
-    .map((id) => EXERCISE_TYPE_OPTIONS.static.find((o) => o.id === id)?.label)
-    .filter(Boolean);
-
-  const aerobicBase = lowImpact
-    ? ["快走", "游泳", "飛輪（固定式腳踏車）"]
-    : ["快走", "慢跑", "游泳", "騎自行車"];
-  const aerobicList = dynamicPrefs.length ? [...new Set([...dynamicPrefs, ...aerobicBase])] : aerobicBase;
-  const aerobic = aerobicList.join("／");
-
-  const resistanceLabel = staticPrefs.length
-    ? `${staticPrefs.join("、")}訓練（彈力帶或自身體重：深蹲、伏地挺身）`
-    : "阻力訓練（彈力帶或自身體重：深蹲、伏地挺身）";
-  const resistanceLabelShort = staticPrefs.length ? `${staticPrefs.join("、")}訓練` : "阻力訓練";
+  const aerobic = lowImpact ? "超慢跑／飛輪（固定式腳踏車）" : "超慢跑／騎自行車／羽球";
+  const resistanceLabel = "阻力訓練（彈力帶或自身體重：深蹲、伏地挺身）";
+  const resistanceLabelShort = "阻力訓練";
 
   const weeklyTemplate = [
     { day: "週一", activity: aerobic, duration: "30 分鐘", intensity: "中等（有點喘但仍可說話）" },
@@ -312,7 +367,7 @@ function buildExerciseWeeklyFeedback(exerciseLog, weeklyMinutesTarget) {
 
   const suggestions = [];
   if (totalMinutes === 0) {
-    suggestions.push("本週還沒有運動紀錄，先安排一次 10-15 分鐘的快走開始吧！");
+    suggestions.push("本週還沒有運動紀錄，先安排一次 10-15 分鐘的超慢跑開始吧！");
   } else if (pct >= 100) {
     suggestions.push(`本週已累積 ${totalMinutes} 分鐘，達成 ${weeklyMinutesTarget} 分鐘目標，非常棒，繼續保持！`);
   } else {
@@ -323,7 +378,7 @@ function buildExerciseWeeklyFeedback(exerciseLog, weeklyMinutesTarget) {
     suggestions.push("本週還沒有阻力／肌耐力訓練的紀錄，建議安排一次 15-20 分鐘。");
   }
   if (categoryCount.aerobic === 0 && totalMinutes > 0) {
-    suggestions.push("本週還沒有有氧運動的紀錄，建議安排快走、游泳等活動。");
+    suggestions.push("本週還沒有有氧運動的紀錄，建議安排超慢跑、羽球等活動。");
   }
 
   return { totalMinutes, pct: Math.min(pct, 999), categoryCount, suggestions };
@@ -701,8 +756,8 @@ function Gauge({ score }) {
   );
 }
 
-function CalorieBar({ target, consumed, remaining, zone, breakdown }) {
-  if (target == null) {
+function CalorieBar({ target, consumed, remaining, zone, breakdown, override, overrideInput, setOverrideInput, onSaveOverride, onClearOverride }) {
+  if (target == null && !breakdown) {
     return (
       <div className="cal-empty">
         <p>請先在「個人資料」填寫年齡、身高、體重，即可估算今日建議熱量與剩餘額度。</p>
@@ -724,7 +779,7 @@ function CalorieBar({ target, consumed, remaining, zone, breakdown }) {
         </div>
         <div>
           <div className="cal-bar-value">{target}</div>
-          <div className="cal-bar-caption">今日建議攝取</div>
+          <div className="cal-bar-caption">{override ? "今日建議攝取（自訂）" : "今日建議攝取"}</div>
         </div>
       </div>
       <div className="cal-bar-track">
@@ -733,7 +788,7 @@ function CalorieBar({ target, consumed, remaining, zone, breakdown }) {
 
       {breakdown && (
         <details className="calc-breakdown">
-          <summary>這個目標怎麼算出來的？</summary>
+          <summary>這個目標怎麼算出來的？／改成自己的目標</summary>
           <div className="calc-breakdown-body">
             <div>
               基礎代謝率（BMR）：{breakdown.bmr} kcal
@@ -744,7 +799,26 @@ function CalorieBar({ target, consumed, remaining, zone, breakdown }) {
             <div>活動量係數：× {breakdown.activityFactor}</div>
             {breakdown.deficitApplied && <div>BMI偏高，已扣除 500 kcal 熱量赤字</div>}
             {breakdown.flooredApplied && <div>已套用安全下限，避免建議熱量過低</div>}
-            <div style={{ fontWeight: 700, marginTop: "4px" }}>合計目標：{breakdown.target} kcal</div>
+            <div style={{ fontWeight: 700, margin: "4px 0" }}>系統計算參考值：{breakdown.target} kcal</div>
+
+            <div className="override-row">
+              <span>自訂目標（例如醫師/營養師的建議量）：</span>
+              <input
+                type="number"
+                className="cal-num-input-inline"
+                value={overrideInput}
+                onChange={(e) => setOverrideInput(e.target.value)}
+                placeholder={String(breakdown.target)}
+              />
+              <button type="button" className="btn btn-secondary" onClick={() => onSaveOverride(overrideInput)}>
+                套用
+              </button>
+              {override && (
+                <button type="button" className="btn btn-danger" onClick={onClearOverride}>
+                  改回系統計算
+                </button>
+              )}
+            </div>
           </div>
         </details>
       )}
@@ -752,20 +826,37 @@ function CalorieBar({ target, consumed, remaining, zone, breakdown }) {
   );
 }
 
-function MetricTrendChart({ title, dataKey, unit, color, chartData }) {
+function MetricTrendChart({ title, dataKey, unit, color, chartData, zones, zoneExplain }) {
   const points = chartData.filter((d) => d[dataKey] != null);
   if (points.length < 2) return null;
+  const domain = zones ? [zones[0].y1, zones[zones.length - 1].y2] : ["auto", "auto"];
   return (
     <div className="card">
       <div className="section-title">{title}</div>
+      {zones && (
+        <>
+          <div className="chart-zone-legend">
+            {zones.map((z, i) => (
+              <span key={i} className="chart-zone-tag" style={{ background: z.bg }}>
+                {z.label}
+              </span>
+            ))}
+          </div>
+          {zoneExplain && <p className="chart-zone-explain">{zoneExplain}</p>}
+        </>
+      )}
       <div style={{ width: "100%", height: 180 }}>
         <ResponsiveContainer>
           <LineChart data={chartData} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
             <CartesianGrid stroke="#DCE3DC" strokeDasharray="3 3" />
+            {zones &&
+              zones.map((z, i) => (
+                <ReferenceArea key={i} y1={z.y1} y2={z.y2} fill={z.bg} fillOpacity={0.7} strokeOpacity={0} ifOverflow="extendDomain" />
+              ))}
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} unit={unit} />
+            <YAxis tick={{ fontSize: 11 }} domain={domain} unit={unit} />
             <Tooltip />
-            <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={{ r: 3 }} name={title} connectNulls />
+            <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2.5} dot={{ r: 3 }} name={title} connectNulls />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -848,7 +939,18 @@ function WaterMascot({ pct }) {
   );
 }
 
-function WaterCard({ target, breakdown, consumedToday, todayWaterEntries, onAddWater, onDeleteWaterEntry }) {
+function WaterCard({
+  target,
+  breakdown,
+  consumedToday,
+  todayWaterEntries,
+  recentWaterEntries,
+  weeklyWaterChartData,
+  onAddWater,
+  onDeleteWaterEntry,
+  onUpdateWaterEntry,
+  onPersistWaterEntry,
+}) {
   const [customAmount, setCustomAmount] = useState("");
 
   if (target == null) {
@@ -933,12 +1035,39 @@ function WaterCard({ target, breakdown, consumedToday, todayWaterEntries, onAddW
         </button>
       </form>
 
-      {todayWaterEntries.length > 0 && (
+      {weeklyWaterChartData.some((d) => d.total > 0) && (
+        <div style={{ width: "100%", height: 160, marginTop: "12px" }}>
+          <ResponsiveContainer>
+            <BarChart data={weeklyWaterChartData} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
+              <CartesianGrid stroke="#DCE3DC" strokeDasharray="3 3" />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              {target != null && (
+                <ReferenceLine y={target} stroke="#2C6E9B" strokeDasharray="4 4" label={{ value: "目標", fontSize: 10, fill: "#2C6E9B", position: "insideTopRight" }} />
+              )}
+              <Bar dataKey="total" fill="#6FB6E0" radius={[4, 4, 0, 0]} name="喝水量(ml)" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {recentWaterEntries.length > 0 && (
         <div className="water-history">
-          {[...todayWaterEntries].reverse().map((entry) => (
+          <div className="water-history-title">最近7天每日總量（可直接修改毫升數）</div>
+          {recentWaterEntries.map((entry) => (
             <div className="water-history-row" key={entry.id}>
-              <span>
-                💧 {entry.time} ・ {entry.amountMl} ml
+              <span>💧 {entry.date === todayStr() ? "今天" : entry.date.slice(5)}</span>
+              <span className="water-history-edit">
+                <Pencil size={10} className="food-log-edit-icon" />
+                <input
+                  type="number"
+                  className="cal-num-input-inline water-amount-input"
+                  value={entry.amountMl}
+                  onChange={(e) => onUpdateWaterEntry(entry.id, e.target.value)}
+                  onBlur={() => onPersistWaterEntry(entry.id)}
+                />
+                <span>ml</span>
               </span>
               <button className="icon-btn" onClick={() => onDeleteWaterEntry(entry.id)}>
                 <Trash2 size={14} />
@@ -1036,14 +1165,20 @@ export default function App() {
     gender: "female",
     height: "",
     weight: "",
-    activityLevel: "light",
     symptoms: [],
-    exerciseTypes: { dynamic: [], static: [] },
+    vigorousChecked: false,
+    vigorousMinutes: "",
+    moderateChecked: false,
+    moderateMinutes: "",
+    lightChecked: false,
+    lightMinutes: "",
   });
 
   const [recordForm, setRecordForm] = useState({
     date: todayStr(),
     weight: "",
+    bmi: "",
+    waist: "",
     bodyFat: "",
     visceralFat: "",
     skeletalMuscle: "",
@@ -1067,6 +1202,8 @@ export default function App() {
   const [geminiModel, setGeminiModel] = useState("");
   const [geminiModelInput, setGeminiModelInput] = useState("");
   const [aiProvider, setAiProvider] = useState("gemini");
+  const [calorieOverride, setCalorieOverride] = useState("");
+  const [calorieOverrideInput, setCalorieOverrideInput] = useState("");
 
   useEffect(() => {
     if (loading) return;
@@ -1087,16 +1224,8 @@ export default function App() {
         const p = await window.storage.get("profile", false);
         if (p && p.value) {
           const parsed = JSON.parse(p.value);
-          const withDefaults = {
-            ...parsed,
-            exerciseTypes: {
-              dynamic: [],
-              static: [],
-              ...(parsed.exerciseTypes || {}),
-            },
-          };
-          setProfile(withDefaults);
-          setForm(withDefaults);
+          setProfile(parsed);
+          setForm((f) => ({ ...f, ...parsed }));
         }
       } catch (e) {
         /* no profile saved yet */
@@ -1117,7 +1246,21 @@ export default function App() {
       }
       try {
         const wl = await window.storage.get("water-log", false);
-        if (wl && wl.value) setWaterLog(JSON.parse(wl.value));
+        if (wl && wl.value) {
+          const rawLog = JSON.parse(wl.value);
+          // Migrate any legacy multi-entry-per-day logs into one aggregated
+          // entry per date (older versions logged a separate timestamped
+          // entry per tap of the quick-add buttons).
+          const byDate = {};
+          rawLog.forEach((e) => {
+            byDate[e.date] = (byDate[e.date] || 0) + (Number(e.amountMl) || 0);
+          });
+          const migrated = Object.keys(byDate).map((d) => ({ id: d, date: d, amountMl: byDate[d] }));
+          setWaterLog(migrated);
+          if (migrated.length !== rawLog.length) {
+            window.storage.set("water-log", JSON.stringify(migrated), false).catch(() => {});
+          }
+        }
       } catch (e) {
         /* no water log saved yet */
       }
@@ -1173,6 +1316,15 @@ export default function App() {
       } catch (e) {
         setAiProvider(hasAnthropicKey && !hasGeminiKey ? "anthropic" : "gemini");
       }
+      try {
+        const co = await window.storage.get("calorie-target-override", false);
+        if (co && co.value) {
+          setCalorieOverride(co.value);
+          setCalorieOverrideInput(co.value);
+        }
+      } catch (e) {
+        /* no calorie override saved yet */
+      }
 
       setLoading(false);
     })();
@@ -1189,6 +1341,7 @@ export default function App() {
       age: rawForm.age === "" ? "" : Number(rawForm.age),
       height: rawForm.height === "" ? "" : Number(rawForm.height),
       weight: rawForm.weight === "" ? "" : Number(rawForm.weight),
+      activityLevel: deriveActivityLevel(rawForm),
     };
     const res = await window.storage.set("profile", JSON.stringify(cleaned), false);
     if (res) setProfile(cleaned);
@@ -1231,15 +1384,6 @@ export default function App() {
     });
   }
 
-  function toggleExerciseType(group, id) {
-    setForm((f) => {
-      const current = f.exerciseTypes?.[group] || [];
-      const has = current.includes(id);
-      const next = has ? current.filter((s) => s !== id) : [...current, id];
-      return { ...f, exerciseTypes: { ...f.exerciseTypes, [group]: next } };
-    });
-  }
-
   async function handleAddRecord(e) {
     e.preventDefault();
     if (!recordForm.weight) {
@@ -1249,6 +1393,8 @@ export default function App() {
     const entry = {
       ...recordForm,
       weight: Number(recordForm.weight),
+      bmi: recordForm.bmi === "" ? null : Number(recordForm.bmi),
+      waist: recordForm.waist === "" ? null : Number(recordForm.waist),
       bodyFat: recordForm.bodyFat === "" ? null : Number(recordForm.bodyFat),
       visceralFat: recordForm.visceralFat === "" ? null : Number(recordForm.visceralFat),
       skeletalMuscle: recordForm.skeletalMuscle === "" ? null : Number(recordForm.skeletalMuscle),
@@ -1265,6 +1411,8 @@ export default function App() {
         setRecordForm({
           date: todayStr(),
           weight: "",
+          bmi: "",
+          waist: "",
           bodyFat: "",
           visceralFat: "",
           skeletalMuscle: "",
@@ -1287,6 +1435,21 @@ export default function App() {
     }
   }
 
+  function handleEditRecord(record) {
+    setRecordForm({
+      date: record.date,
+      weight: record.weight ?? "",
+      bmi: record.bmi ?? "",
+      waist: record.waist ?? "",
+      bodyFat: record.bodyFat ?? "",
+      visceralFat: record.visceralFat ?? "",
+      skeletalMuscle: record.skeletalMuscle ?? "",
+      bodyAge: record.bodyAge ?? "",
+      bmr: record.bmr ?? "",
+    });
+    flashSaved(`已載入 ${record.date} 的紀錄，修改後按「更新紀錄」`);
+  }
+
   async function persistFoodLog(next) {
     // keep the log bounded (entries may now include a small photo thumbnail,
     // so a shorter window keeps total storage size reasonable)
@@ -1306,9 +1469,17 @@ export default function App() {
   async function handleAddWater(amountMl) {
     const amount = Math.round(Number(amountMl));
     if (!amount || amount <= 0) return;
-    const entry = { id: `${Date.now()}`, date: todayStr(), time: nowTimeStr(), amountMl: amount };
+    const today = todayStr();
+    const existingIdx = waterLog.findIndex((e) => e.date === today);
+    let next;
+    if (existingIdx >= 0) {
+      next = [...waterLog];
+      next[existingIdx] = { ...next[existingIdx], amountMl: next[existingIdx].amountMl + amount };
+    } else {
+      next = [...waterLog, { id: `${Date.now()}`, date: today, amountMl: amount }];
+    }
     try {
-      await persistWaterLog([...waterLog, entry]);
+      await persistWaterLog(next);
       flashSaved(`已記錄 ${amount} ml`);
     } catch (e) {
       flashSaved("儲存失敗，請再試一次");
@@ -1321,6 +1492,21 @@ export default function App() {
       await persistWaterLog(next);
     } catch (e) {
       flashSaved("刪除失敗，請再試一次");
+    }
+  }
+
+  function handleUpdateWaterEntry(id, rawValue) {
+    setWaterLog((prev) => prev.map((e) => (e.id === id ? { ...e, amountMl: rawValue } : e)));
+  }
+
+  async function handlePersistWaterEntry(id) {
+    const entry = waterLog.find((e) => e.id === id);
+    if (!entry) return;
+    const cleaned = Math.round(Number(entry.amountMl)) || 0;
+    try {
+      await persistWaterLog(waterLog.map((e) => (e.id === id ? { ...e, amountMl: cleaned } : e)));
+    } catch (e) {
+      flashSaved("更新失敗，請再試一次");
     }
   }
 
@@ -1362,6 +1548,21 @@ export default function App() {
       await persistExerciseLog(next);
     } catch (e) {
       flashSaved("刪除失敗，請再試一次");
+    }
+  }
+
+  function handleUpdateExerciseEntry(id, rawValue) {
+    setExerciseLog((prev) => prev.map((e) => (e.id === id ? { ...e, durationMin: rawValue } : e)));
+  }
+
+  async function handlePersistExerciseEntry(id) {
+    const entry = exerciseLog.find((e) => e.id === id);
+    if (!entry) return;
+    const cleaned = Math.round(Number(entry.durationMin)) || 0;
+    try {
+      await persistExerciseLog(exerciseLog.map((e) => (e.id === id ? { ...e, durationMin: cleaned } : e)));
+    } catch (e) {
+      flashSaved("更新失敗，請再試一次");
     }
   }
 
@@ -1508,9 +1709,13 @@ export default function App() {
       gender: "female",
       height: "",
       weight: "",
-      activityLevel: "light",
       symptoms: [],
-      exerciseTypes: { dynamic: [], static: [] },
+      vigorousChecked: false,
+      vigorousMinutes: "",
+      moderateChecked: false,
+      moderateMinutes: "",
+      lightChecked: false,
+      lightMinutes: "",
     });
     setShowReset(false);
     setTab("overview");
@@ -1583,9 +1788,13 @@ export default function App() {
           gender: "female",
           height: "",
           weight: "",
-          activityLevel: "light",
           symptoms: [],
-          exerciseTypes: { dynamic: [], static: [] },
+          vigorousChecked: false,
+          vigorousMinutes: "",
+          moderateChecked: false,
+          moderateMinutes: "",
+          lightChecked: false,
+          lightMinutes: "",
           ...data.profile,
         });
         restoredParts.push("個人資料");
@@ -1700,6 +1909,33 @@ export default function App() {
     } catch (e) {}
   }
 
+  async function handleSaveCalorieOverride(value) {
+    const trimmed = String(value).trim();
+    try {
+      if (!trimmed) {
+        await window.storage.delete("calorie-target-override", false);
+        setCalorieOverride("");
+        setCalorieOverrideInput("");
+        return;
+      }
+      await window.storage.set("calorie-target-override", trimmed, false);
+      setCalorieOverride(trimmed);
+      setCalorieOverrideInput(trimmed);
+      flashSaved("已設定自訂熱量目標");
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
+    }
+  }
+
+  async function handleClearCalorieOverride() {
+    try {
+      await window.storage.delete("calorie-target-override", false);
+    } catch (e) {}
+    setCalorieOverride("");
+    setCalorieOverrideInput("");
+    flashSaved("已改回系統計算值");
+  }
+
   const latestRecord = records.length ? records[records.length - 1] : null;
   const bmiWeight = latestRecord?.weight != null && latestRecord.weight !== "" ? latestRecord.weight : profile?.weight;
   const bmi = useMemo(() => calcBMI(bmiWeight, profile?.height), [bmiWeight, profile]);
@@ -1720,13 +1956,15 @@ export default function App() {
   const chartData = records.map((r) => ({
     date: r.date.slice(5),
     weight: r.weight,
-    bmi: profile?.height && r.weight ? Number(calcBMI(r.weight, profile.height).toFixed(1)) : null,
+    bmi: r.bmi != null ? r.bmi : profile?.height && r.weight ? Number(calcBMI(r.weight, profile.height).toFixed(1)) : null,
+    waist: r.waist != null ? r.waist : null,
     bodyFat: r.bodyFat != null ? r.bodyFat : null,
     skeletalMuscle: r.skeletalMuscle != null ? r.skeletalMuscle : null,
   }));
 
   const calorieBreakdown = useMemo(() => calcDailyCalorieTargetBreakdown(profile, latestRecord), [profile, latestRecord]);
-  const dailyCalorieTarget = calorieBreakdown ? calorieBreakdown.target : null;
+  const calorieOverrideValue = calorieOverride && !isNaN(Number(calorieOverride)) ? Number(calorieOverride) : null;
+  const dailyCalorieTarget = calorieOverrideValue != null ? calorieOverrideValue : calorieBreakdown ? calorieBreakdown.target : null;
   const todayEntries = useMemo(() => foodLog.filter((e) => e.date === todayStr()), [foodLog]);
   const recentFoodEntries = useMemo(() => {
     const cutoff = daysAgoStr(6);
@@ -1748,6 +1986,18 @@ export default function App() {
   const waterBreakdown = useMemo(() => calcWaterTargetBreakdown(profile, latestRecord), [profile, latestRecord]);
   const waterTarget = waterBreakdown ? waterBreakdown.target : null;
   const todayWaterEntries = useMemo(() => waterLog.filter((e) => e.date === todayStr()), [waterLog]);
+  const recentWaterEntries = useMemo(() => {
+    const cutoff = daysAgoStr(6);
+    return waterLog.filter((e) => e.date >= cutoff).sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [waterLog]);
+  const weeklyWaterChartData = useMemo(() => {
+    const days = [];
+    for (let i = 6; i >= 0; i--) days.push(daysAgoStr(i));
+    return days.map((d) => {
+      const entry = waterLog.find((e) => e.date === d);
+      return { date: d.slice(5), total: entry ? Math.round(entry.amountMl) : 0 };
+    });
+  }, [waterLog]);
   const consumedWaterToday = useMemo(
     () => todayWaterEntries.reduce((sum, e) => sum + (Number(e.amountMl) || 0), 0),
     [todayWaterEntries]
@@ -1989,6 +2239,36 @@ export default function App() {
         .segmented{ display:flex; gap:8px; }
         .segmented .chip{ flex:1; text-align:center; }
 
+        .intensity-row{
+          display:flex;
+          align-items:center;
+          gap:10px;
+          margin-bottom:8px;
+        }
+        .intensity-check{
+          display:flex;
+          align-items:center;
+          gap:6px;
+          font-size:13.5px;
+          font-weight:700;
+          color:var(--ink);
+          min-width:56px;
+        }
+        .intensity-check input[type="checkbox"]{
+          width:18px;
+          height:18px;
+          accent-color:var(--brand);
+        }
+        .intensity-minutes{
+          width:80px;
+          border:1px solid var(--line);
+          border-radius:8px;
+          padding:7px 10px;
+          font-size:13px;
+        }
+        .intensity-minutes:disabled{ background:var(--paper); color:var(--ink-soft); }
+        .intensity-unit{ font-size:12px; color:var(--ink-soft); }
+
         .pill{
           display:inline-flex;
           align-items:center;
@@ -2055,6 +2335,18 @@ export default function App() {
           border-top:1px solid var(--line);
         }
         .record-row:first-of-type{ border-top:none; }
+        .record-row-clickable{ cursor:pointer; }
+        .record-row-clickable:active{ background:var(--brand-soft); }
+        .history-month-header{
+          font-size:12px;
+          font-weight:700;
+          color:var(--brand);
+          background:var(--brand-soft);
+          border-radius:8px;
+          padding:5px 10px;
+          margin:12px 0 4px;
+        }
+        .history-month-header:first-child{ margin-top:0; }
         .record-date{ font-weight:700; font-size:13px; }
         .record-meta{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
         .icon-btn{
@@ -2257,20 +2549,44 @@ export default function App() {
           color:var(--ink-soft);
           line-height:1.7;
         }
+        .override-row{
+          display:flex;
+          flex-wrap:wrap;
+          align-items:center;
+          gap:6px;
+          margin-top:8px;
+          padding-top:8px;
+          border-top:1px solid rgba(0,0,0,0.08);
+        }
+        .override-row .btn{ padding:6px 10px; font-size:11.5px; }
 
         .water-history{
           margin-top:10px;
           border-top:1px solid var(--line);
           padding-top:8px;
         }
+        .water-history-title{
+          font-size:11px;
+          font-weight:700;
+          color:var(--ink-soft);
+          margin-bottom:6px;
+        }
         .water-history-row{
           display:flex;
           align-items:center;
           justify-content:space-between;
+          gap:8px;
           font-size:12px;
           color:var(--ink-soft);
           padding:4px 0;
         }
+        .water-history-edit{
+          display:flex;
+          align-items:center;
+          gap:4px;
+          flex-shrink:0;
+        }
+        .water-amount-input{ width:50px; }
 
         .ex-bar-numbers{ margin-bottom:8px; }
         .ex-bar-value{
@@ -2290,6 +2606,26 @@ export default function App() {
           background:var(--brand-soft);
           border-radius:10px;
           padding:8px 10px;
+        }
+
+        .chart-zone-legend{
+          display:flex;
+          flex-wrap:wrap;
+          gap:6px;
+          margin-bottom:6px;
+        }
+        .chart-zone-tag{
+          font-size:10.5px;
+          font-weight:700;
+          color:var(--ink);
+          padding:3px 8px;
+          border-radius:999px;
+        }
+        .chart-zone-explain{
+          font-size:11px;
+          color:var(--ink-soft);
+          line-height:1.5;
+          margin:0 0 8px;
         }
 
         .photo-input-label{
@@ -2480,6 +2816,11 @@ export default function App() {
               latestRecord={latestRecord}
               dailyCalorieTarget={dailyCalorieTarget}
               calorieBreakdown={calorieBreakdown}
+              calorieOverride={calorieOverride}
+              calorieOverrideInput={calorieOverrideInput}
+              setCalorieOverrideInput={setCalorieOverrideInput}
+              onSaveCalorieOverride={handleSaveCalorieOverride}
+              onClearCalorieOverride={handleClearCalorieOverride}
               consumedToday={consumedToday}
               remainingToday={remainingToday}
               calZone={calZone}
@@ -2487,8 +2828,12 @@ export default function App() {
               waterBreakdown={waterBreakdown}
               consumedWaterToday={consumedWaterToday}
               todayWaterEntries={todayWaterEntries}
+              recentWaterEntries={recentWaterEntries}
+              weeklyWaterChartData={weeklyWaterChartData}
               onAddWater={handleAddWater}
               onDeleteWaterEntry={handleDeleteWaterEntry}
+              onUpdateWaterEntry={handleUpdateWaterEntry}
+              onPersistWaterEntry={handlePersistWaterEntry}
               goProfile={() => setTab("profile")}
               goDiet={() => setTab("diet")}
               goExercise={() => setTab("exercise")}
@@ -2501,7 +2846,6 @@ export default function App() {
               form={form}
               setForm={setForm}
               toggleSymptom={toggleSymptom}
-              toggleExerciseType={toggleExerciseType}
               onSave={handleSaveProfile}
               onRequestReset={() => setShowReset(true)}
               hasProfile={!!profile}
@@ -2531,6 +2875,11 @@ export default function App() {
               bmiCat={bmiCat}
               dailyCalorieTarget={dailyCalorieTarget}
               calorieBreakdown={calorieBreakdown}
+              calorieOverride={calorieOverride}
+              calorieOverrideInput={calorieOverrideInput}
+              setCalorieOverrideInput={setCalorieOverrideInput}
+              onSaveCalorieOverride={handleSaveCalorieOverride}
+              onClearCalorieOverride={handleClearCalorieOverride}
               consumedToday={consumedToday}
               remainingToday={remainingToday}
               calZone={calZone}
@@ -2557,6 +2906,8 @@ export default function App() {
               setExerciseForm={setExerciseForm}
               onAddExerciseEntry={handleAddExerciseEntry}
               onDeleteExerciseEntry={handleDeleteExerciseEntry}
+              onUpdateExerciseEntry={handleUpdateExerciseEntry}
+              onPersistExerciseEntry={handlePersistExerciseEntry}
             />
           )}
 
@@ -2568,6 +2919,7 @@ export default function App() {
               setRecordForm={setRecordForm}
               onAddRecord={handleAddRecord}
               onDeleteRecord={handleDeleteRecord}
+              onEditRecord={handleEditRecord}
               chartData={chartData}
             />
           )}
@@ -2680,6 +3032,11 @@ function OverviewTab({
   latestRecord,
   dailyCalorieTarget,
   calorieBreakdown,
+  calorieOverride,
+  calorieOverrideInput,
+  setCalorieOverrideInput,
+  onSaveCalorieOverride,
+  onClearCalorieOverride,
   consumedToday,
   remainingToday,
   calZone,
@@ -2687,8 +3044,12 @@ function OverviewTab({
   waterBreakdown,
   consumedWaterToday,
   todayWaterEntries,
+  recentWaterEntries,
+  weeklyWaterChartData,
   onAddWater,
   onDeleteWaterEntry,
+  onUpdateWaterEntry,
+  onPersistWaterEntry,
   goProfile,
   goDiet,
   goExercise,
@@ -2718,7 +3079,18 @@ function OverviewTab({
 
       <div className="card">
         <div className="section-title">今日熱量</div>
-        <CalorieBar target={dailyCalorieTarget} consumed={consumedToday} remaining={remainingToday} zone={calZone} breakdown={calorieBreakdown} />
+        <CalorieBar
+          target={dailyCalorieTarget}
+          consumed={consumedToday}
+          remaining={remainingToday}
+          zone={calZone}
+          breakdown={calorieBreakdown}
+          override={calorieOverride}
+          overrideInput={calorieOverrideInput}
+          setOverrideInput={setCalorieOverrideInput}
+          onSaveOverride={onSaveCalorieOverride}
+          onClearOverride={onClearCalorieOverride}
+        />
       </div>
 
       <WaterCard
@@ -2726,8 +3098,12 @@ function OverviewTab({
         breakdown={waterBreakdown}
         consumedToday={consumedWaterToday}
         todayWaterEntries={todayWaterEntries}
+        recentWaterEntries={recentWaterEntries}
+        weeklyWaterChartData={weeklyWaterChartData}
         onAddWater={onAddWater}
         onDeleteWaterEntry={onDeleteWaterEntry}
+        onUpdateWaterEntry={onUpdateWaterEntry}
+        onPersistWaterEntry={onPersistWaterEntry}
       />
 
       <div className="stat-grid">
@@ -2777,7 +3153,6 @@ function ProfileTab({
   form,
   setForm,
   toggleSymptom,
-  toggleExerciseType,
   onSave,
   onRequestReset,
   hasProfile,
@@ -2857,48 +3232,70 @@ function ProfileTab({
         </div>
 
         <div className="field">
-          <label>平時活動量</label>
-          <div className="segmented">
-            {ACTIVITY_LEVELS.map((lvl) => (
-              <div
-                key={lvl.id}
-                className={`chip ${form.activityLevel === lvl.id ? "active" : ""}`}
-                onClick={() => setForm((f) => ({ ...f, activityLevel: lvl.id }))}
-              >
-                {lvl.label}
-              </div>
-            ))}
+          <label>平時活動量（每週平均）</label>
+          <div className="intensity-row">
+            <label className="intensity-check">
+              <input
+                type="checkbox"
+                checked={form.vigorousChecked}
+                onChange={(e) => setForm((f) => ({ ...f, vigorousChecked: e.target.checked }))}
+              />
+              強度
+            </label>
+            <input
+              type="number"
+              min="0"
+              className="intensity-minutes"
+              value={form.vigorousMinutes}
+              onChange={(e) => setForm((f) => ({ ...f, vigorousMinutes: e.target.value }))}
+              placeholder="分鐘"
+              disabled={!form.vigorousChecked}
+            />
+            <span className="intensity-unit">分鐘／週</span>
           </div>
-        </div>
-
-        <div className="field">
-          <label>運動：動態項目（可複選）</label>
-          <div className="chip-grid">
-            {EXERCISE_TYPE_OPTIONS.dynamic.map((opt) => (
-              <div
-                key={opt.id}
-                className={`chip ${form.exerciseTypes?.dynamic?.includes(opt.id) ? "active" : ""}`}
-                onClick={() => toggleExerciseType("dynamic", opt.id)}
-              >
-                {opt.label}
-              </div>
-            ))}
+          <div className="intensity-row">
+            <label className="intensity-check">
+              <input
+                type="checkbox"
+                checked={form.moderateChecked}
+                onChange={(e) => setForm((f) => ({ ...f, moderateChecked: e.target.checked }))}
+              />
+              中度
+            </label>
+            <input
+              type="number"
+              min="0"
+              className="intensity-minutes"
+              value={form.moderateMinutes}
+              onChange={(e) => setForm((f) => ({ ...f, moderateMinutes: e.target.value }))}
+              placeholder="分鐘"
+              disabled={!form.moderateChecked}
+            />
+            <span className="intensity-unit">分鐘／週</span>
           </div>
-        </div>
-
-        <div className="field">
-          <label>運動：靜態項目（可複選）</label>
-          <div className="chip-grid">
-            {EXERCISE_TYPE_OPTIONS.static.map((opt) => (
-              <div
-                key={opt.id}
-                className={`chip ${form.exerciseTypes?.static?.includes(opt.id) ? "active" : ""}`}
-                onClick={() => toggleExerciseType("static", opt.id)}
-              >
-                {opt.label}
-              </div>
-            ))}
+          <div className="intensity-row">
+            <label className="intensity-check">
+              <input
+                type="checkbox"
+                checked={form.lightChecked}
+                onChange={(e) => setForm((f) => ({ ...f, lightChecked: e.target.checked }))}
+              />
+              輕度
+            </label>
+            <input
+              type="number"
+              min="0"
+              className="intensity-minutes"
+              value={form.lightMinutes}
+              onChange={(e) => setForm((f) => ({ ...f, lightMinutes: e.target.value }))}
+              placeholder="分鐘"
+              disabled={!form.lightChecked}
+            />
+            <span className="intensity-unit">分鐘／週</span>
           </div>
+          <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "6px 0 0" }}>
+            勾選你平常會做的運動強度，並填每週累積分鐘數，用來估算熱量、飲水量等每日建議值。
+          </p>
         </div>
       </div>
 
@@ -3079,6 +3476,11 @@ function DietTab({
   bmiCat,
   dailyCalorieTarget,
   calorieBreakdown,
+  calorieOverride,
+  calorieOverrideInput,
+  setCalorieOverrideInput,
+  onSaveCalorieOverride,
+  onClearCalorieOverride,
   consumedToday,
   remainingToday,
   calZone,
@@ -3112,7 +3514,18 @@ function DietTab({
     <>
       <div className="card">
         <div className="section-title">今日熱量</div>
-        <CalorieBar target={dailyCalorieTarget} consumed={consumedToday} remaining={remainingToday} zone={calZone} breakdown={calorieBreakdown} />
+        <CalorieBar
+          target={dailyCalorieTarget}
+          consumed={consumedToday}
+          remaining={remainingToday}
+          zone={calZone}
+          breakdown={calorieBreakdown}
+          override={calorieOverride}
+          overrideInput={calorieOverrideInput}
+          setOverrideInput={setCalorieOverrideInput}
+          onSaveOverride={onSaveCalorieOverride}
+          onClearOverride={onClearCalorieOverride}
+        />
       </div>
 
       {weeklyCalorieData.some((d) => d.total > 0) && (
@@ -3200,6 +3613,15 @@ function DietTab({
             <Plus size={15} />
           </button>
         </form>
+
+        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "8px 0 0", lineHeight: 1.6 }}>
+          不確定熱量多少？可以查{" "}
+          <a href="https://consumer.fda.gov.tw/Food/TFND.aspx?nodeID=178" target="_blank" rel="noreferrer">
+            衛福部食品藥物管理署「食品營養成分資料庫」
+          </a>
+          ，輸入食品分類或關鍵字即可查到官方標準熱量與營養成分，比 AI 拍照估算更準確
+          （包裝食品也建議直接看包裝上的營養標示）。
+        </p>
 
         <div className="disclaimer disclaimer-compact" style={{ marginTop: "12px" }}>
           <Info size={14} />
@@ -3293,6 +3715,8 @@ function ExerciseTab({
   setExerciseForm,
   onAddExerciseEntry,
   onDeleteExerciseEntry,
+  onUpdateExerciseEntry,
+  onPersistExerciseEntry,
 }) {
   const pctForBar = Math.min(feedback.pct, 100);
 
@@ -3419,14 +3843,27 @@ function ExerciseTab({
 
       <div className="card">
         <div className="section-title">本週運動紀錄</div>
+        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
+          點分鐘數旁的 ✏️ 圖示可以直接修改時間。
+        </p>
         {thisWeekEntries.length === 0 && <p className="food-log-empty">這週還沒有運動紀錄，記錄第一筆吧。</p>}
         {thisWeekEntries.map((entry) => (
           <div className="record-row" key={entry.id}>
             <div>
               <div className="record-date">
-                {entry.date.slice(5)}　{entry.activityLabel}
+                {entry.date === todayStr() ? "今天" : entry.date.slice(5)}　{entry.activityLabel}
               </div>
-              <div className="record-meta">{entry.durationMin} 分鐘</div>
+              <div className="record-meta food-log-cal-row">
+                <Pencil size={11} className="food-log-edit-icon" />
+                <input
+                  type="number"
+                  className="cal-num-input-inline"
+                  value={entry.durationMin}
+                  onChange={(e) => onUpdateExerciseEntry(entry.id, e.target.value)}
+                  onBlur={() => onPersistExerciseEntry(entry.id)}
+                />
+                <span>分鐘</span>
+              </div>
             </div>
             <button className="icon-btn" onClick={() => onDeleteExerciseEntry(entry.id)}>
               <Trash2 size={16} />
@@ -3450,13 +3887,65 @@ function ExerciseTab({
   );
 }
 
-function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord, onDeleteRecord, chartData }) {
+function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord, onDeleteRecord, onEditRecord, chartData }) {
+  const [showFullHistory, setShowFullHistory] = useState(false);
   const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const isEditing = records.some((r) => r.date === recordForm.date);
+  const recentThree = sorted.slice(0, 3);
+
+  function monthLabel(key) {
+    const [y, m] = key.split("-");
+    return `${y}年${parseInt(m, 10)}月`;
+  }
+
+  function renderRecordRow(r) {
+    const rBmi = r.bmi != null ? r.bmi : profile?.height ? calcBMI(r.weight, profile.height) : null;
+    return (
+      <div className="record-row record-row-clickable" key={r.date} onClick={() => onEditRecord(r)}>
+        <div>
+          <div className="record-date">{r.date}</div>
+          <div className="record-meta">
+            體重 {fmtNum(r.weight)}kg
+            {rBmi != null ? ` ・ BMI ${fmtNum(rBmi)}` : ""}
+            {r.waist != null ? ` ・ 腰圍 ${fmtNum(r.waist)}cm` : ""}
+            {r.bodyFat != null ? ` ・ 體脂 ${fmtNum(r.bodyFat)}%` : ""}
+            {r.visceralFat != null ? ` ・ 內臟脂肪 ${fmtNum(r.visceralFat, 0)}` : ""}
+          </div>
+          <div className="record-meta">
+            {r.skeletalMuscle != null ? `骨骼肌 ${fmtNum(r.skeletalMuscle)}% ・ ` : ""}
+            {r.bodyAge != null ? `體年齡 ${fmtNum(r.bodyAge, 0)} ・ ` : ""}
+            {r.bmr != null ? `BMR ${fmtNum(r.bmr, 0)}kcal` : ""}
+          </div>
+        </div>
+        <button
+          className="icon-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteRecord(r.date);
+          }}
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  let monthGroups = null;
+  if (showFullHistory) {
+    monthGroups = {};
+    sorted.forEach((r) => {
+      const key = r.date.slice(0, 7);
+      (monthGroups[key] = monthGroups[key] || []).push(r);
+    });
+  }
 
   return (
     <>
       <div className="card">
-        <div className="section-title">新增今日紀錄</div>
+        <div className="section-title">{isEditing ? "編輯紀錄" : "新增今日紀錄"}</div>
+        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
+          點下方「歷史紀錄」裡的任一筆，就會載入這裡讓你修改。
+        </p>
         <form onSubmit={onAddRecord}>
           <div className="field">
             <label>日期</label>
@@ -3474,8 +3963,18 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
               />
             </div>
             <div className="field">
+              <label>BMI</label>
+              <input type="number" step="0.1" value={recordForm.bmi} onChange={(e) => setRecordForm({ ...recordForm, bmi: e.target.value })} />
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
               <label>體脂肪（%）</label>
               <input type="number" step="0.1" value={recordForm.bodyFat} onChange={(e) => setRecordForm({ ...recordForm, bodyFat: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>腰圍（cm）</label>
+              <input type="number" step="0.1" value={recordForm.waist} onChange={(e) => setRecordForm({ ...recordForm, waist: e.target.value })} />
             </div>
           </div>
           <div className="field-row">
@@ -3504,43 +4003,74 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
             </div>
           </div>
           <button type="submit" className="btn btn-primary btn-block">
-            <Plus size={15} /> 儲存紀錄
+            <Plus size={15} /> {isEditing ? "更新紀錄" : "儲存紀錄"}
           </button>
         </form>
       </div>
 
       <MetricTrendChart title="體重趨勢" dataKey="weight" unit="kg" color="#2F6F5E" chartData={chartData} />
-      <MetricTrendChart title="BMI 趨勢" dataKey="bmi" unit="" color="#B8863A" chartData={chartData} />
-      <MetricTrendChart title="體脂肪率趨勢" dataKey="bodyFat" unit="%" color="#C63C34" chartData={chartData} />
-      <MetricTrendChart title="骨骼肌率趨勢" dataKey="skeletalMuscle" unit="%" color="#2F6F5E" chartData={chartData} />
+      <MetricTrendChart
+        title="BMI 趨勢"
+        dataKey="bmi"
+        unit=""
+        color="#B8863A"
+        chartData={chartData}
+        zones={BMI_ZONES}
+        zoneExplain="背景顏色代表衛福部 BMI 分類區間：黃色過輕／過重、綠色正常、紅色肥胖，曲線落在綠色區塊代表體重在健康範圍內。"
+      />
+      <MetricTrendChart
+        title="體脂肪率趨勢"
+        dataKey="bodyFat"
+        unit="%"
+        color="#C63C34"
+        chartData={chartData}
+        zones={bodyFatZones(profile?.gender)}
+        zoneExplain="背景顏色為常見醫療衛教標準：黃色偏低/偏高、綠色正常範圍（男性15-25%、女性20-30%）。"
+      />
+      <MetricTrendChart
+        title="骨骼肌率趨勢"
+        dataKey="skeletalMuscle"
+        unit="%"
+        color="#2F6F5E"
+        chartData={chartData}
+        zones={skeletalMuscleZones(profile?.gender)}
+        zoneExplain="背景顏色為一般參考範圍：黃色偏低、綠色正常（男性32-34%、女性28-30%）、藍色偏高（肌肉量較多）。"
+      />
+
+      <MetricTrendChart
+        title="腰圍趨勢"
+        dataKey="waist"
+        unit="cm"
+        color="#8A5A3B"
+        chartData={chartData}
+        zones={waistZones(profile?.gender)}
+        zoneExplain="背景顏色代表衛福部代謝症候群腰圍標準：綠色正常、紅色腰圍過大（男性≥90cm、女性≥80cm，代謝症候群風險較高）。"
+      />
 
       <div className="card">
         <div className="section-title">歷史紀錄</div>
+        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
+          點任一筆可載入上方表單編輯。{!showFullHistory && "預設只顯示最新3天，"}
+        </p>
         {sorted.length === 0 && <p style={{ fontSize: "12.5px", color: "var(--ink-soft)" }}>尚無紀錄，新增第一筆體態資料吧。</p>}
-        {sorted.map((r) => {
-          const rBmi = profile?.height ? calcBMI(r.weight, profile.height) : null;
-          return (
-            <div className="record-row" key={r.date}>
-              <div>
-                <div className="record-date">{r.date}</div>
-                <div className="record-meta">
-                  體重 {fmtNum(r.weight)}kg
-                  {rBmi ? ` ・ BMI ${fmtNum(rBmi)}` : ""}
-                  {r.bodyFat != null ? ` ・ 體脂 ${fmtNum(r.bodyFat)}%` : ""}
-                  {r.visceralFat != null ? ` ・ 內臟脂肪 ${fmtNum(r.visceralFat, 0)}` : ""}
-                </div>
-                <div className="record-meta">
-                  {r.skeletalMuscle != null ? `骨骼肌 ${fmtNum(r.skeletalMuscle)}% ・ ` : ""}
-                  {r.bodyAge != null ? `體年齡 ${fmtNum(r.bodyAge, 0)} ・ ` : ""}
-                  {r.bmr != null ? `BMR ${fmtNum(r.bmr, 0)}kcal` : ""}
-                </div>
+
+        {!showFullHistory && recentThree.map(renderRecordRow)}
+
+        {showFullHistory &&
+          Object.keys(monthGroups).map((key) => (
+            <div key={key}>
+              <div className="history-month-header">
+                {monthLabel(key)}（{monthGroups[key].length}筆）
               </div>
-              <button className="icon-btn" onClick={() => onDeleteRecord(r.date)}>
-                <Trash2 size={16} />
-              </button>
+              {monthGroups[key].map(renderRecordRow)}
             </div>
-          );
-        })}
+          ))}
+
+        {sorted.length > 3 && (
+          <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: "10px" }} onClick={() => setShowFullHistory((v) => !v)}>
+            {showFullHistory ? "收合紀錄" : `展開全部歷史紀錄（共 ${sorted.length} 筆，依月份歸納）`}
+          </button>
+        )}
       </div>
 
       <Disclaimer />
