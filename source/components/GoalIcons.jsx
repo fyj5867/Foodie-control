@@ -27,7 +27,7 @@ const SPARKLE = "#FFC94A";
  * until the face reads — the same reason the water mascot's fill is a light
  * blue rather than its stroke colour.
  */
-const BOWL_BODY = "#D2A05C";
+const BOWL_BODY = "#E58A80";
 const SHOE_BODY = "#79AE93";
 const SHOE_SOLE = "#3E7B62";
 const DROP_BODY = "#6FB6E0";

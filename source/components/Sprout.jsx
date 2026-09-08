@@ -1,24 +1,23 @@
 /**
- * The sprout — a bean with a face.
+ * The sprout — the plant itself has the face.
  *
- * Drawn as a 豆苗: a bean at the base, a slender stem, and rounded paired
- * leaves. Two decisions carry the whole design:
+ * The face always sits on whatever the plant's main mass is at that stage: on
+ * the bean while it is a bean, on the canopy once it is a tree. An earlier
+ * version kept a face-bearing bean at the base for every stage, which left a
+ * full tree standing over a separate little creature — two characters instead
+ * of one growing up. The water mascot works because the bottle has the face;
+ * the same rule applies here.
  *
- * 1. **The bean never changes size.** It is the character; what grows is the
- *    stem and the number of leaf pairs. So progress is unmistakable at a
- *    glance, and the face stays equally readable at every stage. An earlier
- *    version grew the body instead, which made the face swell and the stages
- *    hard to tell apart.
- * 2. **Leaves are plain rounded ellipses, not botanical shapes.** One pair,
- *    then a bigger pair, then two, then three — the change between stages is
- *    something you can count.
+ * So the stages read as one thing becoming another:
+ *   種子 bean → 冒芽 · 小苗 · 幼苗 sprout with leaf pairs → 小樹 tree → 開花
  *
- * The face follows the water mascot exactly (#1E2A22 ink, #F6A6A6 cheeks,
- * #FFC94A sparkles, closed arcs when sleepy) so the two characters read as
- * coming from the same app. Those colours are literal rather than themed for
- * the same reason the water bottle is always blue: it is a character, not a
- * surface. Vitality changes the face, the tint and the leaf angle — never the
- * size — so mood and progress never get confused for each other.
+ * Face colours follow the water mascot exactly (#1E2A22 ink, #F6A6A6 cheeks,
+ * #FFC94A sparkles), so the two characters look drawn by one hand. Those are
+ * literal rather than themed for the same reason the water bottle is always
+ * blue: it is a character, not a surface.
+ *
+ * Vitality changes the face, the tint and the leaf angle — never the size —
+ * so mood and progress never get mistaken for each other.
  */
 
 import React from "react";
@@ -27,8 +26,8 @@ const INK = "#1E2A22";
 const CHEEK = "#F6A6A6";
 const SPARKLE = "#FFC94A";
 
-/** The bean, fixed at every stage. Sits on the soil line at y=168. */
-const BEAN = { cx: 100, cy: 146, rx: 25, ry: 21 };
+/** The soil line every stage stands on. */
+const GROUND = 170;
 
 /**
  * Everything vitality changes. `droop` is added to each leaf's angle, so a
@@ -46,86 +45,97 @@ const MOODS = {
 };
 
 /**
- * Stage geometry: how tall the stem is and which leaf pairs exist.
- * Each pair is {y, rx, ry, angle} — angle in degrees, mirrored on the right.
- * Counting pairs is the progress cue, so keep them visually distinct.
- */
-/*
- * Each stage carries its own viewBox.
+ * Stage geometry.
  *
- * A single frame sized for the tallest stage left the early ones floating in
- * empty space — a bean at the bottom of a mostly blank square. Framing each
- * stage to its own content keeps the character filling the card at every
- * stage, which also makes it read as bigger and friendlier when small.
+ * `body` is the bean (stages 1-4); `canopy` is the crown (stages 5-6). Each
+ * stage has exactly one of them, and `face` names which one the face sits on
+ * and how big the features should be for that mass.
  *
- * All six share the same 1.05 aspect ratio, so the card does not jump in
- * height when a stage advances.
+ * Each stage also carries its own `view`. A single frame sized for the tallest
+ * stage left the early ones as a bean floating in a mostly blank square. All
+ * six share a 1.05 aspect ratio so the card does not jump in height when a
+ * stage advances.
  */
 const STAGES_GEO = {
-  seed: { stem: null, pairs: [], view: "61.5 117 77 73" },
+  seed: {
+    body: { rx: 24, ry: 20 },
+    face: { on: "body", scale: 0.95 },
+    view: "64.3 122 71.4 68",
+  },
   sprout: {
-    stem: { to: 124, width: 4 },
-    pairs: [{ y: 126, rx: 12, ry: 8, angle: -40 }],
-    view: "51 97 98 93",
+    body: { rx: 25, ry: 21 },
+    stem: { to: 122, width: 4 },
+    pairs: [{ y: 124, rx: 12, ry: 8, angle: -40 }],
+    face: { on: "body", scale: 1 },
+    view: "51.2 97 97.6 93",
   },
   seedling: {
-    stem: { to: 106, width: 4.5 },
-    pairs: [{ y: 108, rx: 17, ry: 10, angle: -38 }],
-    view: "39 74 122 116",
+    body: { rx: 27, ry: 23 },
+    stem: { to: 104, width: 4.5 },
+    pairs: [{ y: 106, rx: 17, ry: 10, angle: -38 }],
+    face: { on: "body", scale: 1.05 },
+    view: "38 72 124 118",
   },
   sapling: {
-    stem: { to: 84, width: 5 },
+    body: { rx: 29, ry: 25 },
+    stem: { to: 82, width: 5 },
     pairs: [
-      { y: 120, rx: 14, ry: 9, angle: -36 },
-      { y: 86, rx: 18, ry: 11, angle: -40 },
+      { y: 118, rx: 14, ry: 9, angle: -36 },
+      { y: 84, rx: 18, ry: 11, angle: -40 },
     ],
-    view: "26.5 50 147 140",
+    face: { on: "body", scale: 1.1 },
+    view: "25 47 150 143",
   },
-  /* The last two stages actually become a tree rather than growing one more
-   * pair of leaves. They are named 小樹 and 開花, and a stage that only adds
-   * a leaf pair does not deliver on either name — the transformation is what
-   * makes reaching them feel like arriving somewhere. */
+  /* From here the bean is gone: it has become the trunk, and the crown takes
+   * the face. That handover is what makes 小樹 feel like arriving somewhere
+   * rather than gaining one more leaf. */
   tree: {
-    trunk: { to: 104, width: 9 },
-    pairs: [{ y: 128, rx: 13, ry: 9, angle: -34 }],
+    trunk: { to: 106, width: 10 },
+    pairs: [{ y: 130, rx: 13, ry: 9, angle: -34 }],
     canopy: {
       back: [
-        { cx: 82, cy: 88, r: 23 },
-        { cx: 118, cy: 88, r: 23 },
+        { cx: 78, cy: 92, r: 24 },
+        { cx: 122, cy: 92, r: 24 },
       ],
       front: [
-        { cx: 100, cy: 74, r: 28 },
-        { cx: 79, cy: 80, r: 21 },
-        { cx: 121, cy: 80, r: 21 },
+        { cx: 100, cy: 74, r: 34 },
+        { cx: 74, cy: 84, r: 24 },
+        { cx: 126, cy: 84, r: 24 },
       ],
     },
-    view: "20 38 160 152",
+    face: { on: "canopy", cy: 80, scale: 1.35 },
+    view: "18 34 164 156",
   },
   bloom: {
-    trunk: { to: 100, width: 9.5 },
-    pairs: [{ y: 128, rx: 13, ry: 9, angle: -34 }],
+    trunk: { to: 102, width: 10.5 },
+    pairs: [{ y: 130, rx: 13, ry: 9, angle: -34 }],
     canopy: {
       back: [
-        { cx: 80, cy: 86, r: 25 },
-        { cx: 120, cy: 86, r: 25 },
+        { cx: 76, cy: 90, r: 26 },
+        { cx: 124, cy: 90, r: 26 },
       ],
       front: [
-        { cx: 100, cy: 70, r: 30 },
-        { cx: 77, cy: 77, r: 23 },
-        { cx: 123, cy: 77, r: 23 },
+        { cx: 100, cy: 70, r: 36 },
+        { cx: 72, cy: 82, r: 26 },
+        { cx: 128, cy: 82, r: 26 },
       ],
     },
-    view: "16 30 168 160",
+    face: { on: "canopy", cy: 76, scale: 1.4 },
     flowers: [
-      { x: 100, y: 48, s: 0.62 },
-      { x: 76, y: 62, s: 0.55 },
-      { x: 124, y: 63, s: 0.55 },
-      { x: 66, y: 88, s: 0.5 },
-      { x: 134, y: 88, s: 0.5 },
-      { x: 100, y: 86, s: 0.52 },
+      { x: 100, y: 36, s: 0.6 },
+      { x: 70, y: 54, s: 0.54 },
+      { x: 130, y: 54, s: 0.54 },
+      { x: 54, y: 84, s: 0.5 },
+      { x: 146, y: 84, s: 0.5 },
     ],
+    view: "15 28 170 162",
   },
 };
+
+/** Where the body's centre sits so it rests on the soil. */
+function bodyCy(body) {
+  return GROUND - body.ry;
+}
 
 /**
  * One leaflet.
@@ -135,14 +145,14 @@ const STAGES_GEO = {
  * a disc. Drawn once at unit length pointing right, then scaled — so tuning
  * the silhouette is one path, not six sets of numbers.
  *
- * The gloss highlight is what does most of the charm work; without it the
- * leaves go flat and plasticky.
+ * The gloss highlight does most of the charm work; without it the leaves go
+ * flat and plasticky.
  */
-const LEAFLET = "M0 0 C 0.10 -0.62, 0.48 -0.86, 0.74 -0.62 C 0.95 -0.42, 1.02 -0.14, 1 0 C 1.02 0.14, 0.95 0.42, 0.74 0.62 C 0.48 0.86, 0.10 0.62, 0 0 Z";
+const LEAFLET =
+  "M0 0 C 0.10 -0.62, 0.48 -0.86, 0.74 -0.62 C 0.95 -0.42, 1.02 -0.14, 1 0 C 1.02 0.14, 0.95 0.42, 0.74 0.62 C 0.48 0.86, 0.10 0.62, 0 0 Z";
 const LEAFLET_GLOSS = "M0.20 -0.20 C 0.34 -0.50, 0.56 -0.58, 0.70 -0.44 C 0.54 -0.34, 0.34 -0.18, 0.20 -0.20 Z";
 
 function Leaflet({ x, y, rx, ry, angle, fill }) {
-  // Unit path is 1 long and ±1 tall, so scale y by ry and x by leaf length.
   const len = rx * 1.9;
   return (
     <g transform={`translate(${x},${y}) rotate(${angle}) scale(${len},${ry})`}>
@@ -151,12 +161,25 @@ function Leaflet({ x, y, rx, ry, angle, fill }) {
       <path
         d="M0.06 0 Q 0.5 0.06 0.9 0"
         stroke="var(--leaf-dk)"
-        strokeWidth={1.4 / Math.max(len, ry)}
+        strokeWidth="1.4"
         fill="none"
         opacity="0.28"
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
       />
+    </g>
+  );
+}
+
+/** A pair, mirrored about the stem. */
+function LeafPair({ pair, droop, fill }) {
+  const spec = { x: 100, y: pair.y, rx: pair.rx, ry: pair.ry, angle: pair.angle + droop, fill };
+  return (
+    <g>
+      <g transform="scale(-1,1) translate(-200,0)">
+        <Leaflet {...spec} />
+      </g>
+      <Leaflet {...spec} />
     </g>
   );
 }
@@ -175,25 +198,26 @@ function Flower({ x, y, s }) {
 }
 
 /**
- * The face on the bean. Fixed size, because the bean is.
+ * The face. Four expressions, one per number of daily conditions met — the
+ * same four moods the water mascot uses.
  *
- * Four expressions, one per number of daily conditions met — the same four
- * moods the water mascot uses.
+ * @param cx,cy centre of the mass it sits on
+ * @param scale features scale with that mass, so they stay in proportion
+ *              whether the face is on a bean or on a crown
  */
-function Face({ mood }) {
-  const { cx, cy } = BEAN;
-  const eyeR = 4;
-  const eyeDx = 8.5;
-  const eyeY = cy - 1;
-  const mouthY = eyeY + 9;
-  const stroke = 2.4;
+function Face({ cx, cy, scale, mood }) {
+  const eyeR = 4 * scale;
+  const eyeDx = 8.5 * scale;
+  const eyeY = cy - 1 * scale;
+  const mouthY = eyeY + 9 * scale;
+  const stroke = 2.4 * scale;
 
   if (mood === "sleepy") {
     return (
       <g fill="none" stroke={INK} strokeWidth={stroke} strokeLinecap="round">
-        <path d={`M${cx - eyeDx - 4} ${eyeY} Q${cx - eyeDx} ${eyeY - 5} ${cx - eyeDx + 4} ${eyeY}`} />
-        <path d={`M${cx + eyeDx - 4} ${eyeY} Q${cx + eyeDx} ${eyeY - 5} ${cx + eyeDx + 4} ${eyeY}`} />
-        <path d={`M${cx - 3.5} ${mouthY} L${cx + 3.5} ${mouthY}`} />
+        <path d={`M${cx - eyeDx - 4 * scale} ${eyeY} Q${cx - eyeDx} ${eyeY - 5 * scale} ${cx - eyeDx + 4 * scale} ${eyeY}`} />
+        <path d={`M${cx + eyeDx - 4 * scale} ${eyeY} Q${cx + eyeDx} ${eyeY - 5 * scale} ${cx + eyeDx + 4 * scale} ${eyeY}`} />
+        <path d={`M${cx - 3.5 * scale} ${mouthY} L${cx + 3.5 * scale} ${mouthY}`} />
       </g>
     );
   }
@@ -204,8 +228,8 @@ function Face({ mood }) {
     <g>
       {cheeky ? (
         <>
-          <circle cx={cx - 16} cy={eyeY + 4.5} r={mood === "party" ? 5 : 4.2} fill={CHEEK} opacity="0.75" />
-          <circle cx={cx + 16} cy={eyeY + 4.5} r={mood === "party" ? 5 : 4.2} fill={CHEEK} opacity="0.75" />
+          <circle cx={cx - 16 * scale} cy={eyeY + 4.5 * scale} r={(mood === "party" ? 5 : 4.2) * scale} fill={CHEEK} opacity="0.85" />
+          <circle cx={cx + 16 * scale} cy={eyeY + 4.5 * scale} r={(mood === "party" ? 5 : 4.2) * scale} fill={CHEEK} opacity="0.85" />
         </>
       ) : null}
 
@@ -214,7 +238,7 @@ function Face({ mood }) {
 
       {mood === "neutral" ? (
         <path
-          d={`M${cx - 5} ${mouthY} L${cx + 5} ${mouthY}`}
+          d={`M${cx - 5 * scale} ${mouthY} L${cx + 5 * scale} ${mouthY}`}
           fill="none"
           stroke={INK}
           strokeWidth={stroke}
@@ -222,7 +246,9 @@ function Face({ mood }) {
         />
       ) : (
         <path
-          d={`M${cx - 6} ${mouthY - 2} Q${cx} ${mouthY + (mood === "party" ? 7 : 5)} ${cx + 6} ${mouthY - 2}`}
+          d={`M${cx - 6 * scale} ${mouthY - 2 * scale} Q${cx} ${mouthY + (mood === "party" ? 7 : 5) * scale} ${
+            cx + 6 * scale
+          } ${mouthY - 2 * scale}`}
           fill="none"
           stroke={INK}
           strokeWidth={stroke * 1.15}
@@ -242,81 +268,84 @@ function star(x, y, s) {
 
 /**
  * Sparkles positioned from the frame, not from fixed coordinates — each stage
- * has its own viewBox now, and fixed points would fall outside the small ones.
+ * has its own viewBox, and fixed points would fall outside the small ones.
  */
 function Sparkles({ vx, vy, vw, vh }) {
   const s = vh / 42;
   return (
     <g fill={SPARKLE}>
-      <path d={star(vx + vw * 0.12, vy + vh * 0.22, s)} />
-      <path d={star(vx + vw * 0.9, vy + vh * 0.12, s * 1.15)} />
-      <path d={star(vx + vw * 0.86, vy + vh * 0.42, s * 0.8)} />
+      <path d={star(vx + vw * 0.11, vy + vh * 0.24, s)} />
+      <path d={star(vx + vw * 0.91, vy + vh * 0.13, s * 1.15)} />
+      <path d={star(vx + vw * 0.87, vy + vh * 0.44, s * 0.8)} />
     </g>
   );
 }
 
 /**
- * The sprout as a bare <g>, for dropping into a larger scene such as the
- * garden. Drawn around x=100 with the bean resting on the soil line at y=168.
+ * The plant as a bare <g>, for dropping into a larger scene such as the
+ * garden. Drawn around x=100 standing on the soil line at y=170.
  */
 export function PlantBody({ stage = "sapling", vitality = "fair", leafTint }) {
   const geo = STAGES_GEO[stage] || STAGES_GEO.sapling;
   const mood = MOODS[vitality] || MOODS.fair;
   const leafFill = leafTint || mood.leaf;
 
-  const stalk = geo.trunk || geo.stem;
+  const cy = geo.body ? bodyCy(geo.body) : null;
+  const stalk = geo.trunk ? { ...geo.trunk, from: GROUND } : geo.stem ? { ...geo.stem, from: cy } : null;
+
+  const faceAt = geo.face.on === "canopy" ? { cx: 100, cy: geo.face.cy } : { cx: 100, cy };
 
   return (
     <g>
       {stalk ? (
         <path
-          d={`M100 ${BEAN.cy} L100 ${stalk.to}`}
+          d={`M100 ${stalk.from} L100 ${stalk.to}`}
           stroke={geo.trunk ? "var(--soil)" : mood.stem}
           strokeWidth={stalk.width}
           strokeLinecap="round"
         />
       ) : null}
 
+      {geo.pairs ? geo.pairs.map((pair, i) => <LeafPair key={`p${i}`} pair={pair} droop={mood.droop} fill={leafFill} />) : null}
+
       {geo.canopy ? (
         <g>
           {geo.canopy.back.map((c, i) => (
-            <circle key={`cb${i}`} cx={c.cx} cy={c.cy} r={c.r} fill="var(--leaf-dk)" opacity={mood.face === "sleepy" ? 0.55 : 1} />
+            <circle
+              key={`cb${i}`}
+              cx={c.cx}
+              cy={c.cy}
+              r={c.r}
+              fill="var(--leaf-dk)"
+              opacity={mood.face === "sleepy" ? 0.55 : 1}
+            />
           ))}
           {geo.canopy.front.map((c, i) => (
             <circle key={`cf${i}`} cx={c.cx} cy={c.cy} r={c.r} fill={leafFill} />
           ))}
-          {/* One gloss on the crown, same trick as the leaflets. */}
-          <ellipse cx="88" cy={geo.canopy.front[0].cy - 12} rx="16" ry="8" fill="#FFFFFF" opacity="0.22" />
+          <ellipse cx="80" cy={geo.canopy.front[0].cy - 16} rx="17" ry="9" fill="#FFFFFF" opacity="0.2" />
         </g>
       ) : null}
 
-      {geo.pairs.map((pair, i) => (
-        <g key={`p${i}`}>
-          <g transform="scale(-1,1) translate(-200,0)">
-            <Leaflet x={100} y={pair.y} rx={pair.rx} ry={pair.ry} angle={pair.angle + mood.droop} fill={leafFill} />
-          </g>
-          <Leaflet x={100} y={pair.y} rx={pair.rx} ry={pair.ry} angle={pair.angle + mood.droop} fill={leafFill} />
-        </g>
-      ))}
+      {geo.body ? (
+        <>
+          <ellipse cx="100" cy={cy} rx={geo.body.rx} ry={geo.body.ry} fill={mood.bean} />
+          <ellipse
+            cx="96"
+            cy={cy - geo.body.ry * 0.4}
+            rx={geo.body.rx * 0.5}
+            ry={geo.body.ry * 0.3}
+            fill="#FFFFFF"
+            opacity="0.35"
+          />
+        </>
+      ) : null}
+
+      <Face cx={faceAt.cx} cy={faceAt.cy} scale={geo.face.scale} mood={mood.face} />
 
       {(geo.flowers || []).map((f, i) => (
         <Flower key={`fl${i}`} {...f} />
       ))}
-
-      {/* The bean last, so the stem tucks behind it, and it carries the face.
-          `leafTint` deliberately does NOT apply here: the garden tints leaves
-          to vary its plants, and letting that reach the bean turned every
-          finished plant's face green. */}
-      <ellipse cx={BEAN.cx} cy={BEAN.cy} rx={BEAN.rx} ry={BEAN.ry} fill={mood.bean} />
-      <ellipse
-        cx={BEAN.cx - 4}
-        cy={BEAN.cy - BEAN.ry * 0.4}
-        rx={BEAN.rx * 0.5}
-        ry={BEAN.ry * 0.3}
-        fill="#FFFFFF"
-        opacity="0.35"
-      />
-      <Face mood={mood.face} />
     </g>
   );
 }
@@ -340,12 +369,9 @@ export default function Sprout({
   const geo = STAGES_GEO[stage] || STAGES_GEO.sapling;
   const mood = MOODS[vitality] || MOODS.fair;
 
-  // The glow follows the frame rather than sitting at a fixed point, so it
-  // stays behind the character at every stage instead of drifting off-box.
+  // The glow follows the frame rather than a fixed point, so it stays behind
+  // the character at every stage instead of drifting out of the box.
   const [vx, vy, vw, vh] = geo.view.split(" ").map(Number);
-  const glowCx = vx + vw / 2;
-  const glowCy = vy + vh * 0.46;
-  const glowR = vh * 0.44;
 
   return (
     <svg
@@ -355,12 +381,14 @@ export default function Sprout({
       aria-label={title || "豆苗"}
       style={{ display: "block", width: "100%", height: "auto" }}
     >
-      {glow ? <circle cx={glowCx} cy={glowCy} r={glowR} fill="var(--glow)" opacity="0.55" /> : null}
+      {glow ? (
+        <circle cx={vx + vw / 2} cy={vy + vh * 0.46} r={vh * 0.44} fill="var(--glow)" opacity="0.55" />
+      ) : null}
 
       {ground ? (
         <>
-          <ellipse cx="100" cy="174" rx="56" ry="12" fill="var(--soil-dk)" />
-          <ellipse cx="100" cy="170" rx="56" ry="11" fill="var(--soil)" />
+          <ellipse cx="100" cy={GROUND + 4} rx="56" ry="12" fill="var(--soil-dk)" />
+          <ellipse cx="100" cy={GROUND} rx="56" ry="11" fill="var(--soil)" />
         </>
       ) : null}
 
@@ -371,4 +399,4 @@ export default function Sprout({
   );
 }
 
-export { STAGES_GEO, MOODS, BEAN };
+export { STAGES_GEO, MOODS, GROUND };

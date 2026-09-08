@@ -16,8 +16,9 @@ const VIEW_W = 358;
 const VIEW_H = 300;
 
 /** Where the still-growing tree stands: front-right, clear of the rows behind. */
-/** Where PlantBody puts the plant's base inside its own drawing space. */
-const PLANT_BASE = 167;
+/** Where PlantBody stands the plant inside its own drawing space — the soil
+ * line, since stages 5-6 have no bean at the base at all. */
+const PLANT_BASE = 170;
 
 const GROWING_X = 302;
 const GROWING_Y = 278;

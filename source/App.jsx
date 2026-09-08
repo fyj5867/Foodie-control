@@ -1756,7 +1756,8 @@ export default function App() {
           --surface-3:#DDE5DD;
 
           /* The three daily conditions keep one colour each, everywhere. */
-          --cal:#B8863A;
+          --cal:#D2554B;
+          --cal-over:#9E2F26;
           --move:#2F6F5E;
           --water:#3E7EA6;
         }
@@ -1954,7 +1955,7 @@ export default function App() {
           background:var(--surface-3); overflow:hidden;
         }
         .diary-bar i{ display:block; height:100%; border-radius:3px; background:var(--amber); }
-        .diary-bar i.over{ background:var(--red); }
+        .diary-bar i.over{ background:var(--cal-over); }
 
         .diary-post{ margin-bottom:16px; }
         .diary-post:last-child{ margin-bottom:4px; }
