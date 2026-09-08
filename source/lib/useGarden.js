@@ -76,6 +76,14 @@ export default function useGarden({ foodLog, waterLog, exerciseLog, calorieTarge
     if (!loaded || !ready) return;
     const verdict = toSummary(today);
     const stored = summaries.find((s) => s.date === verdict.date);
+
+    /* A day with nothing recorded and no target to judge against is not a
+     * failed day — it is a day that has not started. Writing it would stamp
+     * "all three missed" on every day before the profile exists. Once
+     * anything is logged, or a row already exists, keep it up to date. */
+    const hasActivity = (today.calories || 0) > 0 || (today.waterMl || 0) > 0 || (today.exerciseMin || 0) > 0;
+    if (!stored && !hasActivity) return;
+
     if (sameVerdict(stored, verdict) || sameVerdict(lastWritten.current, verdict)) return;
 
     lastWritten.current = verdict;
