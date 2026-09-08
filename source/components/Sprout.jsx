@@ -156,40 +156,24 @@ function Bloom({ x, y, s }) {
 }
 
 /**
+ * The plant itself, as a bare <g> so it can be dropped into a larger scene.
+ *
+ * Drawn around x=100 with its base on y=158, matching the standalone
+ * viewBox — the garden positions a plant by translating that base point.
+ *
  * @param stage    one of the STAGES keys from lib/goals.js
  * @param vitality one of the VITALITY keys — how today went
- * @param ground   draw the soil mound (off for plants placed in the garden)
- * @param glow     draw the warm light behind, used at the best state
+ * @param leafTint overrides the leaf green, so a row of finished trees can
+ *                 vary slightly instead of looking stamped from one mould
  */
-export default function Sprout({
-  stage = "sapling",
-  vitality = "fair",
-  ground = true,
-  glow = false,
-  title,
-  className,
-}) {
+export function PlantBody({ stage = "sapling", vitality = "fair", leafTint }) {
   const geo = STAGE_GEOMETRY[stage] || STAGE_GEOMETRY.sapling;
   const look = VITALITY_STYLE[vitality] || VITALITY_STYLE.fair;
   const droop = look.droop;
+  const leafFill = leafTint || look.leaf;
 
   return (
-    <svg
-      viewBox="0 0 200 190"
-      className={className}
-      role="img"
-      aria-label={title || "樹苗"}
-      style={{ display: "block", width: "100%", height: "auto" }}
-    >
-      {glow ? <circle cx="132" cy="56" r="42" fill="var(--glow)" opacity="0.5" /> : null}
-
-      {ground ? (
-        <>
-          <ellipse cx="100" cy="168" rx="66" ry="16" fill="var(--soil-dk)" />
-          <ellipse cx="100" cy="163" rx="66" ry="15" fill="var(--soil)" />
-        </>
-      ) : null}
-
+    <g>
       {geo.seed ? (
         <>
           <ellipse cx="100" cy="152" rx="11" ry="8.5" fill="var(--soil-dk)" />
@@ -212,18 +196,11 @@ export default function Sprout({
       ) : null}
 
       {geo.branches.map((b, i) => (
-        <path
-          key={`br${i}`}
-          d={b.d}
-          stroke={look.stem}
-          strokeWidth={b.w}
-          strokeLinecap="round"
-          fill="none"
-        />
+        <path key={`br${i}`} d={b.d} stroke={look.stem} strokeWidth={b.w} strokeLinecap="round" fill="none" />
       ))}
 
       {geo.leaves.map((spec, i) => (
-        <Leaf key={`l${i}`} spec={spec} droop={droop} fill={look.leaf} vein="var(--leaf-dk)" />
+        <Leaf key={`l${i}`} spec={spec} droop={droop} fill={leafFill} vein="var(--leaf-dk)" />
       ))}
 
       {(geo.blooms || []).map((b, i) => (
@@ -237,6 +214,42 @@ export default function Sprout({
           <circle cx="95" cy="56" r="2.2" fill="#FFFFFF" opacity="0.7" />
         </>
       ) : null}
+    </g>
+  );
+}
+
+/**
+ * A single plant on its own patch of soil — the main screen's centrepiece.
+ *
+ * @param ground draw the soil mound
+ * @param glow   warm light behind, used at the best state
+ */
+export default function Sprout({
+  stage = "sapling",
+  vitality = "fair",
+  ground = true,
+  glow = false,
+  title,
+  className,
+}) {
+  return (
+    <svg
+      viewBox="0 0 200 190"
+      className={className}
+      role="img"
+      aria-label={title || "樹苗"}
+      style={{ display: "block", width: "100%", height: "auto" }}
+    >
+      {glow ? <circle cx="132" cy="56" r="42" fill="var(--glow)" opacity="0.5" /> : null}
+
+      {ground ? (
+        <>
+          <ellipse cx="100" cy="168" rx="66" ry="16" fill="var(--soil-dk)" />
+          <ellipse cx="100" cy="163" rx="66" ry="15" fill="var(--soil)" />
+        </>
+      ) : null}
+
+      <PlantBody stage={stage} vitality={vitality} />
     </svg>
   );
 }
