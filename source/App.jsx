@@ -79,6 +79,7 @@ import Sprout from "./components/Sprout.jsx";
 import GardenScene from "./components/Garden.jsx";
 import Rings, { RingLegend } from "./components/Rings.jsx";
 import GrowthPanel from "./components/GrowthPanel.jsx";
+import ActivityPanel from "./components/ActivityPanel.jsx";
 
 /** Traffic-light metadata for a value that may be missing or unrecognised.
  * Falls back to yellow — "watch the portion" is the safe thing to say when
@@ -1528,6 +1529,7 @@ export default function App() {
   const {
     today: todayGoals,
     garden,
+    summaries: goalSummaries,
     recordDay: recordGardenDay,
     backfillReport,
     dismissBackfillReport,
@@ -1685,6 +1687,42 @@ export default function App() {
           background:transparent; color:var(--brand); font-size:14px;
           font-family:inherit; cursor:pointer;
         }
+
+        .activity-card .section-title{ padding:0 0 4px; }
+        .rings-wrap{ display:flex; justify-content:center; padding:6px 0 2px; }
+        .activity-card .ring-legend{ padding:10px 0 0; }
+        .activity-verdict{
+          margin-top:12px; padding:10px 12px; border-radius:10px;
+          background:var(--brand-soft); color:var(--brand);
+          font-size:13px; text-align:center;
+        }
+
+        .week-block{ margin-top:18px; }
+        .week-head{
+          display:flex; justify-content:space-between; align-items:baseline;
+          font-size:12.5px; color:var(--ink-soft); margin-bottom:8px;
+        }
+        .week-head b{ color:var(--ink); font-variant-numeric:tabular-nums; }
+        .week-grid{
+          display:grid; grid-template-columns:30px repeat(7,1fr);
+          gap:5px; align-items:center;
+        }
+        .week-wd{ font-size:10.5px; color:var(--ink-soft); text-align:center; }
+        .week-wd.today{ color:var(--brand); font-weight:700; }
+        .week-rl{ font-size:10.5px; color:var(--ink-soft); text-align:right; padding-right:2px; }
+        .week-cell{ height:18px; border-radius:5px; display:block; }
+        .week-cell.missed{ background:var(--surface-3); }
+        .week-cell.unknown{
+          background:transparent; border:1px dashed var(--line);
+        }
+        .week-cell.sample{ width:14px; height:12px; display:inline-block; vertical-align:-1px; }
+        .week-cell.sample.met{ background:var(--brand); }
+        .week-legend{
+          display:flex; gap:14px; margin-top:8px;
+          font-size:11px; color:var(--ink-soft);
+        }
+        .week-legend span{ display:inline-flex; align-items:center; gap:5px; }
+        .week-note{ margin-top:8px; font-size:11.5px; color:var(--ink-soft); line-height:1.6; }
 
         .garden-stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:14px 16px 0; }
         .garden-stat{ display:flex; flex-direction:column; align-items:center; gap:1px; }
@@ -2559,6 +2597,8 @@ export default function App() {
             <ExerciseTab
               plan={exercisePlan}
               feedback={exerciseWeeklyFeedback}
+              todayGoals={todayGoals}
+              summaries={goalSummaries}
               weeklyChartData={weeklyExerciseChartData}
               thisWeekEntries={thisWeekExerciseEntries}
               exerciseForm={exerciseForm}
@@ -2599,7 +2639,7 @@ export default function App() {
           </button>
           <button className={`nav-btn ${tab === "exercise" ? "active" : ""}`} onClick={() => setTab("exercise")}>
             <Dumbbell size={20} />
-            運動建議
+            活動力
           </button>
           <button className={`nav-btn ${tab === "tracking" ? "active" : ""}`} onClick={() => setTab("tracking")}>
             <Activity size={20} />
@@ -3382,11 +3422,22 @@ function ExerciseTab({
   onDeleteExerciseEntry,
   onUpdateExerciseEntry,
   onPersistExerciseEntry,
+  todayGoals,
+  summaries,
 }) {
   const pctForBar = Math.min(feedback.pct, 100);
 
   return (
     <>
+      {todayGoals ? (
+        <ActivityPanel
+          day={todayGoals}
+          summaries={summaries}
+          weeklyMinutes={feedback.totalMinutes}
+          weeklyTarget={plan.weeklyMinutesTarget}
+        />
+      ) : null}
+
       <div className="card">
         <div className="section-title">每週運動目標：{plan.weeklyMinutesTarget} 分鐘中等強度有氧</div>
         {plan.cautions.length > 0 && (

@@ -10,13 +10,16 @@
 import React from "react";
 import { WATER_GOAL_ML, EXERCISE_GOAL_MIN } from "../lib/goals.js";
 
+/* Radii are spaced wider than the stroke so a clear gap separates the rings.
+ * At 15px stroke on 74/58/42 they were a pixel apart and read as one solid
+ * disc on a phone. */
 const RINGS = [
-  { key: "calorie", r: 74, color: "var(--cal)", label: "熱量控制" },
-  { key: "exercise", r: 58, color: "var(--move)", label: "運動分鐘" },
-  { key: "water", r: 42, color: "var(--water)", label: "喝水" },
+  { key: "calorie", r: 72, color: "var(--cal)", label: "熱量控制" },
+  { key: "exercise", r: 53, color: "var(--move)", label: "運動分鐘" },
+  { key: "water", r: 34, color: "var(--water)", label: "喝水" },
 ];
 
-const STROKE = 15;
+const STROKE = 14;
 
 function ratio(value, goal) {
   if (!goal || goal <= 0) return 0;

@@ -48,6 +48,18 @@ export const VITALITY = [
   { metCount: 3, key: "thriving", label: "達標" },
 ];
 
+/**
+ * Field names as the app actually stores them. These are not interchangeable
+ * guesses — reading the wrong key returns 0 without erroring, which silently
+ * makes a condition impossible to meet. Exercise in particular is durationMin,
+ * not minutes.
+ */
+export const FIELDS = {
+  calories: "estimatedCalories",
+  water: "amountMl",
+  exercise: "durationMin",
+};
+
 function sumFor(log, date, field) {
   let total = 0;
   for (const entry of log || []) {
@@ -64,9 +76,9 @@ function sumFor(log, date, field) {
  * cannot be judged and is treated as unmet rather than assumed met.
  */
 export function evaluateDay(date, { foodLog, waterLog, exerciseLog, calorieTarget }) {
-  const calories = sumFor(foodLog, date, "estimatedCalories");
-  const waterMl = sumFor(waterLog, date, "amountMl");
-  const exerciseMin = sumFor(exerciseLog, date, "minutes");
+  const calories = sumFor(foodLog, date, FIELDS.calories);
+  const waterMl = sumFor(waterLog, date, FIELDS.water);
+  const exerciseMin = sumFor(exerciseLog, date, FIELDS.exercise);
 
   const calorie =
     calorieTarget != null &&

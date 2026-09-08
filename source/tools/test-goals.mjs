@@ -17,6 +17,7 @@ import {
   TREE_DAYS,
   WATER_GOAL_ML,
   EXERCISE_GOAL_MIN,
+  FIELDS,
 } from "../lib/goals.js";
 import { daysAgoStr, todayStr } from "../lib/health.js";
 
@@ -37,7 +38,7 @@ function day(food, water, exercise) {
   return evaluateDay(D, {
     foodLog: food == null ? [] : [{ date: D, estimatedCalories: food }],
     waterLog: water == null ? [] : [{ date: D, amountMl: water }],
-    exerciseLog: exercise == null ? [] : [{ date: D, minutes: exercise }],
+    exerciseLog: exercise == null ? [] : [{ date: D, durationMin: exercise }],
     calorieTarget: target,
   });
 }
@@ -62,7 +63,7 @@ check("half of target passes", day(840, 2000, 32).calorie, true);
 const noTarget = evaluateDay(D, {
   foodLog: [{ date: D, estimatedCalories: 1410 }],
   waterLog: [{ date: D, amountMl: 2000 }],
-  exerciseLog: [{ date: D, minutes: 32 }],
+  exerciseLog: [{ date: D, durationMin: 32 }],
   calorieTarget: null,
 });
 check("no calorie target cannot be met", noTarget.calorie, false);
@@ -76,7 +77,7 @@ const split = evaluateDay(D, {
     { date: D, estimatedCalories: 610 },
   ],
   waterLog: [{ date: D, amountMl: 1200 }, { date: D, amountMl: 800 }],
-  exerciseLog: [{ date: D, minutes: 20 }, { date: D, minutes: 15 }],
+  exerciseLog: [{ date: D, durationMin: 20 }, { date: D, durationMin: 15 }],
   calorieTarget: target,
 });
 check("entries within a day sum", [split.calories, split.waterMl, split.exerciseMin], [1410, 2000, 35]);
@@ -86,7 +87,7 @@ check("summed day is met", split.met, true);
 const otherDay = evaluateDay(D, {
   foodLog: [{ date: daysAgoStr(1), estimatedCalories: 1410 }],
   waterLog: [{ date: D, amountMl: 2000 }],
-  exerciseLog: [{ date: D, minutes: 32 }],
+  exerciseLog: [{ date: D, durationMin: 32 }],
   calorieTarget: target,
 });
 check("yesterday's food does not count today", otherDay.calorie, false);
@@ -158,7 +159,7 @@ check("upsert sorts by date", s2.map((s) => s.date), ["2026-09-01", "2026-09-05"
 const bf = backfillSummaries({
   foodLog: [{ date: daysAgoStr(2), estimatedCalories: 1410 }],
   waterLog: [{ date: daysAgoStr(2), amountMl: 2000 }],
-  exerciseLog: [{ date: daysAgoStr(2), minutes: 32 }],
+  exerciseLog: [{ date: daysAgoStr(2), durationMin: 32 }],
   calorieTarget: target,
 });
 check("backfill produces one day", bf.length, 1);
@@ -174,6 +175,35 @@ check("two days ago cannot be backfilled", canBackfill(daysAgoStr(2)), false);
 
 /* --- summary shape stays compact --- */
 check("summary has only four keys", Object.keys(toSummary(day(1410, 2000, 32))), ["date", "c", "e", "w"]);
+
+/* --- field names must match what the app actually writes ---
+ *
+ * This exists because it already went wrong once: the rules read `minutes`
+ * while the app has always stored `durationMin`. Nothing threw — the sum came
+ * back 0, exercise silently never passed, and the tests agreed because they
+ * used the same wrong name. Reading an absent key is a 0, not an error, so
+ * the only defence is asserting the names against the app's own shapes. */
+check("calorie field name", FIELDS.calories, "estimatedCalories");
+check("water field name", FIELDS.water, "amountMl");
+check("exercise field name", FIELDS.exercise, "durationMin");
+
+const wrongField = evaluateDay(D, {
+  foodLog: [{ date: D, estimatedCalories: 1410 }],
+  waterLog: [{ date: D, amountMl: 2000 }],
+  exerciseLog: [{ date: D, minutes: 32 }], // the old, wrong key
+  calorieTarget: target,
+});
+check("an entry keyed on the wrong field reads as zero", wrongField.exerciseMin, 0);
+check("and therefore does not meet the day", wrongField.met, false);
+
+/* An entry shaped exactly as handleAddExerciseEntry writes it must pass. */
+const realShape = evaluateDay(D, {
+  foodLog: [{ id: "1", date: D, time: "12:30", name: "便當", estimatedCalories: 1410, light: "green" }],
+  waterLog: [{ id: "2", date: D, amountMl: 2000 }],
+  exerciseLog: [{ id: "3", date: D, activityId: "jog", activityLabel: "超慢跑", durationMin: 32 }],
+  calorieTarget: target,
+});
+check("entries in the app's real shape are met", realShape.met, true);
 
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
