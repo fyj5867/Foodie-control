@@ -210,14 +210,19 @@ sourceType \u586B "label"\uFF0Cconfidence \u586B "high"\uFF0CportionNote \u8A3B\
 
         .diary-post{ margin-bottom:16px; }
         .diary-post:last-child{ margin-bottom:4px; }
-        /* Roughly a sixth of a phone screen; proportion holds at any width. */
+        /* 4:3 \u2014 the shape a phone camera actually produces, so a landscape
+           photo shows essentially uncropped. The earlier letterbox was sized
+           to a sixth of the screen but cut the top and bottom off every shot. */
         .diary-photo{
-          aspect-ratio:16 / 6.5; border-radius:12px; overflow:hidden;
+          aspect-ratio:4 / 3; border-radius:12px; overflow:hidden;
           background:var(--surface-2); border:1px solid var(--line);
           margin-bottom:8px;
         }
         .diary-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
+        /* An expired photo should not reserve a full 4:3 of empty space \u2014
+           past the photo window every entry would be a big blank box. */
         .diary-photo-gone{
+          aspect-ratio:auto; padding:14px 0;
           display:flex; align-items:center; justify-content:center; gap:8px;
           color:var(--ink-soft); font-size:12px;
           border-style:dashed;
