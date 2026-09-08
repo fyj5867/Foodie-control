@@ -9,10 +9,22 @@
  *
  * Run once from source/:  node tools/extract-health.mjs
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 
 const SRC = 'App.jsx';
 const OUT = 'lib/health.js';
+
+/* This already ran once, and lib/health.js has been edited by hand since
+ * (sleepZones and its CONTENT_REVIEW entry). Regenerating would silently drop
+ * those edits, so refuse unless someone really means it. */
+if (existsSync(OUT) && !process.argv.includes('--force')) {
+  console.error(
+    `${OUT} already exists and has been hand-edited since extraction.\n` +
+      `Edit it directly. Pass --force only if you truly mean to regenerate and\n` +
+      `lose any changes made since.`
+  );
+  process.exit(1);
+}
 const FIRST_LINE = 37;   // const SYMPTOM_OPTIONS = [
 const LAST_LINE = 538;   // closing brace of buildWeeklyCalorieData
 

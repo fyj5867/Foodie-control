@@ -1,6 +1,6 @@
 {
-  "name": "糖前哨 - 第二型糖尿病預防生活助手",
-  "short_name": "糖前哨",
+  "name": "Healthy Care - 第二型糖尿病預防生活助手",
+  "short_name": "Healthy Care",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

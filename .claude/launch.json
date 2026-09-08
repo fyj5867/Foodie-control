@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "糖前哨",
+      "name": "Healthy Care",
       "runtimeExecutable": "node",
       "runtimeArgs": ["source/tools/serve.mjs", "4173"],
       "port": 4173

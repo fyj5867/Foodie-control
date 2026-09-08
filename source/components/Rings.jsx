@@ -104,6 +104,81 @@ function shortfall(key, day) {
   return `還差 ${Math.max(0, WATER_GOAL_ML - Math.round(day?.waterMl || 0)).toLocaleString()} cc`;
 }
 
+/**
+ * The three metrics in the shape Apple Fitness uses: label in the metric's
+ * own colour, the achieved figure large in that colour, the goal small
+ * underneath.
+ *
+ * Direct, because the number you want is the biggest thing on the block; and
+ * detailed, because the denominator is right there rather than implied by how
+ * full a ring looks. The overview keeps the shortfall-oriented rows instead —
+ * there the question is "what is left", here it is "how far did I get".
+ */
+export function RingMetrics({ day }) {
+  const metrics = [
+    {
+      key: "calorie",
+      color: "var(--cal)",
+      label: "熱量控制",
+      value: Math.round(day?.calories || 0).toLocaleString(),
+      goal: day?.calorieTarget ? `/ ${day.calorieTarget.toLocaleString()}` : "/ —",
+      unit: "大卡",
+      met: day?.calorie,
+    },
+    {
+      key: "exercise",
+      color: "var(--move)",
+      label: "運動",
+      value: Math.round(day?.exerciseMin || 0).toLocaleString(),
+      goal: `/ ${EXERCISE_GOAL_MIN}`,
+      unit: "分鐘",
+      met: day?.exercise,
+    },
+    {
+      key: "water",
+      color: "var(--water)",
+      label: "喝水",
+      value: Math.round(day?.waterMl || 0).toLocaleString(),
+      goal: `/ ${WATER_GOAL_ML.toLocaleString()}`,
+      unit: "cc",
+      met: day?.water,
+    },
+  ];
+
+  return (
+    <div className="ring-metrics">
+      {metrics.map((m) => (
+        <div key={m.key} className={`ring-metric ${m.met ? "met" : ""}`}>
+          <div className="rm-label" style={{ color: m.color }}>
+            {m.label}
+            {m.met ? (
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M5 12.5l4.5 4.5L19 7" />
+              </svg>
+            ) : null}
+          </div>
+          <div className="rm-value" style={{ color: m.color }}>
+            {m.value}
+          </div>
+          <div className="rm-goal">
+            {m.goal} {m.unit}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Row of value/goal lines that sits beside or under the rings. */
 export function RingLegend({ day, compact = false }) {
   const rows = [

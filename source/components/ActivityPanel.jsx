@@ -8,7 +8,7 @@
  */
 
 import React from "react";
-import Rings, { RingLegend } from "./Rings.jsx";
+import Rings, { RingMetrics } from "./Rings.jsx";
 import { daysAgoStr } from "../lib/health.js";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -109,7 +109,7 @@ export default function ActivityPanel({ day, summaries, weeklyMinutes, weeklyTar
         <Rings day={day} size={178} />
       </div>
 
-      <RingLegend day={day} />
+      <RingMetrics day={day} />
 
       <div className="activity-verdict">
         {day?.met ? "三項全達標，今天這一天算數。" : `達成 ${day?.metCount || 0} 項，三項全中才計入成長。`}

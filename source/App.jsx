@@ -52,6 +52,7 @@ import {
   bodyFatZones,
   skeletalMuscleZones,
   waistZones,
+  sleepZones,
   CONTENT_REVIEW,
   FOOD_DB,
   calcBMI,
@@ -802,6 +803,7 @@ export default function App() {
     skeletalMuscle: "",
     bodyAge: "",
     bmr: "",
+    sleepHours: "",
   });
 
   const [foodLog, setFoodLog] = useState([]);
@@ -1026,6 +1028,7 @@ export default function App() {
       visceralFat: recordForm.visceralFat === "" ? null : Number(recordForm.visceralFat),
       skeletalMuscle: recordForm.skeletalMuscle === "" ? null : Number(recordForm.skeletalMuscle),
       bodyAge: recordForm.bodyAge === "" ? null : Number(recordForm.bodyAge),
+      sleepHours: recordForm.sleepHours === "" ? null : Number(recordForm.sleepHours),
       bmr: recordForm.bmr === "" ? null : Number(recordForm.bmr),
     };
     const others = records.filter((r) => r.date !== entry.date);
@@ -1045,6 +1048,7 @@ export default function App() {
           skeletalMuscle: "",
           bodyAge: "",
           bmr: "",
+          sleepHours: "",
         });
       }
     } catch (e) {
@@ -1073,6 +1077,7 @@ export default function App() {
       skeletalMuscle: record.skeletalMuscle ?? "",
       bodyAge: record.bodyAge ?? "",
       bmr: record.bmr ?? "",
+      sleepHours: record.sleepHours ?? "",
     });
     flashSaved(`已載入 ${record.date} 的紀錄，修改後按「更新紀錄」`);
   }
@@ -1357,7 +1362,7 @@ export default function App() {
     let blob;
     try {
       const backup = {
-        app: "tang-qian-shao",
+        app: "healthy-care",
         exportedAt: new Date().toISOString(),
         profile,
         records,
@@ -1374,7 +1379,7 @@ export default function App() {
       return;
     }
 
-    const filename = `tang-qian-shao-backup-${todayStr()}.json`;
+    const filename = `healthy-care-backup-${todayStr()}.json`;
 
     // Prefer the native share sheet when available (iOS Safari): this lets
     // the person pick "Save to Drive" / "Save to Files → Google Drive"
@@ -1382,7 +1387,7 @@ export default function App() {
     try {
       const file = new File([blob], filename, { type: "application/json" });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "糖前哨資料備份" });
+        await navigator.share({ files: [file], title: "Healthy Care 資料備份" });
         flashSaved("備份已開啟分享選單");
         return;
       }
@@ -1603,6 +1608,7 @@ export default function App() {
     waist: r.waist != null ? r.waist : null,
     bodyFat: r.bodyFat != null ? r.bodyFat : null,
     skeletalMuscle: r.skeletalMuscle != null ? r.skeletalMuscle : null,
+    sleepHours: r.sleepHours != null ? r.sleepHours : null,
   }));
 
   const calorieBreakdown = useMemo(() => calcDailyCalorieTargetBreakdown(profile, latestRecord), [profile, latestRecord]);
@@ -1984,6 +1990,30 @@ export default function App() {
           margin-top:12px; padding:10px 12px; border-radius:10px;
           background:var(--brand-soft); color:var(--brand);
           font-size:13px; text-align:center;
+        }
+
+        /* Three metrics, Apple Fitness style: the figure is the biggest thing
+           on the block and carries the metric's colour; the goal sits under it
+           so the denominator is stated rather than implied by a ring's fill. */
+        .ring-metrics{
+          display:grid; grid-template-columns:repeat(3,1fr);
+          gap:8px; margin-top:16px;
+        }
+        .ring-metric{
+          display:flex; flex-direction:column; align-items:center; gap:1px;
+          padding:10px 4px; border-radius:12px; background:var(--surface-2);
+        }
+        .ring-metric.met{ background:var(--brand-soft); }
+        .rm-label{
+          display:inline-flex; align-items:center; gap:3px;
+          font-size:11px; font-weight:700; letter-spacing:.03em;
+        }
+        .rm-value{
+          font-size:24px; font-weight:700; line-height:1.15;
+          font-variant-numeric:tabular-nums; letter-spacing:-.02em;
+        }
+        .rm-goal{
+          font-size:11px; color:var(--ink-soft); font-variant-numeric:tabular-nums;
         }
 
         .week-block{ margin-top:18px; }
@@ -2792,7 +2822,7 @@ export default function App() {
 
         <header className="app-header">
           <h1 className="app-title">
-            糖前哨 <small>第二型糖尿病預防生活助手</small>
+            Healthy Care <small>第二型糖尿病預防生活助手</small>
           </h1>
         </header>
 
@@ -3947,6 +3977,7 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
             {r.skeletalMuscle != null ? `骨骼肌 ${fmtNum(r.skeletalMuscle)}% ・ ` : ""}
             {r.bodyAge != null ? `體年齡 ${fmtNum(r.bodyAge, 0)} ・ ` : ""}
             {r.bmr != null ? `BMR ${fmtNum(r.bmr, 0)}kcal` : ""}
+            {r.sleepHours != null ? `${r.bmr != null ? " ・ " : ""}睡眠 ${fmtNum(r.sleepHours)} 小時` : ""}
           </div>
         </div>
         <button
@@ -4034,6 +4065,21 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
               <input type="number" step="1" value={recordForm.bmr} onChange={(e) => setRecordForm({ ...recordForm, bmr: e.target.value })} />
             </div>
           </div>
+          <div className="field-row">
+            <div className="field">
+              <label>昨晚睡眠（小時）</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                max="24"
+                value={recordForm.sleepHours}
+                onChange={(e) => setRecordForm({ ...recordForm, sleepHours: e.target.value })}
+                placeholder="例：7.5"
+              />
+            </div>
+            <div className="field" />
+          </div>
           <button type="submit" className="btn btn-primary btn-block">
             <Plus size={15} /> {isEditing ? "更新紀錄" : "儲存紀錄"}
           </button>
@@ -4077,6 +4123,16 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
         chartData={chartData}
         zones={waistZones(profile?.gender)}
         zoneExplain="背景顏色代表衛福部代謝症候群腰圍標準：綠色正常、紅色腰圍過大（男性≥90cm、女性≥80cm，代謝症候群風險較高）。"
+      />
+
+      <MetricTrendChart
+        title="睡眠時數趨勢"
+        dataKey="sleepHours"
+        unit="小時"
+        color="#5A6E8A"
+        chartData={chartData}
+        zones={sleepZones()}
+        zoneExplain="背景顏色為成人睡眠時數參考：黃色偏少（未達7小時）、綠色建議範圍（7-9小時）、藍色偏多（超過9小時）。輪班工作或有睡眠疾患者請依醫師建議。"
       />
 
       <div className="card">

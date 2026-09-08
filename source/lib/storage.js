@@ -210,7 +210,7 @@ export async function backfillOnce({ foodLog, waterLog, exerciseLog, calorieTarg
  * brings the garden back with it. */
 export async function buildBackup() {
   return {
-    app: "tang-qian-shao",
+    app: "healthy-care",
     exportedAt: new Date().toISOString(),
     profile: await readJson(KEYS.profile, null),
     records: await readArray(KEYS.records),

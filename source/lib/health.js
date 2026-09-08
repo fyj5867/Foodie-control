@@ -115,8 +115,20 @@ function waistZones(gender) {
   ];
 }
 
+/** Sleep duration reference zones for adults, per 衛生福利部國民健康署 health
+ * promotion material and the US National Sleep Foundation's 2015 consensus
+ * (adults 18-64: 7-9 hours nightly). Shown as a general guide — shift workers
+ * and people with sleep disorders should follow their clinician's advice. */
+function sleepZones() {
+  return [
+    { y1: 3, y2: 7, bg: "#FBF0DC", label: "偏少 <7 小時" },
+    { y1: 7, y2: 9, bg: "#E4F5E7", label: "建議 7-9 小時" },
+    { y1: 9, y2: 12, bg: "#E4F0F8", label: "偏多 >9 小時" },
+  ];
+}
+
 const CONTENT_REVIEW = {
-  lastReviewed: "2026-08-17",
+  lastReviewed: "2026-09-08",
   sources: [
     "衛生福利部國民健康署《我的餐盤》飲食指南與「顧血糖4招」衛教資訊",
     "衛生福利部國民健康署《糖尿病防治手冊》",
@@ -127,6 +139,7 @@ const CONTENT_REVIEW = {
     "World Gym Taiwan、TVBS衛教報導：骨骼肌率參考範圍",
     "衛生福利部國民健康署代謝症候群學習手冊：腰圍標準",
     "衛生福利部食品藥物管理署《食品營養成分資料庫（新版）》：食物熱量查詢",
+    "衛生福利部國民健康署睡眠健康衛教資訊、美國National Sleep Foundation 2015共識：成人每晚7-9小時",
   ],
 };
 
@@ -521,6 +534,7 @@ export {
   bodyFatZones,
   skeletalMuscleZones,
   waistZones,
+  sleepZones,
   CONTENT_REVIEW,
   FOOD_DB,
   calcBMI,
