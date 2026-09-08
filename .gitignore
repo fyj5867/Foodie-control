@@ -1,0 +1,10 @@
+# npm 安裝的套件，體積很大而且可以隨時重裝，不要放進版本控制
+node_modules/
+
+# npm 除錯記錄
+npm-debug.log*
+
+# 作業系統自動產生的檔案
+.DS_Store
+Thumbs.db
+desktop.ini
