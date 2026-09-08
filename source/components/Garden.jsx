@@ -16,6 +16,9 @@ const VIEW_W = 358;
 const VIEW_H = 300;
 
 /** Where the still-growing tree stands: front-right, clear of the rows behind. */
+/** Where PlantBody puts the plant's base inside its own drawing space. */
+const PLANT_BASE = 164;
+
 const GROWING_X = 296;
 const GROWING_Y = 262;
 const GROWING_SCALE = 0.5;
@@ -48,7 +51,7 @@ function layout(count) {
     // tallest tree's crown clear of the top edge — a clipped treetop reads
     // as a rendering bug rather than depth.
     const depth = rows === 1 ? 1 : 1 - row / rows;
-    const baseY = 158 + (VIEW_H - 190) * (0.5 + 0.42 * (1 - depth));
+    const baseY = PLANT_BASE + (VIEW_H - 190) * (0.5 + 0.42 * (1 - depth));
     const slotW = VIEW_W / (inRow + 1);
     const baseX = slotW * (col + 1);
 
@@ -112,7 +115,7 @@ export default function Garden({ completedTrees = 0, currentStage = "seed", vita
       {spots.map((spot) => (
         <g
           key={spot.seed}
-          transform={`translate(${spot.x - 100 * spot.scale},${spot.y - 158 * spot.scale}) scale(${spot.scale})`}
+          transform={`translate(${spot.x - 100 * spot.scale},${spot.y - PLANT_BASE * spot.scale}) scale(${spot.scale})`}
         >
           <PlantBody stage="bloom" vitality="fair" leafTint={spot.tint} />
         </g>
@@ -122,7 +125,7 @@ export default function Garden({ completedTrees = 0, currentStage = "seed", vita
           Base sits at (GROWING_X, GROWING_Y) — the ring is centred a little
           above that, around the body of the plant rather than its roots. */}
       <g
-        transform={`translate(${GROWING_X - 100 * GROWING_SCALE},${GROWING_Y - 158 * GROWING_SCALE}) scale(${GROWING_SCALE})`}
+        transform={`translate(${GROWING_X - 100 * GROWING_SCALE},${GROWING_Y - PLANT_BASE * GROWING_SCALE}) scale(${GROWING_SCALE})`}
       >
         <PlantBody stage={currentStage} vitality={vitality} />
       </g>

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>樹苗預覽</title>
+<style>
+  :root{
+    --leaf:#4E8A63; --leaf-dk:#3B6B4C; --leaf-dull:#8FA096; --leaf-bright:#63A87A;
+    --stem:#4A7A57; --stem-dull:#8B968E;
+    --soil:#9A7A5C; --soil-dk:#7C6049;
+    --bloom:#D98C6A; --bloom-mid:#EFC98F;
+    --glow:#F2EBD8;
+    --ink:#1E2A22; --ink-soft:#5B6960; --line:#DCE3DC;
+  }
+  body{margin:0;background:#F3F5F1;color:var(--ink);
+    font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;}
+  .wrap{max-width:1100px;margin:0 auto;padding:28px 20px 60px}
+  h1{font-size:20px;margin:0 0 20px}
+  .grid{display:grid;gap:10px;align-items:center}
+  .col-head{text-align:center;font-size:13px;font-weight:700;display:flex;
+    flex-direction:column;gap:2px}
+  .col-head span{font-size:11px;font-weight:400;color:var(--ink-soft)}
+  .row-head{font-size:12px;color:var(--ink-soft);text-align:right;padding-right:6px}
+  .cell{background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="./preview-sprout.js"></script>
+</body>
+</html>

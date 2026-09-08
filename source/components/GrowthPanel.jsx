@@ -20,11 +20,14 @@ function vitalityFor(metCount) {
   return "wilting";
 }
 
+/* Written about the sprout's mood rather than its leaves, in the same voice
+ * as the water mascot's lines — the character has a face now, and that is
+ * what the person is actually looking at. */
 const VITALITY_LINE = {
-  thriving: { lead: "三項都達標了", tail: "葉子挺得最直" },
-  fair: { lead: "還差一項", tail: "葉子快挺起來了" },
-  low: { lead: "達成一項", tail: "葉子平展著" },
-  wilting: { lead: "今天還沒有進度", tail: "葉子有點垂" },
+  thriving: { lead: "三項都達標了", tail: "今天心情最好" },
+  fair: { lead: "還差一項", tail: "就快笑開了" },
+  low: { lead: "達成一項", tail: "開始有精神了" },
+  wilting: { lead: "今天還沒有進度", tail: "還有點想睡" },
 };
 
 /** What is still missing, in the order easiest to fix tonight. */

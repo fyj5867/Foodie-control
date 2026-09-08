@@ -8,3 +8,6 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 樹苗預覽的打包產出（原始碼在 source/tools/preview-sprout.jsx）
+source/tools/preview-sprout.js
