@@ -1,14 +1,19 @@
 /**
- * Checks for the morning line and the end-of-day summary.
+ * Checks for the daily line and the end-of-day summary.
  *
- * These are the only places the app speaks to the person in its own voice, so
- * the things worth guarding are not formatting details but promises:
- * something encouraging is always named first, the wording never judges the
- * person, and a bad day never comes back empty or blaming.
+ * Two different things live here and they have different rules:
+ *
+ * - The daily line is a 真乘心語 saying from the user's own document. It must
+ *   come through verbatim, and it must be the same all day. The app's tone
+ *   rules do NOT apply to it — they exist to police copy the app writes.
+ * - The summary IS copy the app writes, so it must always name something
+ *   encouraging first, never judge the person, and never imply a health
+ *   outcome from a day's numbers.
  *
  * Run from source/:  node tools/test-coach.mjs
  */
-import { morningMessage, eveningSummary, coachSlot, MORNING_UNTIL, EVENING_FROM } from "../lib/coach.js";
+import { dailyMessage, eveningSummary, coachSlot, MORNING_UNTIL, EVENING_FROM } from "../lib/coach.js";
+import { QUOTES, quoteForDate } from "../lib/quotes.js";
 import { evaluateDay, gardenState } from "../lib/goals.js";
 import { todayStr, daysAgoStr } from "../lib/health.js";
 
@@ -45,7 +50,7 @@ function metDays(n) {
   return out;
 }
 
-/* --- which slot is on screen ---
+/* --- which card is on screen ---
  *
  * There must always be one. Showing nothing between late morning and 7pm
  * meant the daily line was invisible for most of the waking day, which is
@@ -53,45 +58,55 @@ function metDays(n) {
 check("early morning is the daily line", coachSlot(new Date(2026, 8, 8, 7, 0)), "morning");
 check("late morning still shows the line", coachSlot(new Date(2026, 8, 8, MORNING_UNTIL, 30)), "morning");
 check("mid-afternoon still shows the line", coachSlot(new Date(2026, 8, 8, 14, 0)), "morning");
-check("an hour before the evening still shows the line", coachSlot(new Date(2026, 8, 8, EVENING_FROM - 1, 59)), "morning");
+check("an hour before evening still shows the line", coachSlot(new Date(2026, 8, 8, EVENING_FROM - 1, 59)), "morning");
 check("evening cutoff shows the summary", coachSlot(new Date(2026, 8, 8, EVENING_FROM, 0)), "evening");
 check("late night is still evening", coachSlot(new Date(2026, 8, 8, 23, 30)), "evening");
 
-/* --- the heading follows the clock, the line does not --- */
-check("before 11 it greets you", morningMessage({ dateStr: D, hour: 7 }).title, "早安");
-check("after 11 the heading is neutral", morningMessage({ dateStr: D, hour: 15 }).title, "今天的一句");
-check(
-  "the line itself is the same either way",
-  morningMessage({ dateStr: D, hour: 7 }).body,
-  morningMessage({ dateStr: D, hour: 15 }).body
-);
+/* --- the sayings themselves --- */
+ok("there are enough sayings to last two months", QUOTES.length >= 50, String(QUOTES.length));
+// 36 characters is what reads in two lines on a phone card; longer entries in
+// the source document are paragraphs and were left out.
+ok("every saying fits a card", QUOTES.every((q) => q.length >= 12 && q.length <= 36));
+ok("no saying is left with an unbalanced bracket", QUOTES.every((q) => {
+  const pairs = [["(", ")"], ["（", "）"], ["「", "」"], ["『", "』"], ["{", "}"]];
+  return pairs.every(([o, c]) => [...q].filter((ch) => ch === o).length === [...q].filter((ch) => ch === c).length);
+}));
+ok("no saying still carries a section heading", QUOTES.every((q) => !/[:：]\s*$/.test(q)));
+ok("no duplicates", new Set(QUOTES).size === QUOTES.length);
 
-/* --- the morning line --- */
-const m = morningMessage({ dateStr: D, streak: 0, nickname: "小宜" });
-ok("morning line uses the nickname", m.body.startsWith("小宜，"), m.body);
-ok("morning line is not empty", m.body.length > 6, m.body);
-
-const mNoName = morningMessage({ dateStr: D, streak: 0, nickname: "" });
-ok("morning line works with no nickname", !mNoName.body.includes("，，") && mNoName.body.length > 4, mNoName.body);
-
-/* The same date must give the same line all morning; a message that
- * reshuffles on every open reads as noise rather than as a greeting. */
-check(
-  "morning line is stable for a given day",
-  morningMessage({ dateStr: "2026-09-08", streak: 0 }).body,
-  morningMessage({ dateStr: "2026-09-08", streak: 0 }).body
-);
+/* --- the line is stable within a day and moves across days --- */
+check("same date gives the same saying", quoteForDate("2026-09-08"), quoteForDate("2026-09-08"));
 ok(
-  "morning line differs across days",
+  "different dates give different sayings",
   new Set(
-    ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05"].map(
-      (d) => morningMessage({ dateStr: d, streak: 0 }).body
+    ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07"].map(
+      quoteForDate
     )
-  ).size > 1
+  ).size >= 5
 );
+ok("a month of dates covers many sayings", (() => {
+  const seen = new Set();
+  for (let d = 1; d <= 28; d++) seen.add(quoteForDate(`2026-09-${String(d).padStart(2, "0")}`));
+  return seen.size >= 18;
+})());
 
-const mStreak = morningMessage({ dateStr: D, streak: 12, nickname: "小宜" });
-ok("a streak is acknowledged with its number", mStreak.body.includes("12"), mStreak.body);
+/* --- the card --- */
+const m = dailyMessage({ dateStr: D, nickname: "小宜", hour: 7 });
+check("the card is titled 真乘心語", m.title, "真乘心語");
+check("the morning greets by name", m.greeting, "早安，小宜");
+ok("the body is one of the sayings, untouched", QUOTES.includes(m.body), m.body);
+
+const noName = dailyMessage({ dateStr: D, nickname: "", hour: 7 });
+check("no nickname still greets", noName.greeting, "早安");
+
+const afternoon = dailyMessage({ dateStr: D, nickname: "小宜", hour: 15 });
+check("after 11 there is no greeting", afternoon.greeting, "");
+check("the title does not change", afternoon.title, "真乘心語");
+check("and the saying is the same all day", afternoon.body, m.body);
+
+/* The saying must never be prefixed, trimmed or otherwise edited. */
+ok("the saying is not prefixed with the nickname", !m.body.startsWith("小宜"), m.body);
+check("the saying matches the source list exactly", m.body, quoteForDate(D));
 
 /* --- the evening summary --- */
 const allMet = eveningSummary({ day: day(1200, 2100, 35), garden: gardenState(metDays(11)), nickname: "小宜" });
@@ -110,7 +125,7 @@ ok(
   JSON.stringify(partial.watch)
 );
 ok(
-  "no-exercise phrasing does not say 差 30 分鐘 twice",
+  "no-exercise phrasing does not repeat the full target",
   partial.watch.some((w) => w.includes("還沒有運動紀錄")),
   JSON.stringify(partial.watch)
 );
@@ -121,13 +136,11 @@ check("an empty day reports zero met", nothing.met, 0);
 ok("an empty day still has something encouraging", nothing.wins.length >= 1, JSON.stringify(nothing.wins));
 ok("an empty day lists all three to watch", nothing.watch.length === 3, JSON.stringify(nothing.watch));
 
-/* Nothing anywhere may judge the person or claim a health outcome. */
-const BANNED = ["失敗", "不夠", "退步", "太懶", "沒用", "警告", "危險", "血糖會", "會生病", "不合格"];
-const allText = [
-  ...["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06"].flatMap((d) => [
-    morningMessage({ dateStr: d, streak: 0 }).body,
-    morningMessage({ dateStr: d, streak: 5 }).body,
-  ]),
+/* Copy the app writes must not judge the person or claim a health outcome.
+ * This deliberately excludes the sayings — those are the user's own words and
+ * are not the app speaking. */
+const BANNED = ["失敗", "退步", "太懶", "沒用", "警告", "危險", "血糖會", "會生病", "不合格"];
+const appCopy = [
   allMet.headline,
   ...allMet.wins,
   partial.headline,
@@ -139,10 +152,10 @@ const allText = [
 ].join(" | ");
 
 for (const word of BANNED) {
-  ok(`never says 「${word}」`, !allText.includes(word), allText);
+  ok(`the app never says 「${word}」`, !appCopy.includes(word), appCopy);
 }
 
-/* A day with intake over the ceiling should say so plainly, with the number. */
+/* A day over the ceiling should say so plainly, with the number. */
 const over = eveningSummary({ day: day(1800, 2100, 35), garden: gardenState(metDays(2)), nickname: "" });
 ok(
   "going over target is stated with the amount",

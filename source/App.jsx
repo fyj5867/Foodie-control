@@ -84,7 +84,7 @@ import ActivityPanel from "./components/ActivityPanel.jsx";
 import DietDiary from "./components/DietDiary.jsx";
 import AvatarPicker from "./components/AvatarPicker.jsx";
 import DailyCoach from "./components/DailyCoach.jsx";
-import { coachSlot, morningMessage, eveningSummary } from "./lib/coach.js";
+import { coachSlot, dailyMessage, eveningSummary } from "./lib/coach.js";
 import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM } from "./lib/storage.js";
 
 /** Traffic-light metadata for a value that may be missing or unrecognised.
@@ -1645,14 +1645,13 @@ export default function App() {
   const coachMorning = useMemo(
     () =>
       slot === "morning"
-        ? morningMessage({
+        ? dailyMessage({
             dateStr: todayStr(),
-            streak: garden.currentStreak,
             nickname: (profile && profile.nickname) || "",
             hour: new Date().getHours(),
           })
         : null,
-    [slot, garden.currentStreak, profile]
+    [slot, profile]
   );
   const coachEvening = useMemo(
     () =>
@@ -1823,7 +1822,16 @@ export default function App() {
           color:var(--ink-soft); display:flex; min-width:28px; min-height:28px;
           align-items:center; justify-content:center;
         }
+        .coach-greeting{
+          margin-top:7px; font-size:13px; color:var(--ink-soft);
+        }
         .coach-body{ display:flex; align-items:center; gap:11px; margin-top:8px; }
+        /* A saying, not a UI string: a touch more line height and a quiet
+           left rule so it reads as quoted rather than as app copy. */
+        .coach-quote{
+          font-size:15.5px; line-height:1.85;
+          padding-left:11px; border-left:2px solid rgba(184,134,58,.35);
+        }
         .coach-avatar{
           width:38px; height:38px; border-radius:50%; object-fit:cover;
           flex:0 0 38px; border:1.5px solid rgba(255,255,255,.8);

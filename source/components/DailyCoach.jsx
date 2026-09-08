@@ -27,9 +27,11 @@ export default function DailyCoach({ slot, message, summary, nickname, avatar, o
             </button>
           ) : null}
         </div>
+        {message.greeting ? <div className="coach-greeting">{message.greeting}</div> : null}
+
         <div className="coach-body">
           {avatar ? <img className="coach-avatar" src={avatar} alt="" /> : null}
-          <p className="coach-line">{message.body}</p>
+          <p className="coach-line coach-quote">{message.body}</p>
         </div>
       </div>
     );

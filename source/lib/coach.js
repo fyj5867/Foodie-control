@@ -1,8 +1,9 @@
 /**
- * The morning line and the end-of-day summary.
+ * The daily line and the end-of-day summary.
  *
- * Both are written to be read on a bad day as well as a good one, so a few
- * rules hold throughout:
+ * The daily line is a 真乘心語 saying from the user's own document (see
+ * lib/quotes.js) — her words, passed through untouched. The summary is copy
+ * the app writes, and the rules below govern that:
  *
  * - Talk about behaviour, never about worth. "喝水差 550cc" is a fact;
  *   "你不夠努力" is a judgement, and this app has no business making it.
@@ -17,6 +18,7 @@
  */
 
 import { WATER_GOAL_ML, EXERCISE_GOAL_MIN } from "./goals.js";
+import { quoteForDate } from "./quotes.js";
 
 /**
  * Before this hour the line is greeted as 早安; after it, the same line stays
@@ -26,57 +28,20 @@ export const MORNING_UNTIL = 11;
 export const EVENING_FROM = 19;
 
 /**
- * Morning lines. Deliberately small, concrete asks rather than cheerleading —
- * "先喝一杯水" is something you can do in ten seconds, and doing one thing is
- * what makes the rest of the day more likely.
- */
-const MORNING_LINES = [
-  "今天不用做到完美，做到就好。",
-  "先喝一杯水吧，這是三項裡最容易先完成的。",
-  "不用一次到位，先動十分鐘也算開始。",
-  "昨天的份已經記在花園裡了，今天照著做就行。",
-  "今天先顧好一項，其他的順著走。",
-  "身體記得你做過的每一次，不會白費。",
-  "今天的目標只有今天，不用想整個月。",
-  "慢一點也是往前，別急。",
-  "先吃好早餐，其他的今天再說。",
-  "做不到全部沒關係，做到一項就是一項。",
-];
-
-/** Lines for a morning that follows a run of met days — earned, not generic. */
-const MORNING_LINES_ON_STREAK = [
-  "連續 {n} 天了，今天照舊就好。",
-  "已經連續 {n} 天，這個節奏很適合你。",
-  "第 {n} 天了。不用加碼，維持就是進步。",
-];
-
-/**
- * Pick a line by date so it changes daily but stays the same all morning —
- * a message that reshuffles every time the app opens reads as noise.
- */
-function pickByDate(list, dateStr, offset = 0) {
-  let hash = offset;
-  for (let i = 0; i < dateStr.length; i++) hash = (hash * 31 + dateStr.charCodeAt(i)) % 100000;
-  return list[hash % list.length];
-}
-
-/**
+ * The daily line: one 真乘心語 saying, from the user's own document.
+ *
+ * These are her words, so nothing here rewrites, trims or re-punctuates them,
+ * and the tone rules further down do not apply to them — those exist to
+ * police copy the app writes itself. See lib/quotes.js.
+ *
  * @param dateStr today, as YYYY-MM-DD
- * @param streak  current run of met days
  * @param nickname what to call the person, may be empty
+ * @param hour    used only to decide whether to greet
  */
-export function morningMessage({ dateStr, streak = 0, nickname = "", hour = null }) {
-  const who = nickname ? `${nickname}，` : "";
-  /* The line is the same all day; only the heading changes. It used to vanish
-   * after 11am, which meant that on any ordinary afternoon the app showed no
-   * daily line at all — a feature nobody sees is indistinguishable from one
-   * that was never built. */
-  const title = hour == null || hour < MORNING_UNTIL ? "早安" : "今天的一句";
-  if (streak >= 3) {
-    const line = pickByDate(MORNING_LINES_ON_STREAK, dateStr).replace("{n}", String(streak));
-    return { title, body: `${who}${line}` };
-  }
-  return { title, body: `${who}${pickByDate(MORNING_LINES, dateStr)}` };
+export function dailyMessage({ dateStr, nickname = "", hour = null }) {
+  const morning = hour == null || hour < MORNING_UNTIL;
+  const greeting = morning ? (nickname ? `早安，${nickname}` : "早安") : "";
+  return { title: "真乘心語", greeting, body: quoteForDate(dateStr) };
 }
 
 /** One concrete, small thing that would close this gap. */
