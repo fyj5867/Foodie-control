@@ -234,18 +234,21 @@ export default function Sprout({
 }) {
   return (
     <svg
-      viewBox="0 0 200 190"
+      // Cropped in from the 200x190 drawing space so the plant fills the
+      // frame instead of floating in it — the earlier full-box view left a
+      // third of the height empty above the leaves.
+      viewBox="26 30 148 152"
       className={className}
       role="img"
       aria-label={title || "樹苗"}
       style={{ display: "block", width: "100%", height: "auto" }}
     >
-      {glow ? <circle cx="132" cy="56" r="42" fill="var(--glow)" opacity="0.5" /> : null}
+      {glow ? <circle cx="132" cy="60" r="40" fill="var(--glow)" opacity="0.5" /> : null}
 
       {ground ? (
         <>
-          <ellipse cx="100" cy="168" rx="66" ry="16" fill="var(--soil-dk)" />
-          <ellipse cx="100" cy="163" rx="66" ry="15" fill="var(--soil)" />
+          <ellipse cx="100" cy="168" rx="54" ry="13" fill="var(--soil-dk)" />
+          <ellipse cx="100" cy="164" rx="54" ry="12" fill="var(--soil)" />
         </>
       ) : null}
 

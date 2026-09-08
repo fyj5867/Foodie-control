@@ -44,16 +44,18 @@ function layout(count) {
     const col = i % perRow;
     const inRow = Math.min(perRow, count - row * perRow);
 
-    // Rows further back sit higher and smaller.
+    // Rows further back sit higher and smaller. The base offset keeps the
+    // tallest tree's crown clear of the top edge — a clipped treetop reads
+    // as a rendering bug rather than depth.
     const depth = rows === 1 ? 1 : 1 - row / rows;
-    const baseY = 158 + (VIEW_H - 190) * (0.35 + 0.5 * (1 - depth));
+    const baseY = 158 + (VIEW_H - 190) * (0.5 + 0.42 * (1 - depth));
     const slotW = VIEW_W / (inRow + 1);
     const baseX = slotW * (col + 1);
 
     spots.push({
       x: baseX + (jitter(i, 1) - 0.5) * slotW * 0.3,
-      y: baseY + (jitter(i, 2) - 0.5) * 14,
-      scale: 0.52 + depth * 0.34 + jitter(i, 3) * 0.12,
+      y: baseY + (jitter(i, 2) - 0.5) * 12,
+      scale: 0.46 + depth * 0.28 + jitter(i, 3) * 0.1,
       tint: LEAF_TINTS[Math.floor(jitter(i, 4) * LEAF_TINTS.length)],
       seed: i,
     });
