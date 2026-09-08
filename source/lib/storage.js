@@ -33,12 +33,27 @@ export const KEYS = {
   lastTab: "last-tab",
 };
 
-/** Days of history each log keeps. Matches the previous behaviour exactly. */
+/** Days of history each log keeps. */
 export const RETENTION_DAYS = {
-  foodLog: 30,
   waterLog: 60,
   exerciseLog: 90,
 };
+
+/**
+ * How long a food photo is kept.
+ *
+ * Photos are the only thing in this store large enough to matter — roughly
+ * 20KB each at display size, so three meals a day fills a browser's few
+ * megabytes within months. The text of an entry is a few hundred bytes, which
+ * is nothing, so after this window the photo is dropped and the entry itself
+ * is kept for good. That is what makes a long-term diary possible at all: a
+ * year of meals as text costs about a megabyte, a year as photos cannot fit.
+ */
+export const PHOTO_DAYS = 30;
+
+/** Longest-dimension the captured photo is stored at, and what an aged entry
+ * would be reduced to if photos were kept rather than dropped. */
+export const PHOTO_MAX_DIM = 640;
 
 async function readRaw(key) {
   try {
@@ -89,10 +104,25 @@ export function trimLog(entries, days) {
   return (entries || []).filter((e) => e && e.date >= cutoff);
 }
 
+/**
+ * Drop photos past the window, keep every entry's text.
+ *
+ * Previously the whole entry was deleted after 30 days, which meant the diary
+ * could never show anything older than a month. Now only the photo goes.
+ */
+export function agePhotos(entries, days = PHOTO_DAYS) {
+  const cutoff = daysAgoStr(days);
+  return (entries || []).map((entry) => {
+    if (!entry || !entry.photo || entry.date >= cutoff) return entry;
+    const { photo, ...rest } = entry;
+    return { ...rest, photoExpired: true };
+  });
+}
+
 export async function saveFoodLog(entries) {
-  const trimmed = trimLog(entries, RETENTION_DAYS.foodLog);
-  await writeJson(KEYS.foodLog, trimmed);
-  return trimmed;
+  const aged = agePhotos(entries);
+  await writeJson(KEYS.foodLog, aged);
+  return aged;
 }
 
 export async function saveWaterLog(entries) {

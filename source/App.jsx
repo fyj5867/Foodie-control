@@ -80,6 +80,8 @@ import GardenScene from "./components/Garden.jsx";
 import Rings, { RingLegend } from "./components/Rings.jsx";
 import GrowthPanel from "./components/GrowthPanel.jsx";
 import ActivityPanel from "./components/ActivityPanel.jsx";
+import DietDiary from "./components/DietDiary.jsx";
+import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM } from "./lib/storage.js";
 
 /** Traffic-light metadata for a value that may be missing or unrecognised.
  * Falls back to yellow — "watch the portion" is the safe thing to say when
@@ -1007,12 +1009,11 @@ export default function App() {
   }
 
   async function persistFoodLog(next) {
-    // keep the log bounded (entries may now include a small photo thumbnail,
-    // so a shorter window keeps total storage size reasonable)
-    const cutoff = daysAgoStr(30);
-    const trimmed = next.filter((e) => e.date >= cutoff);
-    await window.storage.set("food-log", JSON.stringify(trimmed), false);
-    setFoodLog(trimmed);
+    // Photos are dropped once they pass the window; the entry's text is kept
+    // indefinitely so the diary has a real history. See PHOTO_DAYS.
+    const aged = agePhotos(next, PHOTO_DAYS);
+    await window.storage.set("food-log", JSON.stringify(aged), false);
+    setFoodLog(aged);
   }
 
   async function persistWaterLog(next) {
@@ -1146,7 +1147,7 @@ export default function App() {
     const r = analysisPreview.result;
     let photo = null;
     try {
-      photo = await compressImageDataUrl(analysisPreview.imageDataUrl);
+      photo = await compressImageDataUrl(analysisPreview.imageDataUrl, PHOTO_MAX_DIM);
     } catch (e) {
       photo = null; // don't block saving the entry just because the thumbnail failed
     }
@@ -1686,6 +1687,70 @@ export default function App() {
           min-height:44px; border:1px solid var(--line); border-radius:12px;
           background:transparent; color:var(--brand); font-size:14px;
           font-family:inherit; cursor:pointer;
+        }
+
+        .diary-hint{
+          font-size:11.5px; color:var(--ink-soft); line-height:1.6;
+          margin:-4px 0 14px;
+        }
+        .diary-day{ padding-bottom:6px; }
+        .diary-day + .diary-day{
+          border-top:1px solid var(--line); margin-top:18px; padding-top:16px;
+        }
+        .diary-day-head{ margin-bottom:12px; }
+        .diary-day-top{ display:flex; align-items:baseline; gap:8px; }
+        .diary-date{ font-size:20px; font-weight:700; color:var(--ink); }
+        .diary-weekday{ font-size:12px; color:var(--ink-soft); }
+        .diary-met{
+          margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px;
+          background:var(--brand-soft); color:var(--brand); font-weight:600;
+        }
+        .diary-sum{
+          margin-top:4px; display:flex; align-items:baseline; gap:4px;
+          font-size:12px; color:var(--ink-soft);
+        }
+        .diary-sum b{
+          font-size:15px; color:var(--ink); font-variant-numeric:tabular-nums;
+        }
+        .diary-remain{ margin-left:auto; color:var(--brand); }
+        .diary-remain.over{ color:var(--red); }
+        .diary-bar{
+          margin-top:7px; height:5px; border-radius:3px;
+          background:var(--surface-3); overflow:hidden;
+        }
+        .diary-bar i{ display:block; height:100%; border-radius:3px; background:var(--amber); }
+        .diary-bar i.over{ background:var(--red); }
+
+        .diary-post{ margin-bottom:16px; }
+        .diary-post:last-child{ margin-bottom:4px; }
+        /* Roughly a sixth of a phone screen; proportion holds at any width. */
+        .diary-photo{
+          aspect-ratio:16 / 6.5; border-radius:12px; overflow:hidden;
+          background:var(--surface-2); border:1px solid var(--line);
+          margin-bottom:8px;
+        }
+        .diary-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
+        .diary-photo-gone{
+          display:flex; align-items:center; justify-content:center; gap:8px;
+          color:var(--ink-soft); font-size:12px;
+          border-style:dashed;
+        }
+        .diary-meta{
+          display:flex; align-items:center; gap:8px;
+          font-size:11.5px; color:var(--ink-soft);
+        }
+        .diary-cal{ margin-left:auto; display:inline-flex; align-items:center; gap:3px; }
+        .diary-edit-icon{ color:var(--ink-soft); flex:0 0 auto; }
+        .diary-del{ flex:0 0 auto; }
+        .diary-name{ margin-top:5px; font-size:14.5px; color:var(--ink); line-height:1.5; }
+        .diary-note{ margin-top:3px; font-size:12.5px; color:var(--ink-soft); line-height:1.65; }
+
+        .diary-more{
+          display:flex; align-items:center; justify-content:center; gap:6px;
+          width:100%; min-height:44px; margin-top:10px;
+          border:1px solid var(--line); border-radius:12px;
+          background:transparent; color:var(--brand);
+          font-size:13.5px; font-family:inherit; cursor:pointer;
         }
 
         .activity-card .section-title{ padding:0 0 4px; }
@@ -2582,6 +2647,8 @@ export default function App() {
               calZone={calZone}
               todayEntries={todayEntries}
               recentFoodEntries={recentFoodEntries}
+              foodLog={foodLog}
+              summaries={goalSummaries}
               weeklyCalorieData={weeklyCalorieData}
               manualForm={manualForm}
               setManualForm={setManualForm}
@@ -3177,6 +3244,8 @@ function ProfileTab({
 }
 
 function DietTab({
+  foodLog,
+  summaries,
   profile,
   bmiCat,
   dailyCalorieTarget,
@@ -3336,47 +3405,16 @@ function DietTab({
         </div>
       </div>
 
-      <div className="card">
-        <div className="section-title">飲食紀錄（最近7天）</div>
-        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
-          點熱量數字旁的 ✏️ 圖示可以直接修改，例如包裝食品改成標示上的實際數字。
-        </p>
-        {recentFoodEntries.length === 0 && <p className="food-log-empty">還沒有紀錄，拍張照片或手動輸入開始吧。</p>}
-        {recentFoodEntries.map((entry) => (
-          <div className="record-row food-log-row" key={entry.id}>
-            {entry.photo ? (
-              <img src={entry.photo} alt={entry.foodName} className="food-log-thumb" />
-            ) : (
-              <div className="food-log-thumb food-log-thumb-placeholder">
-                <Utensils size={16} />
-              </div>
-            )}
-            <div className="food-log-row-main">
-              <div className="record-date">
-                {entry.date === todayStr() ? "今天" : entry.date.slice(5)}　{entry.time}　{entry.foodName}
-              </div>
-              <div className="record-meta food-log-cal-row">
-                <Pencil size={11} className="food-log-edit-icon" />
-                <input
-                  type="number"
-                  className="cal-num-input-inline"
-                  value={entry.estimatedCalories}
-                  onChange={(e) => onUpdateFoodEntryCalories(entry.id, e.target.value)}
-                  onBlur={() => onPersistFoodEntryCalories(entry.id)}
-                />
-                <span>大卡</span>
-                {entry.reason ? <span>・ {entry.reason}</span> : null}
-              </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Pill light={entry.light}>{lightWord(entry.light)}</Pill>
-              <button className="icon-btn" onClick={() => onDeleteFoodEntry(entry.id)}>
-                <Trash2 size={16} />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      <DietDiary
+        entries={foodLog}
+        summaries={summaries}
+        dailyCalorieTarget={dailyCalorieTarget}
+        onUpdateFoodEntryCalories={onUpdateFoodEntryCalories}
+        onPersistFoodEntryCalories={onPersistFoodEntryCalories}
+        onDeleteFoodEntry={onDeleteFoodEntry}
+        lightWord={lightWord}
+        PillComponent={Pill}
+      />
 
       {cautionNotes.length > 0 && (
         <div className="card">
