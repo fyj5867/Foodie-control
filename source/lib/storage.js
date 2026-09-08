@@ -148,6 +148,18 @@ export async function saveSummaries(summaries) {
   return summaries;
 }
 
+/** Remove the whole history — part of "clear all data". */
+export async function clearSummaries() {
+  await remove(KEYS.dailySummary);
+  await remove(KEYS.summaryBackfilled);
+}
+
+/** Let the one-time rebuild run again, e.g. after restoring an older backup
+ * that carries logs but no summary. */
+export async function clearBackfillFlag() {
+  await remove(KEYS.summaryBackfilled);
+}
+
 /** Record today's (or a backfilled day's) verdict and persist it. */
 export async function recordDay(summaries, day) {
   const next = upsertSummary(summaries, day);

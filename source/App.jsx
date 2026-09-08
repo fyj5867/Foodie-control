@@ -1256,6 +1256,10 @@ export default function App() {
     try {
       await window.storage.delete("exercise-log", false);
     } catch (e) {}
+    try {
+      // Otherwise the garden keeps standing on records that no longer exist.
+      await resetGarden();
+    } catch (e) {}
     setProfile(null);
     setRecords([]);
     setFoodLog([]);
@@ -1289,6 +1293,9 @@ export default function App() {
         foodLog,
         waterLog,
         exerciseLog,
+        // Without this the garden does not survive a restore: met days cannot
+        // be recomputed once the detailed logs have aged out.
+        dailySummary: goalSummaries,
       };
       blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     } catch (e) {
@@ -1375,6 +1382,14 @@ export default function App() {
         await window.storage.set("exercise-log", JSON.stringify(data.exerciseLog), false);
         setExerciseLog(data.exerciseLog);
         restoredParts.push("運動紀錄");
+      }
+
+      // A backup made before the garden existed has no summary. Passing
+      // undefined tells the hook to clear the rebuild flag so the one-time
+      // backfill runs again over the logs just restored.
+      await restoreSummaries(Array.isArray(data.dailySummary) ? data.dailySummary : undefined);
+      if (Array.isArray(data.dailySummary)) {
+        restoredParts.push(`達標紀錄 ${data.dailySummary.length} 天`);
       }
 
       if (restoredParts.length === 0) {
@@ -1532,6 +1547,8 @@ export default function App() {
     garden,
     summaries: goalSummaries,
     recordDay: recordGardenDay,
+    restoreSummaries,
+    resetGarden,
     backfillReport,
     dismissBackfillReport,
   } = useGarden({

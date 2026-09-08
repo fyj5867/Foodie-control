@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { evaluateDay, gardenState, toSummary } from "./goals.js";
 import { todayStr } from "./health.js";
-import { loadSummaries, saveSummaries, backfillOnce } from "./storage.js";
+import { loadSummaries, saveSummaries, backfillOnce, clearSummaries, clearBackfillFlag } from "./storage.js";
 import { upsertSummary } from "./goals.js";
 
 function sameVerdict(a, b) {
@@ -114,5 +114,45 @@ export default function useGarden({ foodLog, waterLog, exerciseLog, calorieTarge
 
   const dismissBackfillReport = useCallback(() => setBackfillReport(null), []);
 
-  return { today, garden, summaries, loaded, recordDay, backfillReport, dismissBackfillReport };
+  /**
+   * Replace the whole history — used when restoring a backup.
+   *
+   * A backup written before the garden existed carries no summary. In that
+   * case the rebuild flag is cleared so the one-time backfill runs again
+   * against the logs that were just restored, which is the only way those
+   * days can be recovered at all.
+   */
+  const restoreSummaries = useCallback(async (restored) => {
+    const next = Array.isArray(restored) ? restored : [];
+    setSummaries(next);
+    lastWritten.current = null;
+    await saveSummaries(next).catch(() => {});
+    if (!Array.isArray(restored)) {
+      await clearBackfillFlag().catch(() => {});
+      backfillStarted.current = false;
+    }
+    return next;
+  }, []);
+
+  /** Wipe the history along with everything else, so a reset leaves no garden
+   * standing on data that no longer exists. */
+  const resetGarden = useCallback(async () => {
+    setSummaries([]);
+    setBackfillReport(null);
+    lastWritten.current = null;
+    backfillStarted.current = true; // nothing left to rebuild from
+    await clearSummaries().catch(() => {});
+  }, []);
+
+  return {
+    today,
+    garden,
+    summaries,
+    loaded,
+    recordDay,
+    restoreSummaries,
+    resetGarden,
+    backfillReport,
+    dismissBackfillReport,
+  };
 }
