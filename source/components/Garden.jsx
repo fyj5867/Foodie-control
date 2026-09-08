@@ -17,10 +17,10 @@ const VIEW_H = 300;
 
 /** Where the still-growing tree stands: front-right, clear of the rows behind. */
 /** Where PlantBody puts the plant's base inside its own drawing space. */
-const PLANT_BASE = 164;
+const PLANT_BASE = 167;
 
-const GROWING_X = 296;
-const GROWING_Y = 262;
+const GROWING_X = 302;
+const GROWING_Y = 278;
 const GROWING_SCALE = 0.5;
 
 /** Cheap deterministic pseudo-random in [0,1) from an integer seed. */
