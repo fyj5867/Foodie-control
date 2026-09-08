@@ -982,7 +982,8 @@ export default function App() {
   // refresh or tab switch even if the person never taps "儲存個人資料".
   useEffect(() => {
     if (loading) return;
-    if (!form.age || !form.height || !form.weight) return;
+    // Age is optional, so it is not part of the "enough to save" test.
+    if (!form.height || !form.weight) return;
     const timer = setTimeout(() => {
       persistProfile(form).catch(() => {
         /* silent: the explicit Save button will surface errors if this keeps failing */
@@ -1867,17 +1868,22 @@ export default function App() {
         .ring-row{
           display:flex; align-items:baseline; gap:8px;
           font-size:14px; color:var(--ink-soft);
-          padding:7px 10px; border-radius:10px; background:var(--surface-2);
+          padding:6px 9px; border-radius:10px; background:var(--surface-2);
         }
+        .ring-ico{
+          flex:0 0 32px; width:32px; height:32px; align-self:center;
+          display:flex; align-items:center; justify-content:center;
+        }
+        .ring-ico svg{ width:32px; height:32px; }
         .ring-dot{ width:9px; height:9px; border-radius:50%; flex:0 0 9px; align-self:center; }
-        .ring-k{ width:36px; flex:0 0 36px; color:var(--ink); }
+        .ring-k{ width:34px; flex:0 0 34px; color:var(--ink); }
         .ring-v{ font-size:16px; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; }
-        .ring-g{ font-size:12px; }
+        .ring-g{ font-size:12px; white-space:nowrap; }
         /* The shortfall is the point of the row, so it holds the right edge
            and stays legible rather than trailing off in small grey text. */
         .ring-gap{
           margin-left:auto; flex:0 0 auto; font-size:13px; font-weight:500;
-          color:var(--amber);
+          color:var(--amber); white-space:nowrap;
         }
         .ring-done{
           margin-left:auto; flex:0 0 auto; display:inline-flex; align-items:center; gap:4px;
@@ -1905,6 +1911,10 @@ export default function App() {
         .stage-label{ font-size:10.5px; color:var(--ink-soft); }
         .stage-dot.reached .stage-label{ color:var(--brand); font-weight:600; }
 
+        .gauge-caveat{
+          margin-top:8px; font-size:11.5px; color:var(--ink-soft);
+          line-height:1.6; text-align:center;
+        }
         .growth-note{ padding:10px 16px 0; font-size:13.5px; color:var(--ink-soft); text-align:center; }
         .garden-note{ padding-bottom:16px; }
         .growth-link{
@@ -2001,8 +2011,9 @@ export default function App() {
         }
         .ring-metric{
           display:flex; flex-direction:column; align-items:center; gap:1px;
-          padding:10px 4px; border-radius:12px; background:var(--surface-2);
+          padding:9px 4px 10px; border-radius:12px; background:var(--surface-2);
         }
+        .rm-icon{ margin-bottom:2px; }
         .ring-metric.met{ background:var(--brand-soft); }
         .rm-label{
           display:inline-flex; align-items:center; gap:3px;
@@ -2106,6 +2117,10 @@ export default function App() {
           padding:16px 16px 96px;
         }
 
+        .section-title-ico{
+          display:inline-flex; align-items:center; gap:7px;
+        }
+        .section-title-ico svg{ flex:0 0 auto; color:var(--brand); }
         .section-title{
           font-family:'Noto Serif TC', serif;
           font-weight:700;
@@ -3134,6 +3149,11 @@ function OverviewTab({
           <Gauge score={riskScore} />
           <div className={`gauge-label tone-${zone.tone}`}>{zone.label}</div>
           <div className="gauge-advice">{zone.advice}</div>
+          {!profile.age ? (
+            <div className="gauge-caveat">
+              沒有填年齡，這個估算沒有計入年齡因素，實際關注程度可能更高。
+            </div>
+          ) : null}
         </div>
         <Disclaimer compact />
       </div>
@@ -3263,7 +3283,7 @@ function ProfileTab({
         </div>
         <div className="field-row">
           <div className="field">
-            <label>年齡</label>
+            <label>年齡（選填）</label>
             <input
               type="number"
               min="1"
@@ -3271,8 +3291,10 @@ function ProfileTab({
               value={form.age}
               onChange={(e) => setForm((f) => ({ ...f, age: e.target.value }))}
               placeholder="例：45"
-              required
             />
+            <p className="field-hint">
+              不填也可以。年齡只用來估算基礎代謝率；體態紀錄裡填過基礎代謝率的話就用不到。
+            </p>
           </div>
           <div className="field">
             <label>性別</label>

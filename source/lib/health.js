@@ -410,12 +410,20 @@ function fmtNum(v, digits = 1) {
  * ~500kcal reduction is applied when BMI indicates overweight/obesity,
  * bounded by a safety floor. This is a general estimate for reference only. */
 function calcDailyCalorieTargetBreakdown(profile, latestRecord) {
-  if (!profile?.weight || !profile?.height || !profile?.age) return null;
+  if (!profile?.weight || !profile?.height) return null;
   const weight = Number(profile.weight);
   const height = Number(profile.height);
-  const age = Number(profile.age);
 
   const hasRecordBmr = latestRecord?.bmr != null && latestRecord.bmr !== "";
+  const hasAge = profile.age !== "" && profile.age != null && !isNaN(Number(profile.age));
+
+  /* Age is optional. A measured BMR from the scale needs no age at all; the
+   * Mifflin-St Jeor fallback does, so without either there is no honest way
+   * to state a target and we return none rather than inventing one. The UI
+   * explains which of the two would unblock it. */
+  if (!hasRecordBmr && !hasAge) return null;
+
+  const age = Number(profile.age);
   let bmr;
   if (hasRecordBmr) {
     bmr = Number(latestRecord.bmr);

@@ -9,6 +9,7 @@
 
 import React from "react";
 import { WATER_GOAL_ML, EXERCISE_GOAL_MIN } from "../lib/goals.js";
+import { GOAL_ICONS } from "./GoalIcons.jsx";
 
 /* Radii are spaced wider than the stroke so a clear gap separates the rings.
  * At 15px stroke on 74/58/42 they were a pixel apart and read as one solid
@@ -93,7 +94,8 @@ export default function Rings({ day, size = 182 }) {
  */
 function shortfall(key, day) {
   if (key === "calorie") {
-    if (!day?.calorieTarget) return "尚未設定目標";
+    // Say which of the two would unblock it, not just that it is missing.
+    if (!day?.calorieTarget) return "需要年齡或基礎代謝率";
     const consumed = Math.round(day.calories || 0);
     if (consumed > day.calorieTarget) return `超過 ${(consumed - day.calorieTarget).toLocaleString()}`;
     return "還沒記錄完";
@@ -147,34 +149,25 @@ export function RingMetrics({ day }) {
 
   return (
     <div className="ring-metrics">
-      {metrics.map((m) => (
-        <div key={m.key} className={`ring-metric ${m.met ? "met" : ""}`}>
-          <div className="rm-label" style={{ color: m.color }}>
-            {m.label}
-            {m.met ? (
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M5 12.5l4.5 4.5L19 7" />
-              </svg>
-            ) : null}
+      {metrics.map((m) => {
+        const Icon = GOAL_ICONS[m.key];
+        return (
+          <div key={m.key} className={`ring-metric ${m.met ? "met" : ""}`}>
+            <div className="rm-icon">
+              <Icon met={m.met} />
+            </div>
+            <div className="rm-label" style={{ color: m.color }}>
+              {m.label}
+            </div>
+            <div className="rm-value" style={{ color: m.color }}>
+              {m.value}
+            </div>
+            <div className="rm-goal">
+              {m.goal} {m.unit}
+            </div>
           </div>
-          <div className="rm-value" style={{ color: m.color }}>
-            {m.value}
-          </div>
-          <div className="rm-goal">
-            {m.goal} {m.unit}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -210,9 +203,15 @@ export function RingLegend({ day, compact = false }) {
 
   return (
     <div className={`ring-legend ${compact ? "compact" : ""}`}>
-      {rows.map((row) => (
+      {rows.map((row) => {
+        const Icon = GOAL_ICONS[row.key];
+        return (
         <div key={row.key} className={`ring-row ${row.met ? "met" : ""}`}>
-          <span className="ring-dot" style={{ background: row.color }} />
+          {/* The character in place of a coloured dot: same information, and
+              it shows whether the goal is met by its own expression. */}
+          <span className="ring-ico">
+            <Icon met={row.met} />
+          </span>
           <span className="ring-k">{row.label}</span>
           <span className="ring-v">{row.value}</span>
           <span className="ring-g">{row.goal}</span>
@@ -237,7 +236,8 @@ export function RingLegend({ day, compact = false }) {
             <span className="ring-gap">{shortfall(row.key, day)}</span>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -50,15 +50,28 @@ const MOODS = {
  * Each pair is {y, rx, ry, angle} — angle in degrees, mirrored on the right.
  * Counting pairs is the progress cue, so keep them visually distinct.
  */
+/*
+ * Each stage carries its own viewBox.
+ *
+ * A single frame sized for the tallest stage left the early ones floating in
+ * empty space — a bean at the bottom of a mostly blank square. Framing each
+ * stage to its own content keeps the character filling the card at every
+ * stage, which also makes it read as bigger and friendlier when small.
+ *
+ * All six share the same 1.05 aspect ratio, so the card does not jump in
+ * height when a stage advances.
+ */
 const STAGES_GEO = {
-  seed: { stem: null, pairs: [] },
+  seed: { stem: null, pairs: [], view: "61.5 117 77 73" },
   sprout: {
     stem: { to: 124, width: 4 },
     pairs: [{ y: 126, rx: 12, ry: 8, angle: -40 }],
+    view: "51 97 98 93",
   },
   seedling: {
     stem: { to: 106, width: 4.5 },
     pairs: [{ y: 108, rx: 17, ry: 10, angle: -38 }],
+    view: "39 74 122 116",
   },
   sapling: {
     stem: { to: 84, width: 5 },
@@ -66,6 +79,7 @@ const STAGES_GEO = {
       { y: 120, rx: 14, ry: 9, angle: -36 },
       { y: 86, rx: 18, ry: 11, angle: -40 },
     ],
+    view: "26.5 50 147 140",
   },
   /* The last two stages actually become a tree rather than growing one more
    * pair of leaves. They are named 小樹 and 開花, and a stage that only adds
@@ -85,6 +99,7 @@ const STAGES_GEO = {
         { cx: 121, cy: 80, r: 21 },
       ],
     },
+    view: "20 38 160 152",
   },
   bloom: {
     trunk: { to: 100, width: 9.5 },
@@ -100,6 +115,7 @@ const STAGES_GEO = {
         { cx: 123, cy: 77, r: 23 },
       ],
     },
+    view: "16 30 168 160",
     flowers: [
       { x: 100, y: 48, s: 0.62 },
       { x: 76, y: 62, s: 0.55 },
@@ -217,12 +233,24 @@ function Face({ mood }) {
   );
 }
 
-function Sparkles() {
+/** A four-pointed star, sized and placed relative to the frame. */
+function star(x, y, s) {
+  return `M${x} ${y - 4 * s} L${x + 1.3 * s} ${y - 1.3 * s} L${x + 4 * s} ${y} L${x + 1.3 * s} ${y + 1.3 * s} L${x} ${
+    y + 4 * s
+  } L${x - 1.3 * s} ${y + 1.3 * s} L${x - 4 * s} ${y} L${x - 1.3 * s} ${y - 1.3 * s} Z`;
+}
+
+/**
+ * Sparkles positioned from the frame, not from fixed coordinates — each stage
+ * has its own viewBox now, and fixed points would fall outside the small ones.
+ */
+function Sparkles({ vx, vy, vw, vh }) {
+  const s = vh / 42;
   return (
     <g fill={SPARKLE}>
-      <path d="M40 60 L43 67 L50 70 L43 73 L40 80 L37 73 L30 70 L37 67 Z" />
-      <path d="M164 44 L166 50 L172 52 L166 54 L164 60 L162 54 L156 52 L162 50 Z" />
-      <path d="M158 92 L160 96 L164 98 L160 100 L158 104 L156 100 L152 98 L156 96 Z" />
+      <path d={star(vx + vw * 0.12, vy + vh * 0.22, s)} />
+      <path d={star(vx + vw * 0.9, vy + vh * 0.12, s * 1.15)} />
+      <path d={star(vx + vw * 0.86, vy + vh * 0.42, s * 0.8)} />
     </g>
   );
 }
@@ -309,17 +337,25 @@ export default function Sprout({
   title,
   className,
 }) {
+  const geo = STAGES_GEO[stage] || STAGES_GEO.sapling;
   const mood = MOODS[vitality] || MOODS.fair;
+
+  // The glow follows the frame rather than sitting at a fixed point, so it
+  // stays behind the character at every stage instead of drifting off-box.
+  const [vx, vy, vw, vh] = geo.view.split(" ").map(Number);
+  const glowCx = vx + vw / 2;
+  const glowCy = vy + vh * 0.46;
+  const glowR = vh * 0.44;
 
   return (
     <svg
-      viewBox="18 28 164 156"
+      viewBox={geo.view}
       className={className}
       role="img"
       aria-label={title || "豆苗"}
       style={{ display: "block", width: "100%", height: "auto" }}
     >
-      {glow ? <circle cx="100" cy="108" r="70" fill="var(--glow)" opacity="0.55" /> : null}
+      {glow ? <circle cx={glowCx} cy={glowCy} r={glowR} fill="var(--glow)" opacity="0.55" /> : null}
 
       {ground ? (
         <>
@@ -330,7 +366,7 @@ export default function Sprout({
 
       <PlantBody stage={stage} vitality={vitality} />
 
-      {mood.face === "party" ? <Sparkles /> : null}
+      {mood.face === "party" ? <Sparkles vx={vx} vy={vy} vw={vw} vh={vh} /> : null}
     </svg>
   );
 }

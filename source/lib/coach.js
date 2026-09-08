@@ -82,7 +82,8 @@ function nudgeFor(key, day) {
     if (done === 0) return `今天還沒有運動紀錄 —— 明天先排十分鐘`;
     return `運動差 ${short} 分鐘 —— 已經動了 ${done} 分鐘，差一點`;
   }
-  if (!day.calorieTarget) return "熱量目標還算不出來 —— 個人資料補齊就會有";
+  // Name the two ways out, since age is optional and either one works.
+  if (!day.calorieTarget) return "熱量目標還算不出來 —— 填年齡，或在體態紀錄填基礎代謝率";
   const over = Math.round((day.calories || 0) - day.calorieTarget);
   if (over > 0) return `熱量超過目標 ${over.toLocaleString()} 大卡 —— 明天晚餐少一點澱粉`;
   return "飲食還沒記錄完 —— 補記完才算得準";
