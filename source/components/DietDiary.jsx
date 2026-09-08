@@ -11,7 +11,7 @@
 import React, { useMemo, useState } from "react";
 import { Pencil, Trash2, Utensils, ChevronDown } from "lucide-react";
 import { todayStr, daysAgoStr } from "../lib/health.js";
-import { summaryMet } from "../lib/goals.js";
+import { summaryMet, CALORIE_CEILING } from "../lib/goals.js";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -122,7 +122,6 @@ function Entry({ entry, onUpdateCalories, onPersistCalories, onDelete, lightWord
 export default function DietDiary({
   entries,
   summaries,
-  dailyCalorieTarget,
   onUpdateFoodEntryCalories,
   onPersistFoodEntryCalories,
   onDeleteFoodEntry,
@@ -153,12 +152,7 @@ export default function DietDiary({
 
       {visible.map((day) => (
         <div className="diary-day" key={day.date}>
-          <DayHeader
-            date={day.date}
-            total={day.total}
-            target={dailyCalorieTarget}
-            met={metByDate.get(day.date)}
-          />
+          <DayHeader date={day.date} total={day.total} target={CALORIE_CEILING} met={metByDate.get(day.date)} />
           {day.items.map((entry) => (
             <Entry
               key={entry.id}

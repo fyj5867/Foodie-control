@@ -18,6 +18,8 @@ import {
   WATER_GOAL_ML,
   EXERCISE_GOAL_MIN,
   FIELDS,
+  CALORIE_CEILING,
+  CALORIE_MIN_LOGGED,
 } from "../lib/goals.js";
 import { daysAgoStr, todayStr } from "../lib/health.js";
 
@@ -50,24 +52,39 @@ check("water 50cc short fails", day(1410, 1950, 32).met, false);
 check("water exactly at goal passes", day(1410, WATER_GOAL_ML, 32).water, true);
 check("exercise exactly at goal passes", day(1410, 2000, EXERCISE_GOAL_MIN).exercise, true);
 check("exercise 29 min fails", day(1410, 2000, 29).exercise, false);
-check("calorie exactly at target passes", day(1680, 2000, 32).calorie, true);
-check("calorie over target fails", day(1681, 2000, 32).calorie, false);
+/* The calorie rule is a flat ceiling the user set, not the profile-derived
+ * target: under CALORIE_CEILING counts, at or above it does not. */
+check("just under the ceiling passes", day(CALORIE_CEILING - 1, 2000, 32).calorie, true);
+check("exactly at the ceiling fails", day(CALORIE_CEILING, 2000, 32).calorie, false);
+check("over the ceiling fails", day(CALORIE_CEILING + 200, 2000, 32).calorie, false);
+check("a day well under the ceiling passes", day(1200, 2000, 32).calorie, true);
 
-/* --- the empty-log trap: no food recorded must NOT read as "under target" --- */
+/* --- the empty-log trap ---
+ *
+ * This is the whole reason there is a floor. "Under 1500" is trivially true
+ * of an empty log, so without CALORIE_MIN_LOGGED, forgetting to record food
+ * would count as perfect control and the garden would fill up on days nobody
+ * tracked. */
 check("no food logged does not count as calorie met", day(null, 2000, 32).calorie, false);
 check("no food logged means day not met", day(null, 2000, 32).met, false);
-check("implausibly low intake fails", day(400, 2000, 32).calorie, false);
-check("half of target passes", day(840, 2000, 32).calorie, true);
+check("zero calories does not count", day(0, 2000, 32).calorie, false);
+check("a coffee-only log does not count", day(5, 2000, 32).calorie, false);
+check("just under the floor does not count", day(CALORIE_MIN_LOGGED - 1, 2000, 32).calorie, false);
+check("exactly at the floor counts", day(CALORIE_MIN_LOGGED, 2000, 32).calorie, true);
 
-/* --- missing calorie target must not pass silently --- */
+/* --- the verdict no longer depends on the profile ---
+ *
+ * All three conditions are flat numbers now, so an incomplete profile (no
+ * age, no measured BMR) no longer makes the day unjudgeable. The personalised
+ * target is still carried through for display. */
 const noTarget = evaluateDay(D, {
   foodLog: [{ date: D, estimatedCalories: 1410 }],
   waterLog: [{ date: D, amountMl: 2000 }],
   exerciseLog: [{ date: D, durationMin: 32 }],
   calorieTarget: null,
 });
-check("no calorie target cannot be met", noTarget.calorie, false);
-check("no calorie target means day not met", noTarget.met, false);
+check("no personalised target still judges calories", noTarget.calorie, true);
+check("and the day can still be met", noTarget.met, true);
 
 /* --- multiple entries in a day add up --- */
 const split = evaluateDay(D, {

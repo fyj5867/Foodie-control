@@ -17,7 +17,7 @@
  * summary from the evening on.
  */
 
-import { WATER_GOAL_ML, EXERCISE_GOAL_MIN } from "./goals.js";
+import { WATER_GOAL_ML, EXERCISE_GOAL_MIN, CALORIE_CEILING } from "./goals.js";
 import { quoteForDate } from "./quotes.js";
 
 /**
@@ -56,11 +56,12 @@ function nudgeFor(key, day) {
     if (done === 0) return `今天還沒有運動紀錄 —— 明天先排十分鐘`;
     return `運動差 ${short} 分鐘 —— 已經動了 ${done} 分鐘，差一點`;
   }
-  // Name the two ways out, since age is optional and either one works.
-  if (!day.calorieTarget) return "熱量目標還算不出來 —— 填年齡，或在體態紀錄填基礎代謝率";
-  const over = Math.round((day.calories || 0) - day.calorieTarget);
-  if (over > 0) return `熱量超過目標 ${over.toLocaleString()} 大卡 —— 明天晚餐少一點澱粉`;
-  return "飲食還沒記錄完 —— 補記完才算得準";
+  const consumed = Math.round(day.calories || 0);
+  if (consumed >= CALORIE_CEILING) {
+    return `熱量超過 ${(consumed - CALORIE_CEILING).toLocaleString()} 大卡 —— 明天晚餐少一點澱粉`;
+  }
+  if (consumed === 0) return "今天還沒有飲食紀錄 —— 記了才算得準";
+  return `飲食只記了 ${consumed.toLocaleString()} 大卡 —— 看起來還沒記完`;
 }
 
 /** What went right, phrased as a fact rather than praise. */
@@ -70,7 +71,7 @@ function winFor(key, day) {
     const done = Math.round(day.exerciseMin || 0);
     return done > EXERCISE_GOAL_MIN ? `運動 ${done} 分鐘，超過目標` : `運動 ${done} 分鐘，達標`;
   }
-  return `熱量 ${Math.round(day.calories || 0).toLocaleString()} 大卡，控制在目標內`;
+  return `熱量 ${Math.round(day.calories || 0).toLocaleString()} 大卡，在 ${CALORIE_CEILING.toLocaleString()} 以下`;
 }
 
 /**

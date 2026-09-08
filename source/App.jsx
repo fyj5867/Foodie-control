@@ -3760,7 +3760,6 @@ function DietTab({
       <DietDiary
         entries={foodLog}
         summaries={summaries}
-        dailyCalorieTarget={dailyCalorieTarget}
         onUpdateFoodEntryCalories={onUpdateFoodEntryCalories}
         onPersistFoodEntryCalories={onPersistFoodEntryCalories}
         onDeleteFoodEntry={onDeleteFoodEntry}

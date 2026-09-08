@@ -14,6 +14,7 @@
  */
 import { dailyMessage, eveningSummary, coachSlot, MORNING_UNTIL, EVENING_FROM } from "../lib/coach.js";
 import { QUOTES, quoteForDate } from "../lib/quotes.js";
+import { CALORIE_CEILING } from "../lib/goals.js";
 import { evaluateDay, gardenState } from "../lib/goals.js";
 import { todayStr, daysAgoStr } from "../lib/health.js";
 
@@ -110,6 +111,7 @@ check("the saying matches the source list exactly", m.body, quoteForDate(D));
 
 /* --- the evening summary --- */
 const allMet = eveningSummary({ day: day(1200, 2100, 35), garden: gardenState(metDays(11)), nickname: "小宜" });
+ok("a met calorie day is described against the ceiling", allMet.wins.some((w) => w.includes("1,500")), JSON.stringify(allMet.wins));
 check("a full day reports three met", allMet.met, 3);
 ok("a full day has nothing to watch", allMet.watch.length === 0, JSON.stringify(allMet.watch));
 ok("a full day names three wins", allMet.wins.length >= 3, JSON.stringify(allMet.wins));
@@ -155,12 +157,26 @@ for (const word of BANNED) {
   ok(`the app never says 「${word}」`, !appCopy.includes(word), appCopy);
 }
 
-/* A day over the ceiling should say so plainly, with the number. */
-const over = eveningSummary({ day: day(1800, 2100, 35), garden: gardenState(metDays(2)), nickname: "" });
+/* A day over the ceiling should say so plainly, and by how much — measured
+ * against the flat ceiling, not the profile-derived target. */
+const overBy = 300;
+const over = eveningSummary({
+  day: day(CALORIE_CEILING + overBy, 2100, 35),
+  garden: gardenState(metDays(2)),
+  nickname: "",
+});
 ok(
-  "going over target is stated with the amount",
-  over.watch.some((w) => w.includes("500")),
+  "going over the ceiling is stated with the amount",
+  over.watch.some((w) => w.includes(String(overBy))),
   JSON.stringify(over.watch)
+);
+
+/* An unrecorded day must not be described as if it were under control. */
+const unlogged = eveningSummary({ day: day(null, 2100, 35), garden: gardenState(metDays(2)), nickname: "" });
+ok(
+  "an empty food log says there is no record, not that it was controlled",
+  unlogged.watch.some((w) => w.includes("還沒有飲食紀錄")),
+  JSON.stringify(unlogged.watch)
 );
 
 /* Reaching a tree is worth saying out loud. */

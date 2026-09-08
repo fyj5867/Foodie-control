@@ -19,11 +19,27 @@ import { daysAgoStr, todayStr } from "./health.js";
 export const WATER_GOAL_ML = 2000;
 export const EXERCISE_GOAL_MIN = 30;
 
-/** A day's food log has to show real eating, not an empty log, before the
- * calorie condition can pass. Without a lower bound, forgetting to record
- * food would read as "stayed under target" and silently count as a met day —
- * which would make the whole garden meaningless. */
-export const CALORIE_MIN_RATIO = 0.5;
+/**
+ * The calorie ceiling for a day to count: intake under this is met.
+ *
+ * A flat figure the user set, rather than the profile-derived target. That
+ * also means all three conditions are now plain numbers, so a day can be
+ * judged even when the profile is incomplete — the personalised target from
+ * calcDailyCalorieTarget stays on screen as guidance, but no longer decides
+ * whether the day counts.
+ */
+export const CALORIE_CEILING = 1500;
+
+/**
+ * Below this the day is treated as not yet recorded rather than as met.
+ *
+ * Without a floor, an empty food log is 0 kcal, which is "under 1500", which
+ * would mean forgetting to record food counted as perfect control — and the
+ * garden would fill up on days nobody actually tracked. 500 kcal is low
+ * enough not to reject a genuinely light day and high enough to catch a log
+ * holding only a coffee, or nothing at all.
+ */
+export const CALORIE_MIN_LOGGED = 500;
 
 /** One finished tree. 30 met days ≈ a month of full attendance; slipping a
  * few days just pushes the finish out, it never resets progress. */
@@ -80,10 +96,7 @@ export function evaluateDay(date, { foodLog, waterLog, exerciseLog, calorieTarge
   const waterMl = sumFor(waterLog, date, FIELDS.water);
   const exerciseMin = sumFor(exerciseLog, date, FIELDS.exercise);
 
-  const calorie =
-    calorieTarget != null &&
-    calories >= calorieTarget * CALORIE_MIN_RATIO &&
-    calories <= calorieTarget;
+  const calorie = calories >= CALORIE_MIN_LOGGED && calories < CALORIE_CEILING;
   const water = waterMl >= WATER_GOAL_ML;
   const exercise = exerciseMin >= EXERCISE_GOAL_MIN;
 

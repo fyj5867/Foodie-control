@@ -8,7 +8,7 @@
  */
 
 import React from "react";
-import { WATER_GOAL_ML, EXERCISE_GOAL_MIN } from "../lib/goals.js";
+import { WATER_GOAL_ML, EXERCISE_GOAL_MIN, CALORIE_CEILING } from "../lib/goals.js";
 import { GOAL_ICONS } from "./GoalIcons.jsx";
 
 /* Radii are spaced wider than the stroke so a clear gap separates the rings.
@@ -28,19 +28,17 @@ function ratio(value, goal) {
 }
 
 /**
- * Calorie control is the odd one out: it is a ceiling, not a target to
- * exceed. The ring fills as intake approaches the ceiling and reads as
- * complete when intake sits inside the acceptable band — so a nearly empty
- * ring means "barely eaten", not "doing well".
+ * Calorie control is the odd one out: it is a ceiling, not a target to reach.
+ * The ring fills as intake approaches the ceiling, so a nearly empty ring
+ * means "barely recorded", not "doing well".
  */
-function calorieRatio(consumed, target) {
-  if (!target || target <= 0) return 0;
-  return Math.max(0, Math.min(1, consumed / target));
+function calorieRatio(consumed) {
+  return Math.max(0, Math.min(1, consumed / CALORIE_CEILING));
 }
 
 export default function Rings({ day, size = 182 }) {
   const values = {
-    calorie: calorieRatio(day?.calories || 0, day?.calorieTarget),
+    calorie: calorieRatio(day?.calories || 0),
     exercise: ratio(day?.exerciseMin || 0, EXERCISE_GOAL_MIN),
     water: ratio(day?.waterMl || 0, WATER_GOAL_ML),
   };
@@ -94,10 +92,9 @@ export default function Rings({ day, size = 182 }) {
  */
 function shortfall(key, day) {
   if (key === "calorie") {
-    // Say which of the two would unblock it, not just that it is missing.
-    if (!day?.calorieTarget) return "需要年齡或基礎代謝率";
-    const consumed = Math.round(day.calories || 0);
-    if (consumed > day.calorieTarget) return `超過 ${(consumed - day.calorieTarget).toLocaleString()}`;
+    const consumed = Math.round(day?.calories || 0);
+    if (consumed >= CALORIE_CEILING) return `超過 ${(consumed - CALORIE_CEILING).toLocaleString()}`;
+    // Under the floor means the log is incomplete, not that the day is perfect.
     return "還沒記錄完";
   }
   if (key === "exercise") {
@@ -123,8 +120,8 @@ export function RingMetrics({ day }) {
       color: "var(--cal)",
       label: "熱量控制",
       value: Math.round(day?.calories || 0).toLocaleString(),
-      goal: day?.calorieTarget ? `/ ${day.calorieTarget.toLocaleString()}` : "/ —",
-      unit: "大卡",
+      goal: `/ ${CALORIE_CEILING.toLocaleString()}`,
+      unit: "大卡以下",
       met: day?.calorie,
     },
     {
@@ -180,7 +177,7 @@ export function RingLegend({ day, compact = false }) {
       color: "var(--cal)",
       label: "熱量",
       value: Math.round(day?.calories || 0).toLocaleString(),
-      goal: day?.calorieTarget ? `/ ${day.calorieTarget.toLocaleString()} kcal` : "kcal",
+      goal: `/ ${CALORIE_CEILING.toLocaleString()} kcal 以下`,
       met: day?.calorie,
     },
     {
