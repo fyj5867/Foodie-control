@@ -83,6 +83,27 @@ export default function Rings({ day, size = 182 }) {
   );
 }
 
+/**
+ * What is still missing on this condition, phrased as something to act on.
+ *
+ * This used to live in a separate run-on sentence above the numbers, which
+ * meant the most actionable text on the screen was also the smallest, and the
+ * same fact was stated twice. Putting it on the row it belongs to removes the
+ * duplication and lets each line be read on its own.
+ */
+function shortfall(key, day) {
+  if (key === "calorie") {
+    if (!day?.calorieTarget) return "尚未設定目標";
+    const consumed = Math.round(day.calories || 0);
+    if (consumed > day.calorieTarget) return `超過 ${(consumed - day.calorieTarget).toLocaleString()}`;
+    return "還沒記錄完";
+  }
+  if (key === "exercise") {
+    return `還差 ${Math.max(0, EXERCISE_GOAL_MIN - Math.round(day?.exerciseMin || 0))} 分鐘`;
+  }
+  return `還差 ${Math.max(0, WATER_GOAL_ML - Math.round(day?.waterMl || 0)).toLocaleString()} cc`;
+}
+
 /** Row of value/goal lines that sits beside or under the rings. */
 export function RingLegend({ day, compact = false }) {
   const rows = [
@@ -91,7 +112,7 @@ export function RingLegend({ day, compact = false }) {
       color: "var(--cal)",
       label: "熱量",
       value: Math.round(day?.calories || 0).toLocaleString(),
-      goal: day?.calorieTarget ? `/ ${day.calorieTarget.toLocaleString()} kcal` : "/ 尚未設定目標",
+      goal: day?.calorieTarget ? `/ ${day.calorieTarget.toLocaleString()} kcal` : "kcal",
       met: day?.calorie,
     },
     {
@@ -121,21 +142,25 @@ export function RingLegend({ day, compact = false }) {
           <span className="ring-v">{row.value}</span>
           <span className="ring-g">{row.goal}</span>
           {row.met ? (
-            <svg
-              className="ring-check"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M5 12.5l4.5 4.5L19 7" />
-            </svg>
-          ) : null}
+            <span className="ring-done">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M5 12.5l4.5 4.5L19 7" />
+              </svg>
+              達標
+            </span>
+          ) : (
+            <span className="ring-gap">{shortfall(row.key, day)}</span>
+          )}
         </div>
       ))}
     </div>

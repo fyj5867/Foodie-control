@@ -10,7 +10,7 @@ import React, { useState } from "react";
 import Sprout from "./Sprout.jsx";
 import GardenScene from "./Garden.jsx";
 import { RingLegend } from "./Rings.jsx";
-import { STAGES, TREE_DAYS, WATER_GOAL_ML } from "../lib/goals.js";
+import { STAGES, TREE_DAYS } from "../lib/goals.js";
 
 /** Which of the four vitality levels today's tally lands on. */
 function vitalityFor(metCount) {
@@ -30,20 +30,17 @@ const VITALITY_LINE = {
   wilting: { lead: "今天還沒有進度", tail: "還有點想睡" },
 };
 
-/** What is still missing, in the order easiest to fix tonight. */
-function missingLabel(day) {
-  const gaps = [];
-  if (!day.water) {
-    const short = Math.max(0, WATER_GOAL_ML - Math.round(day.waterMl || 0));
-    gaps.push(`喝水還差 ${short.toLocaleString()} cc`);
-  }
-  if (!day.exercise) gaps.push(`運動還差 ${Math.max(0, 30 - Math.round(day.exerciseMin || 0))} 分鐘`);
-  if (!day.calorie) {
-    if (!day.calorieTarget) gaps.push("熱量目標尚未設定");
-    else if ((day.calories || 0) > day.calorieTarget) gaps.push("今天熱量已超過目標");
-    else gaps.push("飲食還沒記錄完");
-  }
-  return gaps;
+/**
+ * The headline: how many of the three are still open.
+ *
+ * This is the one thing worth reading first, so it gets the largest type on
+ * the card. The per-condition detail now lives on the rows underneath, where
+ * each shortfall sits next to the number it refers to.
+ */
+function headline(day) {
+  const met = day?.metCount || 0;
+  if (met === 3) return { text: "今天三項都達標了", tone: "done" };
+  return { text: `今天還差 ${3 - met} 項`, tone: met === 0 ? "none" : "part" };
 }
 
 function StageTrack({ currentDays }) {
@@ -66,7 +63,7 @@ export default function GrowthPanel({ day, garden, onGoActivity }) {
   const [view, setView] = useState("today");
   const vitality = vitalityFor(day?.metCount || 0);
   const line = VITALITY_LINE[vitality];
-  const gaps = missingLabel(day || {});
+  const head = headline(day);
   const pct = Math.round((garden.currentDays / TREE_DAYS) * 100);
 
   return (
@@ -102,10 +99,8 @@ export default function GrowthPanel({ day, garden, onGoActivity }) {
           </div>
 
           <div className="growth-status">
-            <div className="growth-lead">
-              {line.lead} —— {line.tail}
-            </div>
-            {gaps.length ? <div className="growth-gap">{gaps.join("・")}</div> : null}
+            <div className={`growth-head tone-${head.tone}`}>{head.text}</div>
+            <div className="growth-mood">{line.tail}</div>
           </div>
 
           <RingLegend day={day} compact />

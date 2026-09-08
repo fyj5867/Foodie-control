@@ -81,6 +81,9 @@ import Rings, { RingLegend } from "./components/Rings.jsx";
 import GrowthPanel from "./components/GrowthPanel.jsx";
 import ActivityPanel from "./components/ActivityPanel.jsx";
 import DietDiary from "./components/DietDiary.jsx";
+import AvatarPicker from "./components/AvatarPicker.jsx";
+import DailyCoach from "./components/DailyCoach.jsx";
+import { coachSlot, morningMessage, eveningSummary } from "./lib/coach.js";
 import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM } from "./lib/storage.js";
 
 /** Traffic-light metadata for a value that may be missing or unrecognised.
@@ -429,6 +432,31 @@ const WATER_MOOD_META = {
   party: { label: "太棒了，今天的水分達標！", face: "party" },
 };
 
+/** One editable day of water. */
+function WaterHistoryRow({ entry, onUpdateWaterEntry, onPersistWaterEntry, onDeleteWaterEntry }) {
+  const isToday = entry.date === todayStr();
+  return (
+    <div className={`water-history-row ${isToday ? "is-today" : ""}`}>
+      <span>{isToday ? "今天" : entry.date.slice(5)}</span>
+      <span className="water-history-edit">
+        <Pencil size={10} className="food-log-edit-icon" />
+        <input
+          type="number"
+          className="cal-num-input-inline water-amount-input"
+          value={entry.amountMl}
+          onChange={(e) => onUpdateWaterEntry(entry.id, e.target.value)}
+          onBlur={() => onPersistWaterEntry(entry.id)}
+          aria-label={`${isToday ? "今天" : entry.date} 的喝水量`}
+        />
+        <span>ml</span>
+      </span>
+      <button className="icon-btn" onClick={() => onDeleteWaterEntry(entry.id)} aria-label="刪除這天的紀錄">
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+}
+
 function WaterMascot({ pct }) {
   const fillPct = Math.max(0, Math.min(pct, 100));
   const fillHeight = 128 * (fillPct / 100);
@@ -510,6 +538,18 @@ function WaterCard({
   onPersistWaterEntry,
 }) {
   const [customAmount, setCustomAmount] = useState("");
+  const [showEarlierWater, setShowEarlierWater] = useState(false);
+
+  // Split today from the rest so today can stay visible while the others
+  // collapse. Hooks must run before the early return below.
+  const waterRows = useMemo(() => {
+    const t = todayStr();
+    const entries = recentWaterEntries || [];
+    return {
+      today: entries.filter((e) => e.date === t),
+      earlier: entries.filter((e) => e.date !== t),
+    };
+  }, [recentWaterEntries]);
 
   if (target == null) {
     return (
@@ -612,26 +652,44 @@ function WaterCard({
 
       {recentWaterEntries.length > 0 && (
         <div className="water-history">
-          <div className="water-history-title">最近7天每日總量（可直接修改毫升數）</div>
-          {recentWaterEntries.map((entry) => (
-            <div className="water-history-row" key={entry.id}>
-              <span>💧 {entry.date === todayStr() ? "今天" : entry.date.slice(5)}</span>
-              <span className="water-history-edit">
-                <Pencil size={10} className="food-log-edit-icon" />
-                <input
-                  type="number"
-                  className="cal-num-input-inline water-amount-input"
-                  value={entry.amountMl}
-                  onChange={(e) => onUpdateWaterEntry(entry.id, e.target.value)}
-                  onBlur={() => onPersistWaterEntry(entry.id)}
-                />
-                <span>ml</span>
-              </span>
-              <button className="icon-btn" onClick={() => onDeleteWaterEntry(entry.id)}>
-                <Trash2 size={14} />
-              </button>
-            </div>
+          {/* Today is the row you actually edit. The chart above already shows
+              the other days, so they stay collapsed until you want to correct
+              one. */}
+          {waterRows.today.map((entry) => (
+            <WaterHistoryRow
+              key={entry.id}
+              entry={entry}
+              onUpdateWaterEntry={onUpdateWaterEntry}
+              onPersistWaterEntry={onPersistWaterEntry}
+              onDeleteWaterEntry={onDeleteWaterEntry}
+            />
           ))}
+
+          {waterRows.earlier.length > 0 && (
+            <>
+              {showEarlierWater ? (
+                <>
+                  <div className="water-history-title">前 {waterRows.earlier.length} 天（可直接修改毫升數）</div>
+                  {waterRows.earlier.map((entry) => (
+                    <WaterHistoryRow
+                      key={entry.id}
+                      entry={entry}
+                      onUpdateWaterEntry={onUpdateWaterEntry}
+                      onPersistWaterEntry={onPersistWaterEntry}
+                      onDeleteWaterEntry={onDeleteWaterEntry}
+                    />
+                  ))}
+                </>
+              ) : null}
+              <button
+                type="button"
+                className="water-history-toggle"
+                onClick={() => setShowEarlierWater((v) => !v)}
+              >
+                {showEarlierWater ? "收起前幾天" : `查看並修改前 ${waterRows.earlier.length} 天`}
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -719,6 +777,8 @@ export default function App() {
   const [saveNote, setSaveNote] = useState("");
 
   const [form, setForm] = useState({
+    nickname: "",
+    avatar: "",
     age: "",
     gender: "female",
     height: "",
@@ -761,6 +821,9 @@ export default function App() {
   const [geminiModelInput, setGeminiModelInput] = useState("");
   const [aiProvider, setAiProvider] = useState("gemini");
   const [calorieOverride, setCalorieOverride] = useState("");
+  /* Which coach message has been dismissed, as "YYYY-MM-DD:slot". Kept so a
+   * message you have already read does not come back on every open. */
+  const [coachDismissed, setCoachDismissed] = useState("");
   const [calorieOverrideInput, setCalorieOverrideInput] = useState("");
 
   useEffect(() => {
@@ -873,6 +936,12 @@ export default function App() {
         }
       } catch (e) {
         setAiProvider(hasAnthropicKey && !hasGeminiKey ? "anthropic" : "gemini");
+      }
+      try {
+        const cd = await window.storage.get("coach-dismissed", false);
+        if (cd && cd.value) setCoachDismissed(cd.value);
+      } catch (e) {
+        /* nothing dismissed yet */
       }
       try {
         const co = await window.storage.get("calorie-target-override", false);
@@ -1266,6 +1335,8 @@ export default function App() {
     setWaterLog([]);
     setExerciseLog([]);
     setForm({
+      nickname: "",
+      avatar: "",
       age: "",
       gender: "female",
       height: "",
@@ -1558,6 +1629,39 @@ export default function App() {
     calorieTarget: dailyCalorieTarget,
     ready: !loading,
   });
+
+  /* The morning greeting or the evening summary, whichever the clock calls
+   * for. Nothing shows in between — the three rows say it better by then. */
+  const slot = coachSlot();
+  const coachKey = `${todayStr()}:${slot || "none"}`;
+  const coachVisible = Boolean(slot) && coachDismissed !== coachKey;
+  const coachMorning = useMemo(
+    () =>
+      slot === "morning"
+        ? morningMessage({
+            dateStr: todayStr(),
+            streak: garden.currentStreak,
+            nickname: (profile && profile.nickname) || "",
+          })
+        : null,
+    [slot, garden.currentStreak, profile]
+  );
+  const coachEvening = useMemo(
+    () =>
+      slot === "evening"
+        ? eveningSummary({ day: todayGoals, garden, nickname: (profile && profile.nickname) || "" })
+        : null,
+    [slot, todayGoals, garden, profile]
+  );
+
+  async function dismissCoach() {
+    setCoachDismissed(coachKey);
+    try {
+      await window.storage.set("coach-dismissed", coachKey, false);
+    } catch (e) {
+      /* dismissing is a convenience; losing it is harmless */
+    }
+  }
   const todayEntries = useMemo(() => foodLog.filter((e) => e.date === todayStr()), [foodLog]);
   const recentFoodEntries = useMemo(() => {
     const cutoff = daysAgoStr(6);
@@ -1650,6 +1754,85 @@ export default function App() {
           --water:#3E7EA6;
         }
 
+        /* --- identity: avatar + nickname --- */
+        .identity-row{
+          display:flex; align-items:flex-start; gap:16px;
+          padding-bottom:16px; margin-bottom:16px;
+          border-bottom:1px solid var(--line);
+        }
+        .identity-name{ flex:1; min-width:0; }
+        .field-hint{
+          margin:5px 0 0; font-size:11px; color:var(--ink-soft); line-height:1.5;
+        }
+        .avatar-picker{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+        .avatar-frame{
+          position:relative; border-radius:50%; overflow:hidden;
+          background:var(--surface-2); border:2px solid var(--line);
+          flex:0 0 auto;
+        }
+        .avatar-frame img{ width:100%; height:100%; object-fit:cover; display:block; }
+        /* The sprout stands in until a picture is picked — an empty circle or a
+           grey silhouette would be the least characterful thing in the app. */
+        .avatar-fallback{
+          width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+          padding:6px; box-sizing:border-box;
+        }
+        .avatar-edit{
+          position:absolute; right:-2px; bottom:-2px;
+          width:26px; height:26px; border-radius:50%;
+          border:2px solid var(--card); background:var(--brand); color:#fff;
+          display:flex; align-items:center; justify-content:center;
+          cursor:pointer; padding:0;
+        }
+        .avatar-actions{ display:flex; align-items:center; gap:8px; }
+        .avatar-link{
+          border:none; background:none; padding:0; cursor:pointer;
+          font-size:11.5px; font-family:inherit; color:var(--brand);
+        }
+        .avatar-link-quiet{
+          color:var(--ink-soft); display:inline-flex; align-items:center; gap:3px;
+        }
+        .avatar-error{ font-size:11px; color:var(--red); text-align:center; }
+        .avatar-input{ display:none; }
+
+        /* --- the morning line and the evening summary --- */
+        .coach{
+          background:var(--card); border:1px solid var(--line);
+          border-radius:16px; padding:14px 16px 16px; margin-bottom:14px;
+        }
+        .coach-morning{ background:var(--amber-soft); border-color:#EBDCC0; }
+        .coach-evening{ background:var(--brand-soft); border-color:#CFE3DA; }
+        .coach-head{ display:flex; align-items:center; gap:7px; }
+        .coach-icon{ display:inline-flex; color:var(--ink-soft); }
+        .coach-morning .coach-icon{ color:var(--amber); }
+        .coach-evening .coach-icon{ color:var(--brand); }
+        .coach-title{
+          font-size:12px; font-weight:700; letter-spacing:.04em; color:var(--ink-soft);
+        }
+        .coach-close{
+          margin-left:auto; border:none; background:none; padding:4px; cursor:pointer;
+          color:var(--ink-soft); display:flex; min-width:28px; min-height:28px;
+          align-items:center; justify-content:center;
+        }
+        .coach-body{ display:flex; align-items:center; gap:11px; margin-top:8px; }
+        .coach-avatar{
+          width:38px; height:38px; border-radius:50%; object-fit:cover;
+          flex:0 0 38px; border:1.5px solid rgba(255,255,255,.8);
+        }
+        .coach-line{
+          margin:0; font-size:15px; line-height:1.6; color:var(--ink); flex:1;
+        }
+        .coach-cols{ display:flex; flex-direction:column; gap:10px; margin-top:14px; }
+        .coach-col-title{
+          font-size:11.5px; font-weight:700; letter-spacing:.03em; margin-bottom:4px;
+        }
+        .coach-col-good .coach-col-title{ color:var(--brand); }
+        .coach-col-watch .coach-col-title{ color:var(--amber); }
+        .coach-col ul{ margin:0; padding-left:1.15em; }
+        .coach-col li{
+          font-size:13px; line-height:1.65; color:var(--ink); margin-bottom:2px;
+        }
+
         .growth-card{ padding:0; overflow:hidden; }
         .growth-switch{
           display:flex; gap:4px; padding:10px 10px 0;
@@ -1664,18 +1847,37 @@ export default function App() {
           margin:10px 10px 0; border-radius:14px; overflow:hidden;
           background:var(--surface-2); border:1px solid var(--line);
         }
-        .growth-status{ padding:12px 16px 0; text-align:center; }
-        .growth-lead{ font-size:15px; color:var(--ink); }
-        .growth-gap{ margin-top:3px; font-size:13px; color:var(--ink-soft); }
+        .growth-status{ padding:14px 16px 0; text-align:center; }
+        .growth-head{
+          font-size:21px; font-weight:700; letter-spacing:-.01em; line-height:1.3;
+        }
+        .growth-head.tone-done{ color:var(--brand); }
+        .growth-head.tone-part{ color:var(--ink); }
+        .growth-head.tone-none{ color:var(--ink); }
+        .growth-mood{ margin-top:2px; font-size:13px; color:var(--ink-soft); }
 
-        .ring-legend{ display:flex; flex-direction:column; gap:6px; padding:12px 16px 0; }
-        .ring-legend.compact{ padding:10px 16px 0; }
-        .ring-row{ display:flex; align-items:baseline; gap:8px; font-size:13px; color:var(--ink-soft); }
-        .ring-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 8px; align-self:center; }
-        .ring-k{ width:34px; flex:0 0 34px; }
-        .ring-v{ font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; }
+        .ring-legend{ display:flex; flex-direction:column; gap:2px; padding:14px 16px 0; }
+        .ring-legend.compact{ padding:12px 16px 0; }
+        .ring-row{
+          display:flex; align-items:baseline; gap:8px;
+          font-size:14px; color:var(--ink-soft);
+          padding:7px 10px; border-radius:10px; background:var(--surface-2);
+        }
+        .ring-dot{ width:9px; height:9px; border-radius:50%; flex:0 0 9px; align-self:center; }
+        .ring-k{ width:36px; flex:0 0 36px; color:var(--ink); }
+        .ring-v{ font-size:16px; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; }
         .ring-g{ font-size:12px; }
-        .ring-check{ margin-left:auto; color:var(--brand); flex:0 0 auto; align-self:center; }
+        /* The shortfall is the point of the row, so it holds the right edge
+           and stays legible rather than trailing off in small grey text. */
+        .ring-gap{
+          margin-left:auto; flex:0 0 auto; font-size:13px; font-weight:500;
+          color:var(--amber);
+        }
+        .ring-done{
+          margin-left:auto; flex:0 0 auto; display:inline-flex; align-items:center; gap:4px;
+          font-size:12.5px; color:var(--brand); align-self:center;
+        }
+        .ring-row.met{ background:var(--brand-soft); }
         .ring-row.met .ring-v{ color:var(--brand); }
 
         .growth-progress{ padding:14px 16px 0; }
@@ -1697,7 +1899,7 @@ export default function App() {
         .stage-label{ font-size:10.5px; color:var(--ink-soft); }
         .stage-dot.reached .stage-label{ color:var(--brand); font-weight:600; }
 
-        .growth-note{ padding:10px 16px 0; font-size:12.5px; color:var(--ink-soft); text-align:center; }
+        .growth-note{ padding:10px 16px 0; font-size:13.5px; color:var(--ink-soft); text-align:center; }
         .garden-note{ padding-bottom:16px; }
         .growth-link{
           display:block; width:calc(100% - 32px); margin:12px 16px 16px;
@@ -2347,6 +2549,13 @@ export default function App() {
           border-top:1px solid var(--line);
           padding-top:8px;
         }
+        .water-history-toggle{
+          display:block; width:100%; min-height:40px; margin-top:6px;
+          border:1px solid var(--line); border-radius:10px;
+          background:transparent; color:var(--brand);
+          font-size:12.5px; font-family:inherit; cursor:pointer;
+        }
+        .water-history-row.is-today span:first-child{ color:var(--ink); font-weight:600; }
         .water-history-title{
           font-size:11px;
           font-weight:700;
@@ -2622,6 +2831,10 @@ export default function App() {
               goTracking={() => setTab("tracking")}
               todayGoals={todayGoals}
               garden={garden}
+              coachSlotName={coachVisible ? slot : null}
+              coachMorning={coachMorning}
+              coachEvening={coachEvening}
+              onDismissCoach={dismissCoach}
             />
           )}
 
@@ -2844,6 +3057,10 @@ function OverviewTab({
   goTracking,
   todayGoals,
   garden,
+  coachSlotName,
+  coachMorning,
+  coachEvening,
+  onDismissCoach,
 }) {
   if (!profile) {
     return (
@@ -2858,8 +3075,28 @@ function OverviewTab({
 
   return (
     <>
+      {coachSlotName === "morning" ? (
+        <DailyCoach
+          slot="morning"
+          message={coachMorning}
+          nickname={profile.nickname}
+          avatar={profile.avatar}
+          onDismiss={onDismissCoach}
+        />
+      ) : null}
+
       {todayGoals && garden ? (
         <GrowthPanel day={todayGoals} garden={garden} onGoActivity={goExercise} />
+      ) : null}
+
+      {coachSlotName === "evening" ? (
+        <DailyCoach
+          slot="evening"
+          summary={coachEvening}
+          nickname={profile.nickname}
+          avatar={profile.avatar}
+          onDismiss={onDismissCoach}
+        />
       ) : null}
 
       <div className="card">
@@ -2975,6 +3212,25 @@ function ProfileTab({
         <p style={{ fontSize: "11.5px", color: "var(--ink-soft)", margin: "-4px 0 12px" }}>
           填寫年齡、身高、體重後會自動存檔，不用擔心忘記按儲存。
         </p>
+
+        <div className="identity-row">
+          <AvatarPicker
+            avatar={form.avatar}
+            nickname={form.nickname}
+            onChange={(next) => setForm((f) => ({ ...f, avatar: next }))}
+          />
+          <div className="field identity-name">
+            <label>稱謂</label>
+            <input
+              type="text"
+              maxLength={12}
+              value={form.nickname}
+              onChange={(e) => setForm((f) => ({ ...f, nickname: e.target.value }))}
+              placeholder="想被怎麼叫？"
+            />
+            <p className="field-hint">早晚的問候與總結會用這個稱謂。</p>
+          </div>
+        </div>
         <div className="field-row">
           <div className="field">
             <label>年齡</label>
