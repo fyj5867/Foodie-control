@@ -71,76 +71,162 @@ const GROUP_ORDER = [
    away. Any group that already has a value is opened regardless. */
 const DEFAULT_OPEN = ["sugar", "lipid", "pressure"];
 
+/**
+ * The one-word verdict.
+ *
+ * The zone label already carries the numbers（「糖尿病前期範圍 100-125」）, but a
+ * range is something you read, not something you see. This is the word that
+ * gets the colour and the size, with the range underneath it in small type as
+ * the evidence.
+ */
+function verdictWord(zone, marker) {
+  if (!zone) return null;
+  if (zone.tone === "green") return "正常";
+  if (zone.tone === "yellow") return "留意";
+  return marker && marker.referral ? "需就醫" : "注意";
+}
+
+/**
+ * How the whole report looks in three numbers.
+ *
+ * A report is forty rows of tiny type; this is the sentence a person actually
+ * wants first. Values she cannot act on herself are counted separately from
+ * values she can, because those are two different kinds of news.
+ */
+function summarise(report, gender) {
+  const counts = { green: 0, watch: 0, refer: 0 };
+  if (!report) return counts;
+
+  for (const marker of LAB_MARKERS) {
+    const value = report.values ? report.values[marker.key] : null;
+    const zone = labZone(marker.key, value, gender);
+    if (!zone) continue;
+    if (zone.tone === "green") counts.green += 1;
+    else if (marker.referral) counts.refer += 1;
+    else counts.watch += 1;
+  }
+  for (const flag of LAB_FLAGS) {
+    const value = report.flags ? report.flags[flag.key] : null;
+    if (value === "陽性") counts.refer += 1;
+    else if (value === "陰性") counts.green += 1;
+  }
+  return counts;
+}
+
+function ReportSummary({ counts }) {
+  const total = counts.green + counts.watch + counts.refer;
+  if (!total) return null;
+  return (
+    <div className="rs-strip">
+      <div className="rs-cell green">
+        <strong>{counts.green}</strong>
+        <span>在範圍內</span>
+      </div>
+      <div className={`rs-cell watch ${counts.watch ? "" : "is-zero"}`}>
+        <strong>{counts.watch}</strong>
+        <span>要留意</span>
+      </div>
+      <div className={`rs-cell refer ${counts.refer ? "" : "is-zero"}`}>
+        <strong>{counts.refer}</strong>
+        <span>問醫師</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One measured value.
+ *
+ * Four columns: a colour bar you can scan down, the name, the number, and the
+ * verdict as a pill. The range sits under the name in small type — it is the
+ * evidence for the pill, not the headline.
+ */
 function ValueRow({ marker, value, gender, change }) {
   const zone = labZone(marker.key, value, gender);
-  const tone = zone ? zone.tone : null;
+  const tone = zone ? zone.tone : "none";
+  const word = verdictWord(zone, marker);
+
   return (
-    <div className="lab-row">
-      <div className="lab-name">
-        {marker.label}
-        <span className="lab-unit">{marker.unit}</span>
+    <div className={`v-row tone-${tone}`}>
+      <div className="v-main">
+        <div className="v-name">{marker.label}</div>
+        <div className="v-range">{zone ? zone.label : "無參考區間"}</div>
       </div>
-      <div className="lab-value">
+      <div className="v-num">
         {fmtNum(value, marker.decimals)}
+        <span className="v-unit">{marker.unit}</span>
         {change ? (
-          <span className={`lab-change ${change.delta < 0 ? "down" : change.delta > 0 ? "up" : ""}`}>
+          <span className={`v-change ${change.delta < 0 ? "down" : change.delta > 0 ? "up" : ""}`}>
             {change.delta > 0 ? "▲" : change.delta < 0 ? "▼" : "＝"}
             {Math.abs(change.delta)}
           </span>
         ) : null}
       </div>
-      {zone ? <span className={`lab-zone tone-${tone}`}>{zone.label}</span> : <span className="lab-zone">—</span>}
+      {word ? <span className={`v-pill tone-${tone}`}>{word}</span> : <span className="v-pill">—</span>}
     </div>
   );
 }
 
-/** The yes/no results. Only 陽性 is called out — a page of 陰性 is good news
- *  and does not need emphasis. */
-function FlagList({ flags }) {
-  const rows = LAB_FLAGS.filter((f) => flags && flags[f.key]);
-  if (!rows.length) return null;
+/** A yes/no result, in the same shape as a measured value. */
+function FlagRow({ flag, value }) {
+  const positive = value === "陽性";
   return (
-    <div className="lab-group">
-      <div className="lab-group-title">其他檢查</div>
-      {rows.map((f) => {
-        const positive = flags[f.key] === "陽性";
-        return (
-          <div className="lab-row" key={f.key}>
-            <div className="lab-name">{f.label}</div>
-            <div className={`lab-value ${positive ? "tone-red" : ""}`}>{flags[f.key]}</div>
-            <span className={`lab-zone ${positive ? "tone-red" : ""}`}>{positive ? "需要醫師判讀" : "—"}</span>
-          </div>
-        );
-      })}
+    <div className={`v-row tone-${positive ? "red" : "green"}`}>
+      <div className="v-main">
+        <div className="v-name">{flag.label}</div>
+        <div className="v-range">{positive ? flag.note : "陰性"}</div>
+      </div>
+      <div className="v-num">{value}</div>
+      <span className={`v-pill tone-${positive ? "red" : "green"}`}>{positive ? "需就醫" : "正常"}</span>
     </div>
   );
 }
 
+/**
+ * 代謝症候群 — the count, big, then the five criteria as rows.
+ *
+ * These were five 53px boxes on a phone, which put the cutoff text at 8.5px.
+ * Five rows are taller and legible, and the criterion that is met can carry a
+ * colour across its whole width.
+ */
 function MetabolicCard({ result }) {
+  const [showNote, setShowNote] = useState(false);
   return (
     <div className="ms-card">
-      <div className="ms-head">
-        <span>代謝症候群自我檢查</span>
-        <strong className={result.reachesThreshold ? "tone-red" : ""}>
-          符合 {result.met} / {result.total} 項
-        </strong>
+      <div className="ms-top">
+        <div className="ms-count">
+          <strong className={result.reachesThreshold ? "tone-red" : ""}>{result.met}</strong>
+          <span>/ {result.total} 項</span>
+        </div>
+        <div className="ms-title">
+          代謝症候群自我檢查
+          <span>{result.reachesThreshold ? "已達「三項以上」的判定標準" : "尚未達到三項"}</span>
+        </div>
       </div>
-      <div className="ms-grid">
+
+      <div className="ms-rows">
         {result.criteria.map((c) => (
-          <div key={c.key} className={`ms-item ${c.met ? "is-met" : ""} ${c.value == null ? "is-unknown" : ""}`}>
-            <span className="ms-label">{c.short || c.label}</span>
-            <span className="ms-limit">{c.limit}</span>
-            <span className="ms-value">{c.value == null ? "未量" : c.value}</span>
+          <div key={c.key} className={`ms-row ${c.met ? "is-met" : ""} ${c.value == null ? "is-unknown" : ""}`}>
+            <span className="ms-row-label">{c.short || c.label}</span>
+            <span className="ms-row-limit">{c.limit}</span>
+            <span className="ms-row-value">{c.value == null ? "未量" : c.value}</span>
           </div>
         ))}
       </div>
-      <p className="ms-note">
-        國民健康署的判定標準是「五項中符合三項以上」：腰圍（男 ≥90、女 ≥80 cm）、
-        血壓（收縮 ≥130 或舒張 ≥85 mmHg）、空腹血糖 ≥100 mg/dL、三酸甘油酯 ≥150 mg/dL、
-        高密度脂蛋白（男 &lt;40、女 &lt;50 mg/dL）。
-        {!result.complete && "目前還有項目沒有數值，所以這個數字只是目前量到的部分。"}
-        判定上「已在服藥控制」的項目也算符合，這個 App 不知道你有沒有在用藥，請以醫師的判讀為準。
-      </p>
+
+      {!result.complete && <p className="ms-warn">還有項目沒有數值，這個數字只是目前量到的部分。</p>}
+
+      <button type="button" className="inline-toggle" onClick={() => setShowNote((v) => !v)}>
+        {showNote ? "收起判定標準" : "判定標準與說明"}
+      </button>
+      {showNote && (
+        <p className="ms-note">
+          國民健康署的標準是「五項中符合三項以上」：腰圍（男 ≥90、女 ≥80 cm）、
+          血壓（收縮 ≥130 或舒張 ≥85 mmHg）、空腹血糖 ≥100 mg/dL、三酸甘油酯 ≥150 mg/dL、
+          高密度脂蛋白（男 &lt;40、女 &lt;50 mg/dL）。判定上「已在服藥控制」的項目也算符合，
+          這個 App 不知道你有沒有在用藥，請以醫師的判讀為準。
+        </p>
+      )}
     </div>
   );
 }
@@ -150,9 +236,13 @@ function FocusCard({ focus }) {
   const pct = p ? Math.min(100, Math.round((p.actual / Math.max(p.target, 1)) * 100)) : 0;
   return (
     <div className={`focus-card ${focus.refer ? "is-refer" : ""}`}>
-      <div className="focus-title">{focus.title}</div>
-      {focus.why && <div className="focus-why">{focus.why}</div>}
+      <div className="focus-title">
+        {focus.refer && <span className="focus-tag">請就醫</span>}
+        {focus.title}
+      </div>
+      {focus.why && !focus.items && <div className="focus-why">{focus.why}</div>}
       <div className="focus-action">{focus.action}</div>
+
       {focus.items && focus.items.length > 0 && (
         <div className="refer-items">
           {focus.items.map((item) => (
@@ -163,6 +253,7 @@ function FocusCard({ focus }) {
           ))}
         </div>
       )}
+
       {p ? (
         <div className="focus-progress">
           <div className="focus-progress-head">
@@ -395,6 +486,10 @@ export default function HealthAnalysis({
   const [error, setError] = useState("");
   const [month, setMonth] = useState(monthOf(today));
   const [showHistory, setShowHistory] = useState(false);
+  /* The in-range values start collapsed. They are the majority of a report and
+     the least useful part of it: a page that opens on thirty 「正常」 rows buries
+     the three that are not. */
+  const [showNormal, setShowNormal] = useState(false);
 
   const gender = profile && profile.gender === "male" ? "male" : "female";
   const report = latestReport(reports);
@@ -413,6 +508,36 @@ export default function HealthAnalysis({
     () => monthlyAnalysis({ month, summaries, foodLog, exerciseLog, waterLog, records, report, profile, today }),
     [month, summaries, foodLog, exerciseLog, waterLog, records, report, profile, today]
   );
+
+  const counts = useMemo(() => summarise(report, gender), [report, gender]);
+
+  /* Split once, here, so both the summary and the list agree on what counts
+     as needing attention. */
+  const rows = useMemo(() => {
+    if (!report) return { attention: [], normal: [] };
+    const attention = [];
+    const normal = [];
+    for (const marker of LAB_MARKERS) {
+      const value = report.values ? report.values[marker.key] : null;
+      if (value == null) continue;
+      const zone = labZone(marker.key, value, gender);
+      const entry = { marker, value, zone };
+      if (zone && zone.tone !== "green") attention.push(entry);
+      else normal.push(entry);
+    }
+    /* Worst first: red before yellow, so the top of the list is the top of
+       her list too. */
+    const rank = { red: 0, yellow: 1 };
+    attention.sort((a, b) => (rank[a.zone.tone] ?? 9) - (rank[b.zone.tone] ?? 9));
+    return { attention, normal };
+  }, [report, gender]);
+
+  const flagRows = useMemo(() => {
+    if (!report || !report.flags) return { positive: [], negative: [] };
+    const positive = LAB_FLAGS.filter((f) => report.flags[f.key] === "陽性");
+    const negative = LAB_FLAGS.filter((f) => report.flags[f.key] === "陰性");
+    return { positive, negative };
+  }, [report]);
 
   const ms = useMemo(
     () =>
@@ -490,7 +615,7 @@ export default function HealthAnalysis({
   const monthEnd = isMonthEnd(today);
 
   return (
-    <>
+    <div className="health-page">
       {/* --- this week --- */}
       <div className="card">
         <div className="section-title">
@@ -499,10 +624,10 @@ export default function HealthAnalysis({
             第 {plan.cycle.index} 週・第 {Math.min(plan.cycle.dayInCycle, CYCLE_DAYS)}/{CYCLE_DAYS} 天
           </span>
         </div>
-        <p className="muted-line">
+        <p className="fine-print">
           {plan.hasReport
-            ? `從 ${plan.anchor} 那份健檢報告開始，每 7 天一輪。這一輪到 ${plan.cycle.end}。`
-            : "還沒有健檢報告，先以每天的三項基本目標為主。上傳報告後，這裡會依報告的數值調整。"}
+            ? `依 ${plan.anchor} 的報告安排，這一輪到 ${plan.cycle.end}`
+            : "還沒有健檢報告，先顧每天的三項基本目標。上傳報告後這裡會跟著調整。"}
         </p>
         {plan.focuses.map((focus) => (
           <FocusCard key={focus.id} focus={focus} />
@@ -522,7 +647,7 @@ export default function HealthAnalysis({
           </select>
         </div>
         {monthEnd && month === monthOf(today) && (
-          <p className="muted-line">今天是這個月的最後一天，這是這個月的總結。</p>
+          <p className="fine-print">今天是這個月的最後一天，這是這個月的總結。</p>
         )}
 
         <div className="month-stats">
@@ -545,71 +670,123 @@ export default function HealthAnalysis({
         </div>
 
         {review.detailExpired && (
-          <p className="muted-line">這個月的飲食／喝水／運動明細已經超過保留期限，只剩下每天的達標紀錄。</p>
+          <p className="fine-print">這個月的飲食／喝水／運動明細已超過保留期限，只剩每天的達標紀錄。</p>
         )}
 
-        <div className="review-block">
-          <div className="review-head tone-green">做到的</div>
+        {/* A tick or an exclamation on every line, so good and not-yet are
+            told apart by shape and colour rather than by remembering which
+            heading you are under. */}
+        <div className="verdict-list">
           {review.wins.map((line, i) => (
-            <div className="review-line" key={i}>
-              {line}
+            <div className="verdict-line good" key={`w${i}`}>
+              <span className="verdict-mark">✓</span>
+              <span>{line}</span>
+            </div>
+          ))}
+          {review.watch.map((line, i) => (
+            <div className="verdict-line watch" key={`t${i}`}>
+              <span className="verdict-mark">!</span>
+              <span>{line}</span>
             </div>
           ))}
         </div>
-        {review.watch.length > 0 && (
-          <div className="review-block">
-            <div className="review-head">可以再調整的</div>
-            {review.watch.map((line, i) => (
-              <div className="review-line" key={i}>
-                {line}
-              </div>
-            ))}
-          </div>
-        )}
         {(review.weight || review.waist) && (
-          <p className="muted-line">
-            {review.weight && `體重 ${review.weight.first} → ${review.weight.last} kg　`}
-            {review.waist && `腰圍 ${review.waist.first} → ${review.waist.last} cm`}
-          </p>
+          <div className="trend-line">
+            {review.weight && (
+              <span>
+                體重 {review.weight.first} → <strong>{review.weight.last}</strong> kg
+              </span>
+            )}
+            {review.waist && (
+              <span>
+                腰圍 {review.waist.first} → <strong>{review.waist.last}</strong> cm
+              </span>
+            )}
+          </div>
         )}
       </div>
 
-      {/* --- the report --- */}
+      {/* --- the report ---
+          Ordered by what she needs to see: three counts, then everything out
+          of range, then the metabolic syndrome check, and the in-range values
+          folded away. A report is mostly normal results, and showing thirty of
+          them first buries the three that are not. */}
       {report && (
         <div className="card">
           <div className="section-title">
-            最新健檢報告
+            健檢報告
             <span className="cycle-badge">
               {report.date}
               {report.title ? `・${report.title}` : ""}
             </span>
           </div>
 
+          <ReportSummary counts={counts} />
+
+          {rows.attention.length + flagRows.positive.length > 0 ? (
+            <div className="v-block">
+              <div className="v-block-title watch">需要注意的項目</div>
+              {flagRows.positive.map((f) => (
+                <FlagRow key={f.key} flag={f} value="陽性" />
+              ))}
+              {rows.attention.map(({ marker, value }) => (
+                <ValueRow
+                  key={marker.key}
+                  marker={marker}
+                  value={value}
+                  gender={gender}
+                  change={markerChange(reports, marker.key)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="v-allclear">這份報告量到的項目都在參考範圍內。</div>
+          )}
+
           <MetabolicCard result={ms} />
 
-          <FlagList flags={report.flags} />
+          {(rows.normal.length > 0 || flagRows.negative.length > 0) && (
+            <>
+              <button type="button" className="btn btn-secondary btn-block" onClick={() => setShowNormal((v) => !v)}>
+                {showNormal
+                  ? "收起在範圍內的項目"
+                  : `看在範圍內的 ${rows.normal.length + flagRows.negative.length} 項`}
+              </button>
+              {showNormal && (
+                <div className="v-block">
+                  {GROUP_ORDER.map((group) => {
+                    const inGroup = rows.normal.filter((r) => r.marker.group === group);
+                    if (!inGroup.length) return null;
+                    return (
+                      <div key={group} className="v-group">
+                        <div className="v-group-title">{GROUP_LABEL[group]}</div>
+                        {inGroup.map(({ marker, value }) => (
+                          <ValueRow
+                            key={marker.key}
+                            marker={marker}
+                            value={value}
+                            gender={gender}
+                            change={markerChange(reports, marker.key)}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {flagRows.negative.length > 0 && (
+                    <div className="v-group">
+                      <div className="v-group-title">其他檢查</div>
+                      {flagRows.negative.map((f) => (
+                        <FlagRow key={f.key} flag={f} value="陰性" />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
 
-          {GROUP_ORDER.map((group) => {
-            const markers = LAB_MARKERS.filter((m) => m.group === group && report.values[m.key] != null);
-            if (!markers.length) return null;
-            return (
-              <div key={group} className="lab-group">
-                <div className="lab-group-title">{GROUP_LABEL[group]}</div>
-                {markers.map((m) => (
-                  <ValueRow
-                    key={m.key}
-                    marker={m}
-                    value={report.values[m.key]}
-                    gender={gender}
-                    change={markerChange(reports, m.key)}
-                  />
-                ))}
-              </div>
-            );
-          })}
-
-          <p className="muted-line">
-            分區依據衛福部國民健康署與相關臨床指引的一般成人參考值。每家實驗室印在報告上的參考範圍可能不同，
+          <p className="fine-print">
+            分區依據衛福部國民健康署與相關臨床指引的一般成人參考值。各實驗室印在報告上的參考範圍可能不同，
             判讀請以你的報告與醫師的說明為準。
           </p>
         </div>
@@ -618,10 +795,10 @@ export default function HealthAnalysis({
       {/* --- adding one --- */}
       <div className="card">
         <div className="section-title">上傳健檢報告</div>
-        <p className="muted-line">
-          拍下報告上有數值的頁面，會自動把數字讀出來讓你核對。報告有好幾頁的話，
-          從相簿一次選最多 {MAX_PAGES} 張，會合併成同一份報告。
-          <strong>照片本身不會被儲存</strong>，只留下你確認過的數值。
+        <p className="fine-print">
+          拍下有數值的頁面，會自動把數字讀出來讓你核對。好幾頁的話，從相簿一次選最多
+          {" "}
+          {MAX_PAGES} 張，會合併成同一份。<strong>照片不會被儲存</strong>，只留你確認過的數值。
         </p>
 
         {!draft && (
@@ -752,6 +929,6 @@ export default function HealthAnalysis({
           <strong>不是診斷，也不能取代醫師的判讀</strong>。任何用藥、治療或飲食限制的決定，請與你的醫師或營養師討論。
         </span>
       </div>
-    </>
+    </div>
   );
 }

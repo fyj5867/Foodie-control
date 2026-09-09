@@ -2708,6 +2708,164 @@ export default function App() {
 
         /* --- 健康分析 and 運動建議 --------------------------------------- */
 
+        /* --- 健康分析: a larger type scale ------------------------------
+           This page is read, not glanced at, and it is the one page where the
+           smallest text was carrying the most important meaning. The verdict
+           is now a coloured pill at 12px instead of 9.5px grey text on the
+           right edge, values are 19px, and the explanatory prose is demoted to
+           .fine-print or folded behind a toggle. */
+        /* Flex so the date/week badge is pushed to the right edge instead of
+           running straight on from the title — .section-title is a plain block
+           elsewhere, where nothing sits beside it. */
+        .health-page .section-title{
+          font-size:17px;
+          display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+        }
+        .health-page .card{ padding:16px; }
+        .fine-print{ font-size:11px; color:var(--ink-soft); line-height:1.6; margin:0 0 10px; }
+
+        /* Three counts: the shape of the whole report before any of its rows. */
+        .health-page .month-stats strong{ font-size:24px; }
+        .health-page .month-stats span{ font-size:11px; }
+        .health-page .focus-title{ font-size:15.5px; }
+        .health-page .focus-action{ font-size:13.5px; line-height:1.75; }
+        .health-page .focus-why{ font-size:12px; }
+        .health-page .focus-progress-head{ font-size:12px; }
+        .health-page .focus-progress-head strong{ font-size:13.5px; }
+        .health-page .focus-bar{ height:9px; }
+        .health-page .refer-item-head{ font-size:13px; }
+        .health-page .refer-item-note{ font-size:11.5px; }
+        .health-page .cycle-badge{ font-size:11.5px; }
+        .health-page .draft-field label{ font-size:13px; }
+        .health-page .draft-field input{ font-size:14px; width:96px; }
+        .health-page .draft-group-toggle{ font-size:13px; }
+        .health-page .draft-flag-label{ font-size:13px; }
+        .focus-tag{
+          display:inline-block; font-size:11px; font-weight:700; color:#fff;
+          background:var(--red); border-radius:999px;
+          padding:2px 8px; margin-right:6px; vertical-align:2px;
+        }
+
+        /* 代謝症候群: the count big, then five readable rows. Five 53px boxes
+           put the cutoff text at 8.5px, which nobody read. */
+        .ms-top{ display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+        .ms-count strong{
+          font-family:'JetBrains Mono', monospace; font-size:30px; line-height:1;
+        }
+        .ms-count span{ font-size:12px; color:var(--ink-soft); margin-left:2px; }
+        .ms-title{ font-size:13.5px; font-weight:700; line-height:1.4; }
+        .ms-title span{ display:block; font-size:11.5px; font-weight:500; color:var(--ink-soft); }
+        .ms-rows{ display:flex; flex-direction:column; gap:4px; }
+        .ms-row{
+          display:grid; grid-template-columns:minmax(0,1fr) auto auto;
+          align-items:center; gap:10px;
+          background:#fff; border-radius:8px; padding:7px 10px;
+          border-left:4px solid var(--line);
+        }
+        .ms-row.is-met{ border-left-color:var(--red); background:var(--red-soft); }
+        .ms-row.is-unknown{ opacity:0.55; }
+        .ms-row-label{ font-size:13px; font-weight:700; }
+        .ms-row-limit{ font-size:11px; color:var(--ink-soft); white-space:nowrap; }
+        .ms-row-value{
+          font-family:'JetBrains Mono', monospace; font-weight:700;
+          font-size:14px; white-space:nowrap; min-width:56px; text-align:right;
+        }
+        .ms-warn{ font-size:11.5px; color:var(--amber); line-height:1.6; margin:8px 0 0; }
+
+        .rs-strip{
+          display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+          margin:2px 0 14px;
+        }
+        .rs-cell{
+          text-align:center; border-radius:12px; padding:10px 4px;
+          border:1.5px solid var(--line); background:var(--surface-2);
+        }
+        .rs-cell strong{
+          display:block; font-family:'JetBrains Mono', monospace;
+          font-size:26px; line-height:1.1;
+        }
+        .rs-cell span{ font-size:11.5px; color:var(--ink-soft); }
+        .rs-cell.green{ border-color:var(--green); background:var(--green-soft); }
+        .rs-cell.green strong{ color:var(--green); }
+        .rs-cell.watch{ border-color:var(--yellow); background:var(--yellow-soft); }
+        .rs-cell.watch strong{ color:var(--yellow); }
+        .rs-cell.refer{ border-color:var(--red); background:var(--red-soft); }
+        .rs-cell.refer strong{ color:var(--red); }
+        /* A zero is not news. Faded so the eye goes to the counts that matter. */
+        .rs-cell.is-zero{ border-color:var(--line); background:var(--surface-2); }
+        .rs-cell.is-zero strong{ color:var(--ink-soft); }
+
+        .v-block{ margin-bottom:12px; }
+        .v-block-title{ font-size:13px; font-weight:700; margin:0 0 6px; }
+        .v-block-title.watch{ color:var(--yellow); }
+        .v-group{ margin-bottom:10px; }
+        .v-group-title{ font-size:11.5px; font-weight:700; color:var(--ink-soft); margin-bottom:4px; }
+        .v-allclear{
+          font-size:13px; color:var(--green); font-weight:700;
+          background:var(--green-soft); border-radius:10px;
+          padding:12px; text-align:center; margin-bottom:12px;
+        }
+
+        /* One measured value: a colour bar to scan down, the name, the number,
+           and the verdict as a pill. */
+        .v-row{
+          display:grid; grid-template-columns:minmax(0,1fr) auto auto;
+          align-items:center; gap:4px 10px;
+          padding:9px 10px 9px 12px; margin-bottom:5px;
+          border-radius:10px; background:var(--surface-2);
+          border-left:4px solid var(--line);
+        }
+        .v-row.tone-green{ border-left-color:var(--green); }
+        .v-row.tone-yellow{ border-left-color:var(--yellow); background:var(--yellow-soft); }
+        .v-row.tone-red{ border-left-color:var(--red); background:var(--red-soft); }
+        .v-main{ min-width:0; }
+        .v-name{ font-size:14px; font-weight:700; line-height:1.35; overflow-wrap:anywhere; }
+        .v-range{ font-size:11px; color:var(--ink-soft); line-height:1.45; margin-top:1px; }
+        .v-num{
+          font-family:'JetBrains Mono', monospace; font-weight:700;
+          font-size:19px; white-space:nowrap; text-align:right;
+        }
+        .v-unit{ font-size:10px; font-weight:500; color:var(--ink-soft); margin-left:3px; }
+        .v-change{ display:block; font-size:11px; font-weight:500; color:var(--ink-soft); }
+        .v-change.down{ color:var(--green); }
+        .v-change.up{ color:var(--amber); }
+        .v-pill{
+          font-size:12px; font-weight:700; white-space:nowrap;
+          border-radius:999px; padding:4px 10px;
+          background:#fff; color:var(--ink-soft); border:1px solid var(--line);
+        }
+        .v-pill.tone-green{ background:var(--green); color:#fff; border-color:var(--green); }
+        .v-pill.tone-yellow{ background:var(--yellow); color:#fff; border-color:var(--yellow); }
+        .v-pill.tone-red{ background:var(--red); color:#fff; border-color:var(--red); }
+
+        .inline-toggle{
+          border:none; background:none; padding:0; margin-top:6px;
+          font-family:inherit; font-size:11.5px; color:var(--brand);
+          text-decoration:underline; cursor:pointer;
+        }
+
+        /* Good and not-yet told apart by shape and colour, not by which
+           heading you happen to be under. */
+        .verdict-list{ display:flex; flex-direction:column; gap:7px; margin:4px 0 10px; }
+        .verdict-line{
+          display:flex; gap:8px; align-items:flex-start;
+          font-size:13.5px; line-height:1.6;
+        }
+        .verdict-mark{
+          flex:0 0 20px; width:20px; height:20px; border-radius:50%;
+          display:flex; align-items:center; justify-content:center;
+          font-size:12px; font-weight:700; color:#fff; margin-top:1px;
+        }
+        .verdict-line.good .verdict-mark{ background:var(--green); }
+        .verdict-line.watch .verdict-mark{ background:var(--yellow); }
+
+        .trend-line{
+          display:flex; flex-wrap:wrap; gap:4px 16px;
+          font-size:12.5px; color:var(--ink-soft);
+          border-top:1px solid var(--line); padding-top:9px;
+        }
+        .trend-line strong{ color:var(--ink); font-family:'JetBrains Mono', monospace; }
+
         .muted-line{ font-size:11.5px; color:var(--ink-soft); line-height:1.65; margin:0 0 10px; }
         .tone-green{ color:var(--green); }
         .tone-yellow{ color:var(--yellow); }
@@ -2767,24 +2925,10 @@ export default function App() {
         /* 代謝症候群: five boxes, because the standard is "three of five" and a
            count means nothing without seeing which ones. */
         .ms-card{
-          border:1px solid var(--line); border-radius:10px;
-          padding:10px 12px; margin-bottom:12px; background:var(--paper);
+          border:1px solid var(--line); border-radius:12px;
+          padding:13px; margin-bottom:12px; background:var(--paper);
         }
-        .ms-head{
-          display:flex; justify-content:space-between; align-items:baseline;
-          font-size:12.5px; font-weight:700; margin-bottom:8px;
-        }
-        .ms-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:4px; }
-        .ms-item{
-          border:1px solid var(--line); border-radius:8px; padding:5px 3px;
-          text-align:center; background:#fff;
-        }
-        .ms-item.is-met{ border-color:var(--red); background:var(--red-soft); }
-        .ms-item.is-unknown{ opacity:0.5; }
-        .ms-label{ display:block; font-size:10px; font-weight:700; }
-        .ms-limit{ display:block; font-size:8.5px; color:var(--ink-soft); line-height:1.3; margin:2px 0; }
-        .ms-value{ display:block; font-size:10.5px; font-family:'JetBrains Mono', monospace; }
-        .ms-note{ font-size:10.5px; color:var(--ink-soft); line-height:1.65; margin:8px 0 0; }
+        .ms-note{ font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:8px 0 0; }
 
         /* A referral card lists what it is referring, each with its own
            reason — one card for the lot, because with forty markers on a
