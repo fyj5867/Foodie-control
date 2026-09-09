@@ -209,9 +209,14 @@ export function RingLegend({ day, compact = false }) {
           <span className="ring-ico">
             <Icon met={row.met} />
           </span>
-          <span className="ring-k">{row.label}</span>
-          <span className="ring-v">{row.value}</span>
-          <span className="ring-g">{row.goal}</span>
+          {/* The reading and its goal are one block, so on a narrow screen
+              they wrap together and the verdict stays put on the right rather
+              than being pushed onto a line of its own. */}
+          <span className="ring-main">
+            <span className="ring-k">{row.label}</span>
+            <span className="ring-v">{row.value}</span>
+            <span className="ring-g">{row.goal}</span>
+          </span>
           {row.met ? (
             <span className="ring-done">
               <svg

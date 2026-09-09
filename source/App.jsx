@@ -93,6 +93,8 @@ import { upsertReport, removeReport, latestReport } from "./lib/reports.js";
 import { loadReports, saveReports, loadWorkoutLinks, saveWorkoutLinks, buildBackupFrom } from "./lib/storage.js";
 import HealthAnalysis from "./components/HealthAnalysis.jsx";
 import WorkoutSuggestions from "./components/WorkoutSuggestions.jsx";
+import WeeklyPlanCard from "./components/WeeklyPlanCard.jsx";
+import { AerobicIcon, ResistanceIcon, FlexibilityIcon } from "./components/ExerciseIcons.jsx";
 
 /** Traffic-light metadata for a value that may be missing or unrecognised.
  * Falls back to yellow — "watch the portion" is the safe thing to say when
@@ -1835,7 +1837,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap');
 
@@ -2006,10 +2008,20 @@ export default function App() {
 
         .ring-legend{ display:flex; flex-direction:column; gap:2px; padding:14px 16px 0; }
         .ring-legend.compact{ padding:12px 16px 0; }
+        /* Three columns: the character, the reading, the verdict. A grid
+           rather than a flex row because the verdict has to hold the right
+           edge at every width — when this was one flex row that could wrap,
+           a narrow screen left 「達標」 stranded on a line by itself. */
         .ring-row{
-          display:flex; align-items:baseline; gap:8px;
+          display:grid;
+          grid-template-columns:auto minmax(0,1fr) auto;
+          align-items:center; gap:2px 8px;
           font-size:14px; color:var(--ink-soft);
           padding:6px 9px; border-radius:10px; background:var(--surface-2);
+        }
+        .ring-main{
+          display:flex; flex-wrap:wrap; align-items:baseline; gap:0 6px;
+          min-width:0;
         }
         .ring-ico{
           flex:0 0 32px; width:32px; height:32px; align-self:center;
@@ -2023,11 +2035,11 @@ export default function App() {
         /* The shortfall is the point of the row, so it holds the right edge
            and stays legible rather than trailing off in small grey text. */
         .ring-gap{
-          margin-left:auto; flex:0 0 auto; font-size:13px; font-weight:500;
+          justify-self:end; font-size:13px; font-weight:500;
           color:var(--amber); white-space:nowrap;
         }
         .ring-done{
-          margin-left:auto; flex:0 0 auto; display:inline-flex; align-items:center; gap:4px;
+          justify-self:end; display:inline-flex; align-items:center; gap:4px;
           font-size:12.5px; color:var(--brand); align-self:center;
         }
         .ring-row.met{ background:var(--brand-soft); }
@@ -2051,7 +2063,11 @@ export default function App() {
           background:var(--surface-3); border:1.5px solid var(--surface-3);
         }
         .stage-dot.reached .stage-mark{ background:var(--brand); border-color:var(--brand); }
-        .stage-label{ font-size:9.5px; color:var(--ink-soft); white-space:nowrap; }
+        .stage-label{
+          font-size:9.5px; color:var(--ink-soft);
+          white-space:normal; word-break:break-all;
+          line-height:1.2; min-height:2.4em; display:block;
+        }
         .stage-dot.reached .stage-label{ color:var(--brand); font-weight:600; }
 
         .gauge-caveat{
@@ -2210,6 +2226,11 @@ export default function App() {
           background:var(--paper);
         }
         .app-shell{
+          /* width + min-width:0 are the guard rails: without them one
+             un-shrinkable row inside makes the whole page wider than the
+             screen, and the only way to read it is to pinch-zoom out. */
+          width:100%;
+          min-width:0;
           max-width:480px;
           margin:0 auto;
           min-height:100vh;
@@ -2572,6 +2593,76 @@ export default function App() {
           border-radius:999px;
           z-index:50;
         }
+
+        /* --- 每週運動目標 ------------------------------------------------
+           Seven day rows, not a table. Every row is a grid so the day chip,
+           the character, the activity and the verdict each hold their own
+           column at any width — the old table's intensity column wrapped to
+           three lines on a phone. */
+        .wp-bar-head{
+          display:flex; justify-content:space-between; align-items:baseline;
+          font-size:11.5px; color:var(--ink-soft); margin:2px 0 5px;
+        }
+        .wp-bar-head strong{
+          font-family:'JetBrains Mono', monospace; font-size:14px; color:var(--brand);
+        }
+        .wp-bar{ height:7px; border-radius:999px; background:var(--line); overflow:hidden; margin-bottom:12px; }
+        .wp-bar-fill{ height:100%; border-radius:999px; background:var(--brand); }
+
+        .wp-list{ display:flex; flex-direction:column; gap:5px; }
+        .wp-row{
+          display:grid;
+          grid-template-columns:22px 30px minmax(0,1fr) auto;
+          align-items:center; gap:8px;
+          padding:6px 8px; border-radius:10px;
+          background:var(--surface-2);
+          border:1px solid transparent;
+        }
+        .wp-row.is-done{ background:var(--brand-soft); }
+        .wp-row.is-moved{ background:var(--amber-soft); }
+        /* A day still ahead is faded, not marked wrong — "not yet" and
+           "didn't" must not look the same. */
+        .wp-row.is-ahead{ opacity:0.68; }
+        .wp-row.is-today{ border-color:var(--brand); }
+
+        .wp-day{
+          font-size:12px; font-weight:700; text-align:center;
+          color:var(--ink-soft);
+        }
+        .wp-row.is-today .wp-day{ color:var(--brand); }
+        .wp-ico{ display:flex; align-items:center; justify-content:center; }
+        .wp-ico svg{ display:block; }
+        .wp-main{ min-width:0; display:flex; flex-direction:column; gap:1px; }
+        .wp-act{ font-size:12.5px; color:var(--ink); overflow-wrap:anywhere; }
+        .wp-meta{ font-size:10px; color:var(--ink-soft); }
+        .wp-right{ justify-self:end; }
+
+        .wp-badge{
+          font-size:10.5px; font-weight:700; white-space:nowrap;
+          padding:3px 7px; border-radius:999px;
+        }
+        .wp-badge.done{ background:var(--brand); color:#fff; }
+        .wp-badge.moved{ background:var(--amber); color:#fff; }
+
+        .wp-dots{ display:inline-flex; align-items:center; gap:3px; }
+        .wp-dots i{
+          width:5px; height:5px; border-radius:50%;
+          background:var(--line); display:block;
+        }
+        .wp-dots i.on{ background:var(--amber); }
+        .wp-dots-label{ font-size:10px; color:var(--ink-soft); margin-left:2px; white-space:nowrap; }
+
+        .wp-legend{
+          display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:9px;
+          font-size:10px; color:var(--ink-soft);
+        }
+        .wp-legend span{ display:inline-flex; align-items:center; gap:4px; }
+        .wp-legend .sw{ width:9px; height:9px; border-radius:3px; display:block; }
+        .wp-legend .sw.done{ background:var(--brand-soft); border:1px solid var(--brand); }
+        .wp-legend .sw.moved{ background:var(--amber-soft); border:1px solid var(--amber); }
+        .wp-legend .sw.ahead{ background:var(--surface-2); border:1px solid var(--line); }
+
+        .ex-category-row span{ display:inline-flex; align-items:center; gap:4px; }
 
         /* --- 健康分析 and 運動建議 --------------------------------------- */
 
@@ -3481,7 +3572,7 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -4281,36 +4372,7 @@ function ExerciseTab({
         />
       ) : null}
 
-      <div className="card">
-        <div className="section-title">每週運動目標：{plan.weeklyMinutesTarget} 分鐘中等強度有氧</div>
-        {plan.cautions.length > 0 && (
-          <ul className="caution-list" style={{ marginBottom: "10px" }}>
-            {plan.cautions.map((c, i) => (
-              <li key={i}>{c}</li>
-            ))}
-          </ul>
-        )}
-        <table className="plan-table">
-          <thead>
-            <tr>
-              <th>日</th>
-              <th>建議活動</th>
-              <th>時間</th>
-              <th>強度</th>
-            </tr>
-          </thead>
-          <tbody>
-            {plan.weeklyTemplate.map((row) => (
-              <tr key={row.day}>
-                <td className="day-cell">{row.day}</td>
-                <td>{row.activity}</td>
-                <td>{row.duration}</td>
-                <td>{row.intensity}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <WeeklyPlanCard plan={plan} exerciseLog={thisWeekEntries} today={todayStr()} />
 
       <div className="card">
         <div className="section-title">本週運動達成率（近7天累積）</div>
@@ -4322,10 +4384,19 @@ function ExerciseTab({
           <div className="cal-bar-fill tone-green" style={{ width: `${pctForBar}%` }} />
         </div>
 
+        {/* The same three characters the plan uses, so the two cards read as
+            one feature rather than two. Emoji rendered differently on every
+            device and did not match anything else in the app. */}
         <div className="ex-category-row">
-          <span>🏃 有氧 {feedback.categoryCount.aerobic} 次</span>
-          <span>🏋️ 阻力 {feedback.categoryCount.resistance} 次</span>
-          <span>🧘 柔軟度 {feedback.categoryCount.flexibility} 次</span>
+          <span>
+            <AerobicIcon done={feedback.categoryCount.aerobic > 0} size={22} /> 有氧 {feedback.categoryCount.aerobic} 次
+          </span>
+          <span>
+            <ResistanceIcon done={feedback.categoryCount.resistance > 0} size={22} /> 阻力 {feedback.categoryCount.resistance} 次
+          </span>
+          <span>
+            <FlexibilityIcon done={feedback.categoryCount.flexibility > 0} size={22} /> 柔軟度 {feedback.categoryCount.flexibility} 次
+          </span>
         </div>
 
         <ul className="caution-list" style={{ marginTop: "10px", color: "var(--ink-soft)" }}>

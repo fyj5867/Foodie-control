@@ -141,6 +141,85 @@ export function markerChange(reports, key) {
   };
 }
 
+/** How many photos of one report can be read in one go. */
+export const MAX_PAGES = 10;
+
+/**
+ * Merge the readings from several photos of the same report into one draft.
+ *
+ * A health check report is rarely one page, and photographing it page by page
+ * and typing the rest in defeats the point of reading it at all. So several
+ * photos are read in order and merged.
+ *
+ * Two rules, both about not trusting a machine reading a photograph:
+ *
+ *   - **The first page to supply a value wins.** Later pages fill gaps, they
+ *     do not overwrite. Overwriting would make the result depend on the order
+ *     photos happened to be selected in.
+ *   - **Disagreements are reported, never resolved quietly.** If two pages
+ *     give different numbers for the same marker, one of them is a misread —
+ *     and which one is not something this code can know. Both are shown so
+ *     the person can check the report, with the kept value named.
+ *
+ * @param readings one parsed reply per photo, in the order they were read
+ */
+export function mergeReadings(readings) {
+  const values = {};
+  const source = {};
+  const rejected = [];
+  const conflicts = [];
+  const unreadable = new Set();
+  const failedPages = [];
+  let reportDate = null;
+  let labName = "";
+
+  (readings || []).forEach((reading, index) => {
+    const page = index + 1;
+    if (!reading || typeof reading !== "object") {
+      failedPages.push(page);
+      return;
+    }
+
+    const { values: clean, rejected: bad } = cleanValues(reading.values);
+    for (const item of bad) rejected.push({ ...item, page });
+
+    for (const [key, value] of Object.entries(clean)) {
+      if (values[key] == null) {
+        values[key] = value;
+        source[key] = page;
+      } else if (values[key] !== value) {
+        const marker = labMarker(key);
+        conflicts.push({
+          key,
+          label: marker ? marker.label : key,
+          kept: values[key],
+          keptPage: source[key],
+          other: value,
+          otherPage: page,
+        });
+      }
+    }
+
+    if (!reportDate && cleanDate(reading.reportDate)) reportDate = cleanDate(reading.reportDate);
+    if (!labName && reading.labName) labName = String(reading.labName).slice(0, 40);
+    for (const name of reading.unreadable || []) unreadable.add(String(name).slice(0, 20));
+  });
+
+  return {
+    values,
+    rejected,
+    conflicts,
+    unreadable: [...unreadable],
+    failedPages,
+    reportDate,
+    labName,
+    pages: (readings || []).length,
+    /* Which page each value came from, so a disagreement can be pointed at a
+       specific photo rather than at "one of the ones you picked". */
+    source,
+  };
+}
+
 /** An empty draft for the manual form — every marker, nothing filled in. */
 export function emptyDraft(date) {
   return {

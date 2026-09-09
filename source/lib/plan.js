@@ -339,6 +339,64 @@ export function weeklyPlan({
   return { cycle, anchor, focuses, measured: soFar, hasReport: Boolean(report) };
 }
 
+/* ---------------------------------------------------------- weekly plan -- */
+
+/**
+ * The Monday of the week a date falls in.
+ *
+ * The exercise template is written 週一 to 週日, so lining it up with real
+ * dates means starting the week on Monday — not on "seven days ago", which
+ * would put 週一 on a different row every day.
+ */
+export function weekStart(today = todayStr()) {
+  const d = new Date(`${today}T00:00:00`);
+  return addDays(today, -((d.getDay() + 6) % 7));
+}
+
+/**
+ * Line the weekly exercise template up against what was actually logged.
+ *
+ * `done` means the kind of thing planned for that day was done. A day where
+ * something else was done instead is reported separately as `movedAnyway`
+ * rather than as a miss: 40 minutes of cycling on a day the template said
+ * stretching is not a failure, and drawing it as an empty circle would be
+ * both wrong and discouraging.
+ *
+ * Days still ahead are neither done nor missed — `isPast` is what the screen
+ * uses to tell "not yet" from "didn't".
+ */
+export function weeklyPlanProgress({ weeklyTemplate = [], exerciseLog = [], today = todayStr() }) {
+  const start = weekStart(today);
+
+  return weeklyTemplate.map((row, index) => {
+    const date = addDays(start, index);
+    const entries = (exerciseLog || []).filter((e) => e.date === date);
+    const minutes = entries.reduce((sum, e) => sum + (Number(e[FIELDS.exercise]) || 0), 0);
+    const categoryMinutes = entries
+      .filter((e) => categoryOf(e) === row.category)
+      .reduce((sum, e) => sum + (Number(e[FIELDS.exercise]) || 0), 0);
+
+    return {
+      ...row,
+      date,
+      isToday: date === today,
+      isPast: date < today,
+      minutes,
+      categoryMinutes,
+      done: categoryMinutes > 0,
+      movedAnyway: categoryMinutes === 0 && minutes > 0,
+    };
+  });
+}
+
+/** How the whole planned week is going, for the header line. */
+export function weeklyPlanSummary(progress) {
+  const done = progress.filter((d) => d.done).length;
+  const moved = progress.filter((d) => d.movedAnyway).length;
+  const minutes = progress.reduce((sum, d) => sum + d.minutes, 0);
+  return { done, moved, minutes, total: progress.length };
+}
+
 /* -------------------------------------------------------------- monthly -- */
 
 function changeBetween(records, month, field) {

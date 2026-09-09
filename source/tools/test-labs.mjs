@@ -28,6 +28,8 @@ import {
   latestReport,
   markerHistory,
   markerChange,
+  mergeReadings,
+  MAX_PAGES,
 } from "../lib/reports.js";
 
 let passed = 0;
@@ -174,6 +176,48 @@ const change = markerChange(list, "hba1c");
 check("two reports give a direction", change.delta, -0.2);
 check("history is oldest first", markerHistory(list, "hba1c").map((h) => h.value), [6.1, 5.9]);
 check("a marker nobody measured has no history", markerHistory(list, "egfr"), []);
+
+/* --- several photos of one report ---
+ *
+ * A report is rarely one page. Merging is where a machine reading photographs
+ * can quietly do damage, so the rules are: the first page to give a value
+ * wins (otherwise the result depends on the order photos were picked in), and
+ * a disagreement between pages is reported rather than resolved — one of the
+ * two is a misread and the code cannot know which. */
+const merged = mergeReadings([
+  { reportDate: "2026-08-15", labName: "某健檢中心", values: { fastingGlucose: 108, hba1c: 5.9 }, unreadable: ["腰圍"] },
+  null, // this photo failed
+  { values: { triglycerides: 186, fastingGlucose: 112, ldl: 1450 } },
+  { values: { hdl: 46, systolic: 132, diastolic: 86 } },
+]);
+
+check(
+  "values from every page are merged",
+  merged.values,
+  { fastingGlucose: 108, hba1c: 5.9, triglycerides: 186, hdl: 46, systolic: 132, diastolic: 86 }
+);
+check("the first page to give a value wins", merged.values.fastingGlucose, 108);
+check("a disagreement is reported, not resolved", merged.conflicts.length, 1);
+check("with both numbers and both pages", [merged.conflicts[0].kept, merged.conflicts[0].other], [108, 112]);
+check("and which page each came from", [merged.conflicts[0].keptPage, merged.conflicts[0].otherPage], [1, 3]);
+check("an implausible value is still rejected", merged.rejected.map((r) => r.key), ["ldl"]);
+check("and the page it came from is named", merged.rejected[0].page, 3);
+check("a failed photo is reported", merged.failedPages, [2]);
+check("the date comes from the first page that has one", merged.reportDate, "2026-08-15");
+check("so does the lab name", merged.labName, "某健檢中心");
+check("what the model could not read is passed on", merged.unreadable, ["腰圍"]);
+check("the page count is kept", merged.pages, 4);
+
+/* Pages that agree are not a conflict. */
+const agreeing = mergeReadings([{ values: { hba1c: 5.9 } }, { values: { hba1c: 5.9 } }]);
+check("agreeing pages are not a conflict", agreeing.conflicts.length, 0);
+check("and the value is kept once", agreeing.values, { hba1c: 5.9 });
+
+/* Nothing at all is not a crash. */
+check("no readings is an empty merge", mergeReadings([]).values, {});
+check("garbage is an empty merge", mergeReadings(null).values, {});
+check("every page failing is reported", mergeReadings([null, null]).failedPages, [1, 2]);
+ok("there is a cap on how many photos are read at once", MAX_PAGES >= 2 && MAX_PAGES <= 20, String(MAX_PAGES));
 
 /* --- the sources are recorded --- */
 ok(

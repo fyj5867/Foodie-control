@@ -738,17 +738,27 @@ function buildExercisePlan(profile) {
   const lowImpact = age >= 65 || cardioRisk || isObese;
 
   const aerobic = lowImpact ? "超慢跑／飛輪（固定式腳踏車）" : "超慢跑／騎自行車／羽球";
+  const aerobicShort = lowImpact ? "超慢跑／飛輪" : "超慢跑／騎車";
   const resistanceLabel = "阻力訓練（彈力帶或自身體重：深蹲、伏地挺身）";
   const resistanceLabelShort = "阻力訓練";
 
+  /**
+   * The week, as seven rows.
+   *
+   * `day`/`activity`/`duration`/`intensity` are the sentence a person reads.
+   * The rest is what the screen needs to draw it as something other than a
+   * table: `dow` to line a row up with a real weekday, `category` to pick the
+   * character, `short` for the narrow phone layout, and `level` (1 低, 2 中等,
+   * 3 高) so intensity can be three dots instead of a parenthetical.
+   */
   const weeklyTemplate = [
-    { day: "週一", activity: aerobic, duration: "30 分鐘", intensity: "中等（有點喘但仍可說話）" },
-    { day: "週二", activity: resistanceLabel, duration: "20-30 分鐘", intensity: "中等" },
-    { day: "週三", activity: aerobic, duration: "30 分鐘", intensity: "中等" },
-    { day: "週四", activity: "伸展／太極／瑜伽（主動恢復）", duration: "20 分鐘", intensity: "低" },
-    { day: "週五", activity: aerobic, duration: "30 分鐘", intensity: "中等" },
-    { day: "週六", activity: resistanceLabelShort, duration: "20-30 分鐘", intensity: "中等" },
-    { day: "週日", activity: "戶外散步或喜愛的休閒活動", duration: "30-45 分鐘", intensity: "低至中等" },
+    { day: "週一", dow: 1, category: "aerobic", short: aerobicShort, activity: aerobic, duration: "30 分鐘", minutes: 30, intensity: "中等（有點喘但仍可說話）", level: 2 },
+    { day: "週二", dow: 2, category: "resistance", short: resistanceLabelShort, activity: resistanceLabel, duration: "20-30 分鐘", minutes: 20, intensity: "中等", level: 2 },
+    { day: "週三", dow: 3, category: "aerobic", short: aerobicShort, activity: aerobic, duration: "30 分鐘", minutes: 30, intensity: "中等", level: 2 },
+    { day: "週四", dow: 4, category: "flexibility", short: "伸展／太極／瑜伽", activity: "伸展／太極／瑜伽（主動恢復）", duration: "20 分鐘", minutes: 20, intensity: "低", level: 1 },
+    { day: "週五", dow: 5, category: "aerobic", short: aerobicShort, activity: aerobic, duration: "30 分鐘", minutes: 30, intensity: "中等", level: 2 },
+    { day: "週六", dow: 6, category: "resistance", short: resistanceLabelShort, activity: resistanceLabelShort, duration: "20-30 分鐘", minutes: 20, intensity: "中等", level: 2 },
+    { day: "週日", dow: 0, category: "aerobic", short: "散步或喜愛的活動", activity: "戶外散步或喜愛的休閒活動", duration: "30-45 分鐘", minutes: 30, intensity: "低至中等", level: 1 },
   ];
 
   const dailyHabits = [

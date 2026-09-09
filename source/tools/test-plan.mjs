@@ -34,6 +34,9 @@ import {
   BASELINE_FOCUS,
   MAX_FOCUSES,
   MEASURES,
+  weekStart,
+  weeklyPlanProgress,
+  weeklyPlanSummary,
 } from "../lib/plan.js";
 
 let passed = 0;
@@ -223,6 +226,68 @@ check("a month in progress stops at today", partial.elapsedDays, 10);
 
 check("months with data, newest first", monthsWithData({ summaries, foodLog, records }), ["2026-09"]);
 check("no data means no months", monthsWithData({}), []);
+
+/* --- the weekly exercise plan, lined up against what was logged ---
+ *
+ * The template is written 週一 to 週日, so it has to be anchored to a real
+ * Monday. And the distinction that matters: a day still ahead is not a miss,
+ * and a day where something else was done is not a miss either. */
+check("the week starts on Monday", weekStart("2026-09-09"), "2026-09-07");
+check("Monday is its own week start", weekStart("2026-09-07"), "2026-09-07");
+check("Sunday belongs to the week that began six days earlier", weekStart("2026-09-13"), "2026-09-07");
+
+const template = [
+  { day: "週一", category: "aerobic", level: 2 },
+  { day: "週二", category: "resistance", level: 2 },
+  { day: "週三", category: "aerobic", level: 2 },
+  { day: "週四", category: "flexibility", level: 1 },
+  { day: "週五", category: "aerobic", level: 2 },
+  { day: "週六", category: "resistance", level: 2 },
+  { day: "週日", category: "aerobic", level: 1 },
+];
+const weekLog = [
+  { date: "2026-09-07", activityId: "jog", durationMin: 35 },   // as planned
+  { date: "2026-09-08", activityId: "cycle", durationMin: 40 }, // something else
+];
+const progress = weeklyPlanProgress({ weeklyTemplate: template, exerciseLog: weekLog, today: "2026-09-09" });
+
+check("每 day gets a real date", progress[0].date, "2026-09-07");
+check("Monday matched the plan", [progress[0].done, progress[0].movedAnyway], [true, false]);
+/* 40 minutes of cycling on a resistance day is not a failure. */
+check("Tuesday did something else", [progress[1].done, progress[1].movedAnyway], [false, true]);
+check("and its minutes still count", progress[1].minutes, 40);
+check("today is marked", progress[2].isToday, true);
+check("today is not in the past", progress[2].isPast, false);
+check("days ahead are neither done nor past", [progress[4].done, progress[4].isPast], [false, false]);
+check("Monday is in the past", progress[0].isPast, true);
+
+const summary = weeklyPlanSummary(progress);
+check("one day went to plan", summary.done, 1);
+check("one day moved anyway", summary.moved, 1);
+check("total minutes for the week", summary.minutes, 75);
+check("seven days in the plan", summary.total, 7);
+
+const quietWeek = weeklyPlanSummary(weeklyPlanProgress({ weeklyTemplate: template, exerciseLog: [], today: "2026-09-09" }));
+check("an empty week counts nothing", [quietWeek.done, quietWeek.moved, quietWeek.minutes], [0, 0, 0]);
+
+/* The real template must carry what the card needs to draw itself. */
+import { buildExercisePlan } from "../lib/health.js";
+const realPlan = buildExercisePlan({ gender: "female", height: 160, weight: 65, symptoms: [] });
+check("the real template has seven days", realPlan.weeklyTemplate.length, 7);
+for (const row of realPlan.weeklyTemplate) {
+  ok(`${row.day} has a category`, ["aerobic", "resistance", "flexibility"].includes(row.category), JSON.stringify(row));
+  ok(`${row.day} has an intensity level`, [1, 2, 3].includes(row.level), String(row.level));
+  ok(`${row.day} has a short label for a phone`, Boolean(row.short && row.short.length <= 12), row.short);
+  ok(`${row.day} still reads as a sentence`, Boolean(row.activity && row.duration && row.intensity), JSON.stringify(row));
+}
+ok(
+  "the week includes resistance work",
+  realPlan.weeklyTemplate.some((r) => r.category === "resistance")
+);
+ok(
+  "and something gentle",
+  realPlan.weeklyTemplate.some((r) => r.category === "flexibility")
+);
 
 /* --- the wording --- */
 const copy = [

@@ -19,7 +19,7 @@
 import React, { useMemo, useState } from "react";
 import { Camera, Image as ImageIcon, Trash2, Info, Check, Loader2, Plus, RefreshCw } from "lucide-react";
 import { LAB_MARKERS, labZone, labMarker, metabolicSyndrome, fmtNum, todayStr } from "../lib/health.js";
-import { cleanValues, emptyDraft, latestReport, markerChange } from "../lib/reports.js";
+import { cleanValues, emptyDraft, latestReport, markerChange, mergeReadings, MAX_PAGES } from "../lib/reports.js";
 import { weeklyPlan, monthlyAnalysis, monthsWithData, monthOf, isMonthEnd, CYCLE_DAYS } from "../lib/plan.js";
 
 const GROUP_LABEL = {
@@ -109,8 +109,8 @@ function FocusCard({ focus }) {
   );
 }
 
-/** The draft read off a photo, or typed in, before it is saved. */
-function DraftEditor({ draft, setDraft, rejected, onSave, onCancel, gender }) {
+/** The draft read off the photos, or typed in, before it is saved. */
+function DraftEditor({ draft, setDraft, rejected, notes, onSave, onCancel, gender }) {
   const setValue = (key, raw) =>
     setDraft((d) => {
       const values = { ...d.values };
@@ -135,9 +135,44 @@ function DraftEditor({ draft, setDraft, rejected, onSave, onCancel, gender }) {
         <div className="draft-warn">
           <Info size={13} />
           <span>
-            {rejected.map((r) => `${r.label}（讀到 ${r.value}）`).join("、")}
+            {rejected
+              .map((r) => `${r.label}（${r.page ? `第 ${r.page} 張，` : ""}讀到 ${r.value}）`)
+              .join("、")}
             看起來不像正常的檢驗值，已經先不填入，請自己對照報告輸入。
           </span>
+        </div>
+      )}
+
+      {/* A disagreement between two photos means one of them was misread, and
+          which one is not something the app can know — so both numbers are
+          shown rather than one being picked quietly. */}
+      {notes && notes.conflicts && notes.conflicts.length > 0 && (
+        <div className="draft-warn">
+          <Info size={13} />
+          <span>
+            有幾項在不同張照片上讀到不一樣的數字：
+            {notes.conflicts
+              .map(
+                (c) =>
+                  `${c.label} 第 ${c.keptPage} 張是 ${c.kept}、第 ${c.otherPage} 張是 ${c.other}（先採用 ${c.kept}）`
+              )
+              .join("；")}
+            。請對照報告確認哪一個才對。
+          </span>
+        </div>
+      )}
+
+      {notes && notes.failedPages && notes.failedPages.length > 0 && (
+        <div className="draft-warn">
+          <Info size={13} />
+          <span>第 {notes.failedPages.join("、")} 張讀不出來，那幾張上的數值請自己補上。</span>
+        </div>
+      )}
+
+      {notes && notes.unreadable && notes.unreadable.length > 0 && (
+        <div className="draft-warn">
+          <Info size={13} />
+          <span>這幾項照片上看不清楚：{notes.unreadable.join("、")}，請自己對照報告輸入。</span>
         </div>
       )}
 
@@ -217,7 +252,11 @@ export default function HealthAnalysis({
 }) {
   const [draft, setDraft] = useState(null);
   const [rejected, setRejected] = useState([]);
+  const [notes, setNotes] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
+  /** Which photo of how many is being read, so a five-page report does not
+   *  look like the app has hung. */
+  const [progress, setProgress] = useState(null);
   const [error, setError] = useState("");
   const [month, setMonth] = useState(monthOf(today));
   const [showHistory, setShowHistory] = useState(false);
@@ -250,38 +289,66 @@ export default function HealthAnalysis({
     [report, latestRecord, gender]
   );
 
-  async function handlePhoto(file) {
-    if (!file) return;
+  /**
+   * Read one or more photos of the same report into a single draft.
+   *
+   * Read one at a time rather than all at once: the free Gemini tier is rate
+   * limited, and ten parallel requests would fail as a batch where ten
+   * sequential ones succeed. A page that fails is recorded and the rest carry
+   * on — losing one page of a five-page report should not lose the other four.
+   */
+  async function handlePhotos(fileList) {
+    const files = [...(fileList || [])].slice(0, MAX_PAGES);
+    if (!files.length) return;
+
     setError("");
-    setAnalyzing(true);
+    setNotes(null);
+    setRejected([]);
     setDraft(null);
-    try {
-      const result = await onAnalyzeReportPhoto(file);
-      const { values, rejected: bad } = cleanValues(result && result.values);
-      setRejected(bad);
-      if (!Object.keys(values).length) {
-        setError("這張照片讀不到檢驗數值，可以改拍清楚一點，或直接用手動輸入。");
-        setAnalyzing(false);
-        return;
+    setAnalyzing(true);
+
+    const readings = [];
+    let lastError = null;
+
+    for (let i = 0; i < files.length; i++) {
+      setProgress({ done: i, total: files.length });
+      try {
+        readings.push(await onAnalyzeReportPhoto(files[i]));
+      } catch (e) {
+        lastError = e;
+        readings.push(null);
       }
-      setDraft({
-        ...emptyDraft(result.reportDate || today),
-        title: result.labName || "",
-        labName: result.labName || "",
-        source: "photo",
-        values,
-      });
-    } catch (e) {
-      setError(e.message || "報告辨識失敗，請再試一次，或用手動輸入。");
-    } finally {
-      setAnalyzing(false);
     }
+    setProgress(null);
+    setAnalyzing(false);
+
+    const merged = mergeReadings(readings);
+    setRejected(merged.rejected);
+    setNotes(merged);
+
+    if (!Object.keys(merged.values).length) {
+      setError(
+        lastError && files.length === 1
+          ? lastError.message || "報告辨識失敗，請再試一次，或用手動輸入。"
+          : "這些照片讀不到檢驗數值，可以改拍清楚一點，或直接用手動輸入。"
+      );
+      return;
+    }
+
+    setDraft({
+      ...emptyDraft(merged.reportDate || today),
+      title: merged.labName || "",
+      labName: merged.labName || "",
+      source: "photo",
+      values: merged.values,
+    });
   }
 
   function saveDraft() {
     onSaveReport(draft);
     setDraft(null);
     setRejected([]);
+    setNotes(null);
   }
 
   const monthEnd = isMonthEnd(today);
@@ -414,7 +481,8 @@ export default function HealthAnalysis({
       <div className="card">
         <div className="section-title">上傳健檢報告</div>
         <p className="muted-line">
-          拍下報告上有數值的那一頁，會自動把數字讀出來讓你核對。
+          拍下報告上有數值的頁面，會自動把數字讀出來讓你核對。報告有好幾頁的話，
+          從相簿一次選最多 {MAX_PAGES} 張，會合併成同一份報告。
           <strong>照片本身不會被儲存</strong>，只留下你確認過的數值。
         </p>
 
@@ -428,18 +496,19 @@ export default function HealthAnalysis({
                   accept="image/*"
                   capture="environment"
                   onChange={(e) => {
-                    handlePhoto(e.target.files?.[0]);
+                    handlePhotos(e.target.files);
                     e.target.value = "";
                   }}
                 />
               </label>
               <label className="btn btn-secondary photo-input-label">
-                <ImageIcon size={16} /> 從相簿選擇
+                <ImageIcon size={16} /> 相簿（可多選）
                 <input
                   type="file"
                   accept="image/*"
+                  multiple
                   onChange={(e) => {
-                    handlePhoto(e.target.files?.[0]);
+                    handlePhotos(e.target.files);
                     e.target.value = "";
                   }}
                 />
@@ -452,6 +521,7 @@ export default function HealthAnalysis({
               onClick={() => {
                 setError("");
                 setRejected([]);
+                setNotes(null);
                 setDraft(emptyDraft(today));
               }}
             >
@@ -462,7 +532,10 @@ export default function HealthAnalysis({
 
         {analyzing && (
           <div className="analyzing-row" style={{ justifyContent: "center", padding: "16px 0" }}>
-            <Loader2 size={18} className="spin" /> 正在讀取報告上的數值…
+            <Loader2 size={18} className="spin" />
+            {progress && progress.total > 1
+              ? `正在讀取第 ${progress.done + 1} / ${progress.total} 張…`
+              : "正在讀取報告上的數值…"}
           </div>
         )}
 
@@ -488,11 +561,13 @@ export default function HealthAnalysis({
             draft={draft}
             setDraft={setDraft}
             rejected={rejected}
+            notes={notes}
             gender={gender}
             onSave={saveDraft}
             onCancel={() => {
               setDraft(null);
               setRejected([]);
+              setNotes(null);
             }}
           />
         )}
