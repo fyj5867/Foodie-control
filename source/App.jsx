@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Home,
   UserRound,
@@ -85,7 +85,8 @@ import DietDiary from "./components/DietDiary.jsx";
 import AvatarPicker from "./components/AvatarPicker.jsx";
 import DailyCoach from "./components/DailyCoach.jsx";
 import { coachSlot, dailyMessage, eveningSummary } from "./lib/coach.js";
-import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM } from "./lib/storage.js";
+import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM, KEYS, loadFoodMemory, saveFoodMemory } from "./lib/storage.js";
+import { remember, forget, lookup, suggestion, sortedMemory, isLearnable } from "./lib/foodMemory.js";
 
 /** Traffic-light metadata for a value that may be missing or unrecognised.
  * Falls back to yellow — "watch the portion" is the safe thing to say when
@@ -701,7 +702,7 @@ function WaterCard({
   );
 }
 
-function AnalysisModal({ analyzing, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories }) {
+export function AnalysisModal({ analyzing, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onUseEstimate }) {
   if (!analyzing && !analysisError && !analysisPreview) return null;
   const r = analysisPreview?.result;
 
@@ -741,6 +742,19 @@ function AnalysisModal({ analyzing, analysisError, analysisPreview, onConfirm, o
                   {lightWord(r.light)}
                 </Pill>
               </div>
+              {analysisPreview.memoryHint && (
+                <div className="cal-memory-note">
+                  <Info size={13} style={{ flexShrink: 0, marginTop: "1px" }} />
+                  <span>
+                    {/* one line on purpose — a JSX line break becomes a space, and a space before 「，」 reads as a typo */}
+                    已直接用你之前改的 <strong>{analysisPreview.memoryHint.calories} 大卡</strong>{analysisPreview.memoryHint.times > 1 ? `，改過 ${analysisPreview.memoryHint.times} 次了` : ""}。AI 這次估 {analysisPreview.memoryHint.estimate} 大卡。
+                    <br />
+                    <button type="button" onClick={onUseEstimate}>
+                      這次改用 AI 估的 {analysisPreview.memoryHint.estimate} 大卡
+                    </button>
+                  </span>
+                </div>
+              )}
               {(r.carbsG != null || r.proteinG != null || r.fatG != null) && (
                 <div className="analysis-macro">
                   醣 {fmtNum(r.carbsG, 0)}g・蛋白質 {fmtNum(r.proteinG, 0)}g・脂肪 {fmtNum(r.fatG, 0)}g
@@ -814,6 +828,12 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState("");
   const [analysisPreview, setAnalysisPreview] = useState(null); // { imageDataUrl, result }
   const [manualForm, setManualForm] = useState({ name: "", calories: "" });
+  /** Calorie figures corrected by hand, per food. See lib/foodMemory.js. */
+  const [foodMemory, setFoodMemory] = useState([]);
+  /* Which diary rows had their calories actually typed in this session. A
+     figure only counts as a correction if the person changed it — reading
+     back an untouched row would teach the AI's own guess as a standard. */
+  const editedCaloriesRef = useRef(new Set());
 
   const [apiKey, setApiKey] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -866,6 +886,11 @@ export default function App() {
         if (fl && fl.value) setFoodLog(JSON.parse(fl.value));
       } catch (e) {
         /* no food log saved yet */
+      }
+      try {
+        setFoodMemory(await loadFoodMemory());
+      } catch (e) {
+        /* nothing corrected yet */
       }
       try {
         const wl = await window.storage.get("water-log", false);
@@ -1083,6 +1108,35 @@ export default function App() {
     flashSaved(`已載入 ${record.date} 的紀錄，修改後按「更新紀錄」`);
   }
 
+  /**
+   * Record a corrected calorie figure for a food.
+   *
+   * Only ever called with a number the person supplied — a diary row they
+   * typed into, a manual entry, or a photo entry whose figure they changed
+   * before saving. Never with the model's own estimate.
+   */
+  async function rememberCalories(name, calories) {
+    if (!isLearnable(name, calories)) return;
+    const next = remember(foodMemory, { name, calories });
+    setFoodMemory(next);
+    try {
+      await saveFoodMemory(next);
+    } catch (e) {
+      /* The entry itself is already saved. A lost correction costs one more
+         edit later; failing the save would cost the meal. */
+    }
+  }
+
+  async function forgetCalories(name) {
+    const next = forget(foodMemory, name);
+    setFoodMemory(next);
+    try {
+      await saveFoodMemory(next);
+    } catch (e) {
+      /* same reasoning as above */
+    }
+  }
+
   async function persistFoodLog(next) {
     // Photos are dropped once they pass the window; the entry's text is kept
     // indefinitely so the diary has a real history. See PHOTO_DAYS.
@@ -1209,7 +1263,18 @@ export default function App() {
       const imageDataUrl = `data:${mediaType};base64,${base64}`;
       const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
       const result = await analyzeFoodPhoto(base64, mediaType, aiProvider, activeKey, geminiModel);
-      setAnalysisPreview({ imageDataUrl, result });
+      // A figure this person already corrected for this exact food beats a
+      // fresh guess from a photo — a packaged item's label does not change.
+      // It is applied rather than merely offered because the correction was
+      // deliberate, but the card says so and offers the estimate back in one
+      // tap. aiCalories is kept so a value nobody touched is never learned.
+      const memoryHint = suggestion(foodMemory, result.foodName, result.estimatedCalories);
+      setAnalysisPreview({
+        imageDataUrl,
+        result: memoryHint ? { ...result, estimatedCalories: memoryHint.calories } : result,
+        memoryHint,
+        aiCalories: Number(result.estimatedCalories) || 0,
+      });
     } catch (e) {
       setAnalysisError(e.message || "照片分析失敗，請重新拍攝或改用手動輸入。");
     } finally {
@@ -1243,6 +1308,11 @@ export default function App() {
     };
     try {
       await persistFoodLog([...foodLog, entry]);
+      // Learn only what the person changed. Accepting a remembered figure
+      // counts too — it confirms the standard rather than setting a new one.
+      if (entry.estimatedCalories !== analysisPreview.aiCalories) {
+        await rememberCalories(entry.foodName, entry.estimatedCalories);
+      }
       setAnalysisPreview(null);
       flashSaved("已加入今日飲食紀錄");
     } catch (e) {
@@ -1253,6 +1323,15 @@ export default function App() {
   function discardAnalysis() {
     setAnalysisPreview(null);
     setAnalysisError("");
+  }
+
+  /** Put the model's own estimate back, and drop the note explaining the
+   * remembered figure — there is nothing left to explain once it is gone. */
+  function useAnalysisEstimate() {
+    setAnalysisPreview((prev) => {
+      if (!prev) return prev;
+      return { ...prev, memoryHint: null, result: { ...prev.result, estimatedCalories: prev.aiCalories } };
+    });
   }
 
   function updateAnalysisCalories(value) {
@@ -1284,6 +1363,8 @@ export default function App() {
     };
     try {
       await persistFoodLog([...foodLog, entry]);
+      // A hand-typed figure is a standard for that food by definition.
+      await rememberCalories(entry.foodName, entry.estimatedCalories);
       setManualForm({ name: "", calories: "" });
       flashSaved("已加入今日飲食紀錄");
     } catch (e) {
@@ -1301,6 +1382,9 @@ export default function App() {
   }
 
   function handleUpdateFoodEntryCalories(id, rawValue) {
+    // onChange only fires when the value actually changes, which is exactly
+    // the definition of a correction being wanted here.
+    editedCaloriesRef.current.add(id);
     setFoodLog((prev) => prev.map((e) => (e.id === id ? { ...e, estimatedCalories: rawValue } : e)));
   }
 
@@ -1308,8 +1392,11 @@ export default function App() {
     const entry = foodLog.find((e) => e.id === id);
     if (!entry) return;
     const cleaned = Number(entry.estimatedCalories) || 0;
+    const wasEdited = editedCaloriesRef.current.has(id);
+    editedCaloriesRef.current.delete(id);
     try {
       await persistFoodLog(foodLog.map((e) => (e.id === id ? { ...e, estimatedCalories: cleaned } : e)));
+      if (wasEdited) await rememberCalories(entry.foodName, cleaned);
     } catch (e) {
       flashSaved("更新失敗，請再試一次");
     }
@@ -1335,9 +1422,13 @@ export default function App() {
       // Otherwise the garden keeps standing on records that no longer exist.
       await resetGarden();
     } catch (e) {}
+    try {
+      await window.storage.delete(KEYS.foodMemory, false);
+    } catch (e) {}
     setProfile(null);
     setRecords([]);
     setFoodLog([]);
+    setFoodMemory([]);
     setWaterLog([]);
     setExerciseLog([]);
     setForm({
@@ -1459,6 +1550,12 @@ export default function App() {
         await window.storage.set("exercise-log", JSON.stringify(data.exerciseLog), false);
         setExerciseLog(data.exerciseLog);
         restoredParts.push("運動紀錄");
+      }
+      if (Array.isArray(data.foodMemory)) {
+        // Saved through the same repair pass a normal load uses — a backup
+        // file is editable, and a nonsense figure here would land in meals.
+        setFoodMemory(await saveFoodMemory(data.foodMemory));
+        restoredParts.push("熱量標準值");
       }
 
       // A backup made before the garden existed has no summary. Passing
@@ -2790,6 +2887,65 @@ export default function App() {
           background:var(--brand-soft);
           color:var(--ink);
         }
+        /* The note saying a remembered figure was used instead of the AI's
+           guess. It has to be plainly visible: a number that changed itself
+           without saying so is worse than the guess it replaced. */
+        .cal-memory-note{
+          display:flex;
+          align-items:flex-start;
+          gap:6px;
+          font-size:11px;
+          line-height:1.5;
+          color:var(--ink-soft);
+          background:var(--brand-soft);
+          border-radius:8px;
+          padding:7px 9px;
+          margin:2px 0 6px;
+        }
+        .cal-memory-note strong{ color:var(--ink); }
+        .cal-memory-note button{
+          border:none;
+          background:none;
+          padding:0;
+          margin-top:3px;
+          font-size:11px;
+          font-weight:700;
+          color:var(--brand);
+          text-decoration:underline;
+          cursor:pointer;
+          font-family:inherit;
+          text-align:left;
+        }
+        .cal-memory-chip{
+          display:block;
+          width:100%;
+          text-align:left;
+          margin-top:6px;
+          border:1px dashed var(--brand);
+          background:var(--brand-soft);
+          border-radius:8px;
+          padding:6px 9px;
+          font-size:11.5px;
+          color:var(--ink);
+          cursor:pointer;
+          font-family:inherit;
+        }
+        .memory-row{
+          display:flex;
+          align-items:center;
+          gap:8px;
+          padding:7px 0;
+          border-bottom:1px solid var(--line);
+          font-size:12.5px;
+        }
+        .memory-row:last-child{ border-bottom:none; }
+        .memory-row .memory-name{ flex:1; min-width:0; overflow-wrap:anywhere; }
+        .memory-row .memory-cal{
+          font-family:'JetBrains Mono', monospace;
+          font-weight:700;
+          color:var(--cal);
+        }
+        .memory-row .memory-times{ font-size:10.5px; color:var(--ink-soft); }
         .analysis-macro{ font-size:11px; color:var(--ink-soft); margin-bottom:4px; }
         .analysis-reason{ font-size:11px; color:var(--ink-soft); margin-bottom:8px; line-height:1.4; }
         .analysis-actions{ display:flex; gap:8px; }
@@ -2979,6 +3135,8 @@ export default function App() {
               onDeleteFoodEntry={handleDeleteFoodEntry}
               onUpdateFoodEntryCalories={handleUpdateFoodEntryCalories}
               onPersistFoodEntryCalories={handlePersistFoodEntryCalories}
+              foodMemory={foodMemory}
+              onForgetCalories={forgetCalories}
             />
           )}
 
@@ -3085,6 +3243,7 @@ export default function App() {
         onConfirm={confirmAnalysisEntry}
         onDiscard={discardAnalysis}
         onEditCalories={updateAnalysisCalories}
+        onUseEstimate={useAnalysisEstimate}
       />
 
       {showReset && (
@@ -3640,7 +3799,17 @@ function DietTab({
   onDeleteFoodEntry,
   onUpdateFoodEntryCalories,
   onPersistFoodEntryCalories,
+  foodMemory,
+  onForgetCalories,
 }) {
+  const [showMemory, setShowMemory] = useState(false);
+  /* What is already remembered for the name being typed by hand. Offered,
+     never filled in on its own: a name typed from scratch is often a new
+     portion of something with the same name. */
+  const manualMemory = lookup(foodMemory, manualForm.name);
+  const manualMemoryFits =
+    manualMemory && String(manualForm.calories).trim() !== String(manualMemory.calories);
+  const remembered = sortedMemory(foodMemory);
   const symptoms = profile?.symptoms || [];
   const cautionNotes = [];
   if (symptoms.includes("hypertension")) {
@@ -3745,6 +3914,15 @@ function DietTab({
               onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })}
               placeholder="例：便當"
             />
+            {manualMemoryFits && (
+              <button
+                type="button"
+                className="cal-memory-chip"
+                onClick={() => setManualForm({ ...manualForm, calories: String(manualMemory.calories) })}
+              >
+                「{manualMemory.name}」你之前記的是 {manualMemory.calories} 大卡 —— 點這裡套用
+              </button>
+            )}
           </div>
           <div className="field" style={{ maxWidth: "110px" }}>
             <label>熱量(大卡)</label>
@@ -3776,6 +3954,43 @@ function DietTab({
           </span>
         </div>
       </div>
+
+      {remembered.length > 0 && (
+        <div className="card">
+          <div className="section-title" style={{ marginBottom: "4px" }}>
+            我的熱量標準值
+          </div>
+          <p style={{ fontSize: "11.5px", color: "var(--ink-soft)", margin: "0 0 8px", lineHeight: 1.6 }}>
+            你改過熱量的食物會記在這裡，下次拍到同一樣東西就直接用這個數字，不必再改一次。
+            數字記錯了就刪掉，下次會重新讓 AI 估。
+          </p>
+          {(showMemory ? remembered : remembered.slice(0, 3)).map((item) => (
+            <div className="memory-row" key={item.key}>
+              <span className="memory-name">{item.name}</span>
+              <span className="memory-cal">{item.calories}</span>
+              <span className="memory-times">大卡{item.times > 1 ? `・改過 ${item.times} 次` : ""}</span>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`刪除 ${item.name} 的標準值`}
+                onClick={() => onForgetCalories(item.name)}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+          {remembered.length > 3 && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-block"
+              style={{ marginTop: "10px" }}
+              onClick={() => setShowMemory((v) => !v)}
+            >
+              {showMemory ? "收起" : `展開全部 ${remembered.length} 項`}
+            </button>
+          )}
+        </div>
+      )}
 
       <DietDiary
         entries={foodLog}

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>拍照分析卡預覽</title>
+<style>
+  /* The app's own stylesheet lives inside App.jsx's render, so it is not here.
+     A few tokens the card reads are redefined so it is legible; this page is
+     for checking the WORDING and the buttons, not the final styling. */
+  :root{
+    --ink:#1E2A22; --ink-soft:#5B6960; --line:#DCE3DC;
+    --brand:#2F6B4F; --brand-soft:#E7F1EA; --cal:#C0453B;
+  }
+  body{margin:0;background:#F3F5F1;color:var(--ink);
+    font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;}
+  .analysis-cal-row{display:flex;align-items:center;gap:8px;margin:4px 0}
+  .cal-num-input{font-weight:700;font-size:16px;width:70px;border:1px solid var(--line);
+    border-radius:8px;padding:4px 6px;background:#fff}
+  .cal-memory-note{display:flex;align-items:flex-start;gap:6px;font-size:11px;line-height:1.5;
+    color:var(--ink-soft);background:var(--brand-soft);border-radius:8px;padding:7px 9px;margin:2px 0 6px}
+  .cal-memory-note strong{color:var(--ink)}
+  .cal-memory-note button{border:none;background:none;padding:0;margin-top:3px;font-size:11px;
+    font-weight:700;color:var(--brand);text-decoration:underline;cursor:pointer;font-family:inherit;text-align:left}
+  .analysis-card-body{padding:10px 12px}
+  .analysis-food-name{font-weight:700;font-size:14px;margin-bottom:4px}
+  .analysis-macro,.analysis-reason{font-size:11px;color:var(--ink-soft);margin-bottom:4px}
+  .analysis-actions{display:flex;gap:8px;margin-top:8px}
+  .analysis-actions .btn{flex:1;padding:8px 10px;font-size:12px;border-radius:8px;
+    border:1px solid var(--line);background:#fff;cursor:pointer;font-family:inherit}
+  .analysis-actions .btn-primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .modal-backdrop{position:static;background:none}
+  .modal-card{background:#fff}
+  img{max-width:100%;display:block}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="./preview-analysis.js"></script>
+</body>
+</html>

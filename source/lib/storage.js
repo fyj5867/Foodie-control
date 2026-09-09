@@ -14,6 +14,7 @@
 
 import { daysAgoStr } from "./health.js";
 import { backfillSummaries, upsertSummary } from "./goals.js";
+import { normalizeMemory } from "./foodMemory.js";
 
 export const KEYS = {
   profile: "profile",
@@ -25,6 +26,8 @@ export const KEYS = {
   dailySummary: "daily-summary",
   /** Set once, so the one-time rebuild from existing logs never runs twice. */
   summaryBackfilled: "daily-summary-backfilled",
+  /** Calorie figures the user has corrected, per food. */
+  foodMemory: "food-calories",
   calorieOverride: "calorie-target-override",
   anthropicKey: "anthropic-api-key",
   geminiKey: "gemini-api-key",
@@ -206,8 +209,20 @@ export async function backfillOnce({ foodLog, waterLog, exerciseLog, calorieTarg
   return { ran: true, added: merged.length - existing.length, summaries: merged };
 }
 
+export async function loadFoodMemory() {
+  return normalizeMemory(await readArray(KEYS.foodMemory));
+}
+
+export async function saveFoodMemory(memory) {
+  const clean = normalizeMemory(memory);
+  await writeJson(KEYS.foodMemory, clean);
+  return clean;
+}
+
 /** Everything the backup file carries. The summary is included so a restore
- * brings the garden back with it. */
+ * brings the garden back with it, and the corrected calorie figures because
+ * they are the user's own work — re-correcting every food after a restore
+ * would be worse than losing a log entry. */
 export async function buildBackup() {
   return {
     app: "healthy-care",
@@ -218,6 +233,7 @@ export async function buildBackup() {
     waterLog: await readArray(KEYS.waterLog),
     exerciseLog: await readArray(KEYS.exerciseLog),
     dailySummary: await readArray(KEYS.dailySummary),
+    foodMemory: await loadFoodMemory(),
   };
 }
 
@@ -260,6 +276,10 @@ export async function restoreBackup(data) {
   } else {
     // Older backup: allow the backfill to run against the logs just restored.
     await remove(KEYS.summaryBackfilled);
+  }
+  if (Array.isArray(data.foodMemory)) {
+    const saved = await saveFoodMemory(data.foodMemory);
+    if (saved.length) restored.push(`熱量標準值 ${saved.length} 項`);
   }
 
   return restored;

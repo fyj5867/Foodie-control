@@ -9,5 +9,6 @@ npm-debug.log*
 Thumbs.db
 desktop.ini
 
-# 樹苗預覽的打包產出（原始碼在 source/tools/preview-sprout.jsx）
+# 預覽頁的打包產出（原始碼是同名的 .jsx，留著，產出不留）
 source/tools/preview-sprout.js
+source/tools/preview-analysis.js
