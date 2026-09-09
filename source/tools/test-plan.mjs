@@ -34,6 +34,8 @@ import {
   BASELINE_FOCUS,
   MAX_FOCUSES,
   MEASURES,
+  REFERRAL_NOTES,
+  referralFocus,
   weekStart,
   weeklyPlanProgress,
   weeklyPlanSummary,
@@ -161,18 +163,63 @@ const many = weeklyFocuses({
 });
 check("at most three focuses", many.length, MAX_FOCUSES);
 
-/* Kidney and liver findings are handed to the doctor, and they come first —
- * they are the ones where acting on app advice could do harm. */
+/* Anything a clinician has to look at is handed over, in one card, and it
+ * comes first — those are the findings where acting on app advice could do
+ * harm. One card rather than one per finding: with forty markers on a report,
+ * a card each would bury the two things she can act on herself. */
 const kidney = weeklyFocuses({ values: { egfr: 45, triglycerides: 300 }, gender: "female" });
-check("a kidney finding comes first", kidney[0].id, "kidney-refer");
+check("the referral card comes first", kidney[0].id, "refer");
 check("and carries no measure to score", kidney[0].measure, undefined);
 ok("and is marked as a referral", kidney[0].refer === true);
+ok("it names the kidney finding", kidney[0].items.some((i) => i.key === "egfr"), JSON.stringify(kidney[0].items));
+ok("the referral sends her to a doctor", kidney[0].action.includes("醫師"), kidney[0].action);
+/* The kidney note exists specifically to say the app will NOT suggest a
+ * protein or salt target — that is a clinical decision. */
+const kidneyItem = kidney[0].items.find((i) => i.key === "egfr");
+ok("the kidney note declines to advise on diet", kidneyItem.note.includes("醫師"), kidneyItem.note);
 ok(
-  "the kidney focus gives no dietary target",
-  !/蛋白質\s*\d|每天\s*\d+\s*克|少吃|多吃/.test(kidney[0].action),
-  kidney[0].action
+  "and names no dietary target",
+  !/\d+\s*(克|公克|mg|毫克)|少吃|多吃/.test(kidneyItem.note),
+  kidneyItem.note
 );
-ok("the kidney focus sends her to a doctor", kidney[0].action.includes("醫師"), kidney[0].action);
+/* And the lifestyle side must never target a kidney marker at all. */
+const kidneyKeys = ["egfr", "creatinine", "bun"];
+for (const rule of FOCUS_RULES) {
+  ok(
+    `${rule.id} does not set a lifestyle target on kidney values`,
+    !rule.markers.some((m) => kidneyKeys.includes(m)),
+    JSON.stringify(rule.markers)
+  );
+}
+
+/* A positive yes/no result is a referral too, and nothing else. */
+const positive = weeklyFocuses({ values: { hba1c: 5.2 }, flags: { stoolBlood: "陽性" }, gender: "female" });
+check("a positive flag produces a referral", positive[0].id, "refer");
+ok("named in the card", positive[0].items.some((i) => i.key === "stoolBlood"), JSON.stringify(positive[0].items));
+check("a negative flag produces nothing", weeklyFocuses({ values: { hba1c: 5.2 }, flags: { stoolBlood: "陰性" } })[0].id, "baseline");
+check("no findings and no flags means no referral", referralFocus({}), null);
+
+/* Every group a referral can come from needs a note, or the card would show a
+ * finding with nothing said about it. */
+import { LAB_MARKERS } from "../lib/health.js";
+for (const marker of LAB_MARKERS.filter((m) => m.referral)) {
+  ok(`${marker.key}'s group has a referral note`, Boolean(REFERRAL_NOTES[marker.group]), marker.group);
+}
+
+/* The guarantee that matters most as markers get added: anything the app is
+ * willing to grade must have somewhere to go. Before this existed, adding a
+ * marker with no matching rule meant it showed in the table and produced no
+ * guidance at all — which reads as "the app looked and had nothing to say". */
+const ruleMarkers = new Set(FOCUS_RULES.flatMap((r) => r.markers));
+for (const marker of LAB_MARKERS) {
+  const zones = marker.zonesFor ? marker.zonesFor("female") : marker.zones;
+  if (!zones) continue;
+  ok(
+    `${marker.key} is either actionable or a referral`,
+    ruleMarkers.has(marker.key) || marker.referral === true,
+    marker.key
+  );
+}
 
 /* --- the whole plan --- */
 const plan = weeklyPlan({

@@ -19,12 +19,13 @@
  *     misread value is a misread value nobody was shown.
  */
 
-import { LAB_MARKERS, isPlausibleLabValue, labMarker, labNumber } from "./health.js";
+import { LAB_MARKERS, isPlausibleLabValue, labMarker, labNumber, LAB_FLAGS, isFlagValue, labFlag } from "./health.js";
 
 /** Reports are small — a date and a dozen numbers — so they are kept for good. */
 export const MAX_REPORTS = 60;
 
 const KNOWN_KEYS = new Set(LAB_MARKERS.map((m) => m.key));
+const KNOWN_FLAGS = new Set(LAB_FLAGS.map((f) => f.key));
 
 function cleanDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : null;
@@ -64,12 +65,24 @@ export function cleanValues(raw) {
  * collided for reports normalised in the same millisecond, and then deleting
  * one report deleted every report that shared its id.
  */
+/** Keep only the yes/no items, and only where the answer is one of the two. */
+export function cleanFlags(raw) {
+  const flags = {};
+  for (const [key, value] of Object.entries(raw || {})) {
+    if (KNOWN_FLAGS.has(key) && isFlagValue(value)) flags[key] = String(value);
+  }
+  return flags;
+}
+
 export function normalizeReport(raw, fallbackId) {
   if (!raw || typeof raw !== "object") return null;
   const date = cleanDate(raw.date);
   if (!date) return null;
   const { values } = cleanValues(raw.values);
-  if (!Object.keys(values).length) return null;
+  const flags = cleanFlags(raw.flags);
+  /* A report of nothing but 陰性 results is still a report worth keeping —
+     it is a page of the health check, and next year's comparison needs it. */
+  if (!Object.keys(values).length && !Object.keys(flags).length) return null;
   return {
     id: String(raw.id || fallbackId || `${date}-${Date.now()}`),
     date,
@@ -78,6 +91,7 @@ export function normalizeReport(raw, fallbackId) {
     note: String(raw.note || "").slice(0, 200),
     source: raw.source === "photo" ? "photo" : "manual",
     values,
+    flags,
   };
 }
 
@@ -165,7 +179,9 @@ export const MAX_PAGES = 10;
  */
 export function mergeReadings(readings) {
   const values = {};
+  const flags = {};
   const source = {};
+  const flagSource = {};
   const rejected = [];
   const conflicts = [];
   const unreadable = new Set();
@@ -182,6 +198,22 @@ export function mergeReadings(readings) {
 
     const { values: clean, rejected: bad } = cleanValues(reading.values);
     for (const item of bad) rejected.push({ ...item, page });
+
+    for (const [key, value] of Object.entries(cleanFlags(reading.flags))) {
+      if (flags[key] == null) flags[key] = value;
+      else if (flags[key] !== value) {
+        const flag = labFlag(key);
+        conflicts.push({
+          key,
+          label: flag ? flag.label : key,
+          kept: flags[key],
+          keptPage: flagSource[key],
+          other: value,
+          otherPage: page,
+        });
+      }
+      if (flagSource[key] == null) flagSource[key] = page;
+    }
 
     for (const [key, value] of Object.entries(clean)) {
       if (values[key] == null) {
@@ -207,6 +239,7 @@ export function mergeReadings(readings) {
 
   return {
     values,
+    flags,
     rejected,
     conflicts,
     unreadable: [...unreadable],
@@ -230,5 +263,6 @@ export function emptyDraft(date) {
     note: "",
     source: "manual",
     values: {},
+    flags: {},
   };
 }

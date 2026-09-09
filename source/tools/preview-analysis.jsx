@@ -28,6 +28,14 @@ const RESULT = {
   reason: "白飯為主，配料含加工肉鬆",
   portionNote: "一個超商飯糰",
   confidence: "medium",
+  tags: ["refined_carb", "high_sodium", "processed_meat"],
+};
+
+/* A report with three values outside their range, so the personalised half of
+   the food notes can be read — that is the part worth checking here. */
+const REPORT = {
+  date: "2026-08-15",
+  values: { triglycerides: 186, systolic: 132, diastolic: 86, fastingGlucose: 108 },
 };
 
 /* A 1x1 transparent gif stands in for the photo — this page is about the
@@ -39,6 +47,27 @@ const CASES = [
   {
     title: "沒記過這個食物 —— 就是 AI 估的數字",
     preview: { imageDataUrl: PIXEL, result: RESULT, memoryHint: null, aiCalories: 320 },
+  },
+  {
+    title: "還沒上傳健檢報告 —— 只有一般營養學的說明",
+    report: null,
+    preview: { imageDataUrl: PIXEL, result: RESULT, memoryHint: null, aiCalories: 320 },
+  },
+  {
+    title: "一頓對健康有幫助的餐",
+    preview: {
+      imageDataUrl: PIXEL,
+      result: {
+        ...RESULT,
+        foodName: "鯖魚定食（糙米飯、燙青菜）",
+        estimatedCalories: 620,
+        light: "green",
+        reason: "原型食材、清淡烹調",
+        tags: ["omega3", "whole_grain", "vegetable", "light_cooking", "high_fiber"],
+      },
+      memoryHint: null,
+      aiCalories: 620,
+    },
   },
   {
     title: "記過一次 —— 直接用她改過的 251",
@@ -76,6 +105,8 @@ function Grid() {
               onDiscard={() => {}}
               onEditCalories={() => {}}
               onUseEstimate={() => {}}
+              report={"report" in c ? c.report : REPORT}
+              gender="female"
             />
           </div>
         </div>

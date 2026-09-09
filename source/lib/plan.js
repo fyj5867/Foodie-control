@@ -18,7 +18,7 @@
  * to the doctor. tools/test-plan.mjs enforces the wording.
  */
 
-import { outOfRangeMarkers, labMarker, ACTIVITY_LOG_OPTIONS, todayStr } from "./health.js";
+import { outOfRangeMarkers, labMarker, positiveFlags, ACTIVITY_LOG_OPTIONS, todayStr } from "./health.js";
 import { summaryMet, FIELDS, EXERCISE_GOAL_MIN, WATER_GOAL_ML, CALORIE_CEILING } from "./goals.js";
 
 /** One planning cycle. Seven days is what the user asked for, and it is short
@@ -178,24 +178,29 @@ export function scoreFocus(focus, measured) {
  * Order is priority order: the first three that match are what gets shown.
  * Three is a plan, seven is a wish list.
  */
+/**
+ * What a referral says, by the part of the body it came from.
+ *
+ * Every marker flagged `referral` in lib/health.js ends up in one card rather
+ * than one card each: with forty markers on a report, a card per abnormal
+ * finding would bury the two or three things she can actually act on this
+ * week. The note is per group because the reason to see a doctor differs —
+ * and for kidney values the note exists specifically to say that this app is
+ * NOT going to suggest a protein or salt target.
+ */
+export const REFERRAL_NOTES = {
+  kidney: "飲食上的調整（例如蛋白質、鹽分）需要醫師依你的整體狀況決定，這個 App 不提供這方面的建議。",
+  liver: "肝指數變化的原因很多，需要醫師判斷。生活面可以先做的是規律運動、減少含糖飲料與酒精。",
+  blood: "血液計數的異常原因很多（缺鐵、發炎、其他），要靠醫師搭配其他數值一起看。",
+  thyroid: "甲狀腺功能的判讀與後續都需要醫師安排。",
+  mineral: "電解質與礦物質的異常請讓醫師知道，需不需要補充也由醫師決定。",
+  inflammation: "發炎指標會受感染、受傷影響而暫時升高，請由醫師判斷代表什麼。",
+  tumour: "腫瘤標記受很多因素影響，高於參考值不等於罹癌，也不能單靠它排除疾病，請由醫師安排後續。",
+  bone: "骨密度的後續處理請由醫師評估。",
+  other: "這一項請醫師判讀。",
+};
+
 export const FOCUS_RULES = [
-  {
-    id: "kidney-refer",
-    markers: ["egfr", "creatinine"],
-    /* Deliberately has no measure and no dietary action. Protein and salt
-       targets in kidney disease are set by a clinician against the whole
-       picture; a general-purpose app guessing at them could do real harm. */
-    refer: true,
-    title: "腎功能相關數值，請直接問醫師",
-    action: "把這份報告帶去門診請醫師判讀。這一項的飲食調整（例如蛋白質、鹽分）需要醫師依你的狀況決定，這個 App 不提供建議。",
-  },
-  {
-    id: "liver-refer",
-    markers: ["alt", "ast"],
-    refer: true,
-    title: "肝功能指數，請醫師判讀原因",
-    action: "肝指數偏高的原因很多，需要醫師判斷。生活面可以先做的是規律運動、減少含糖飲料與酒精。",
-  },
   {
     id: "tg-sugar",
     markers: ["triglycerides"],
@@ -206,7 +211,7 @@ export const FOCUS_RULES = [
   },
   {
     id: "glucose-move",
-    markers: ["fastingGlucose", "hba1c"],
+    markers: ["fastingGlucose", "hba1c", "postprandialGlucose"],
     title: "這 7 天，把運動放進每一天",
     action: "餐後散步 10-15 分鐘，一天 2-3 次也算數；累積到 30 分鐘就達標。",
     measure: "exerciseDays",
@@ -230,7 +235,7 @@ export const FOCUS_RULES = [
   },
   {
     id: "ldl-fat",
-    markers: ["ldl", "totalCholesterol"],
+    markers: ["ldl", "totalCholesterol", "nonHdl"],
     title: "這 7 天，油炸與加工肉品減量",
     action: "烹調換成清蒸、水煮、烤；加工肉品（香腸、培根、火腿）這週先停。",
     measure: "redMeals",
@@ -243,6 +248,30 @@ export const FOCUS_RULES = [
     action: "每天 2000cc 分次喝；內臟、濃湯與含糖飲料減量。",
     measure: "waterDays",
     target: 6,
+  },
+  {
+    id: "crp-antiinflam",
+    markers: ["hsCrp"],
+    title: "這 7 天，油炸和含糖的先停",
+    action: "油炸、加工肉品、含糖飲料這週先放一邊；蔬菜、深海魚、堅果多一些。規律運動本身也有幫助。",
+    measure: "redMeals",
+    target: 2,
+  },
+  {
+    id: "vitd-outdoor",
+    markers: ["vitaminD"],
+    title: "這 7 天，每天到戶外走一走",
+    action: "手臂或小腿曬到太陽 10-20 分鐘（避開正中午）；飲食上可以多鯖魚、秋刀魚、蛋黃、乾香菇。要不要吃補充劑、吃多少請問醫師。",
+    measure: "exerciseDays",
+    target: 4,
+  },
+  {
+    id: "bone-resistance",
+    markers: ["boneT"],
+    title: "這 7 天，做兩次負重運動",
+    action: "骨頭需要被「用到」才會留住鈣：快走、爬樓梯、彈力帶、深蹲都算。乳製品、小魚乾、深綠色蔬菜可以多一些。",
+    measure: "resistanceSessions",
+    target: 2,
   },
   {
     id: "waist-steady",
@@ -267,40 +296,86 @@ export const BASELINE_FOCUS = {
 /** At most this many focuses at once. Three is a plan; seven is a wish list. */
 export const MAX_FOCUSES = 3;
 
+function describeFinding(f) {
+  const marker = labMarker(f.key);
+  const decimals = marker ? marker.decimals : 0;
+  return `${f.label} ${Number(f.value).toFixed(decimals)} ${f.unit}（${f.zone.label}）`;
+}
+
 /**
- * Turn a report into up to three things to do this week.
+ * One card for everything that belongs to a clinician.
  *
- * Each finding is named with its own number and range so the reason is
- * checkable. A marker that triggers a rule already used is not repeated —
- * two lines telling someone to walk more is one line too many.
+ * Built from two sources: markers marked `referral` in lib/health.js, and any
+ * yes/no item that came back 陽性. It carries no measure, because there is
+ * nothing here for the app to score — and no dietary or dosing advice, which
+ * is the point.
  */
-export function weeklyFocuses({ values = null, gender = "female" } = {}) {
-  if (!values) return [BASELINE_FOCUS];
+export function referralFocus({ findings = [], positives = [] } = {}) {
+  const items = [];
 
-  const findings = outOfRangeMarkers(values, gender);
-  if (!findings.length) return [BASELINE_FOCUS];
+  for (const f of findings) {
+    const marker = labMarker(f.key);
+    if (!marker || !marker.referral) continue;
+    items.push({
+      key: f.key,
+      label: f.label,
+      detail: describeFinding(f),
+      note: REFERRAL_NOTES[marker.group] || REFERRAL_NOTES.other,
+    });
+  }
 
+  for (const flag of positives) {
+    items.push({ key: flag.key, label: flag.label, detail: `${flag.label}：陽性`, note: flag.note });
+  }
+
+  if (!items.length) return null;
+
+  return {
+    id: "refer",
+    refer: true,
+    items,
+    title: "這幾項請帶報告去問醫師",
+    action: "這些是需要醫師判讀的項目，不是靠飲食或運動處理的。把報告帶到門診，讓醫師決定要不要進一步檢查。",
+    why: items.map((i) => i.detail).join("、"),
+  };
+}
+
+/**
+ * Turn a report into what to do this week.
+ *
+ * Two layers, and the order matters. Anything a clinician has to look at comes
+ * first, in a single card — with forty markers on a report, a card per finding
+ * would bury the two or three things she can act on herself. Then up to two
+ * lifestyle focuses, each named with its own number and the range it sits in
+ * so the reason is checkable.
+ *
+ * **Nothing out of range is ever silently dropped.** Before this had a
+ * catch-all, a marker that no rule mentioned — 血色素, 甲狀腺, 骨密度 — showed
+ * in the table and produced no guidance at all, which reads as "the app looked
+ * at it and had nothing to say".
+ */
+export function weeklyFocuses({ values = null, flags = null, gender = "female" } = {}) {
+  const findings = values ? outOfRangeMarkers(values, gender) : [];
+  const positives = positiveFlags(flags);
+  const refer = referralFocus({ findings, positives });
+
+  const lifestyle = [];
   const used = new Set();
-  const out = [];
+  const room = MAX_FOCUSES - (refer ? 1 : 0);
 
   for (const rule of FOCUS_RULES) {
-    if (out.length >= MAX_FOCUSES) break;
+    if (lifestyle.length >= room) break;
     if (used.has(rule.id)) continue;
     const hits = findings.filter((f) => rule.markers.includes(f.key));
     if (!hits.length) continue;
 
     used.add(rule.id);
-    const why = hits
-      .map((h) => {
-        const marker = labMarker(h.key);
-        const decimals = marker ? marker.decimals : 0;
-        return `${h.label} ${Number(h.value).toFixed(decimals)} ${h.unit}（${h.zone.label}）`;
-      })
-      .join("、");
-
-    out.push({ ...rule, why, findings: hits });
+    lifestyle.push({ ...rule, why: hits.map(describeFinding).join("、"), findings: hits });
   }
 
+  const out = refer ? [refer, ...lifestyle] : lifestyle;
+  /* Nothing to report is not an empty screen: the three daily basics are
+     always something to be getting on with. */
   return out.length ? out : [BASELINE_FOCUS];
 }
 
@@ -331,7 +406,11 @@ export function weeklyPlan({
     waterLog,
   });
 
-  const focuses = weeklyFocuses({ values: report ? report.values : null, gender }).map((focus) => ({
+  const focuses = weeklyFocuses({
+    values: report ? report.values : null,
+    flags: report ? report.flags : null,
+    gender,
+  }).map((focus) => ({
     ...focus,
     progress: scoreFocus(focus, soFar),
   }));

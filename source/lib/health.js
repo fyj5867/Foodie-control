@@ -306,7 +306,10 @@ const LAB_MARKERS = [
     short: "GPT",
     unit: "U/L",
     decimals: 0,
-    group: "other",
+    group: "liver",
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_NOTES in lib/plan.js. */
+    referral: true,
     zones: [
       { lt: 41, tone: "green", label: "正常 ≤40" },
       { lt: 81, tone: "yellow", label: "偏高 41-80" },
@@ -320,7 +323,10 @@ const LAB_MARKERS = [
     short: "GOT",
     unit: "U/L",
     decimals: 0,
-    group: "other",
+    group: "liver",
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_NOTES in lib/plan.js. */
+    referral: true,
     zones: [
       { lt: 41, tone: "green", label: "正常 ≤40" },
       { lt: 81, tone: "yellow", label: "偏高 41-80" },
@@ -334,7 +340,10 @@ const LAB_MARKERS = [
     short: "肌酸酐",
     unit: "mg/dL",
     decimals: 2,
-    group: "other",
+    group: "kidney",
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_NOTES in lib/plan.js. */
+    referral: true,
     zonesFor: (gender) =>
       gender === "male"
         ? [
@@ -355,13 +364,489 @@ const LAB_MARKERS = [
     short: "eGFR",
     unit: "mL/min/1.73m²",
     decimals: 0,
-    group: "other",
+    group: "kidney",
     higherIsBetter: true,
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_NOTES in lib/plan.js. */
+    referral: true,
     zones: [
       { lt: 30, tone: "red", label: "明顯下降 <30" },
       { lt: 60, tone: "red", label: "中度下降 30-59" },
       { lt: 90, tone: "yellow", label: "輕度下降 60-89" },
       { tone: "green", label: "正常 ≥90" },
+    ],
+  },
+  {
+    key: "postprandialGlucose",
+    label: "飯後血糖",
+    short: "飯後血糖",
+    unit: "mg/dL",
+    decimals: 0,
+    group: "sugar",
+    plausible: [40, 800],
+    note: "一般指飯後 2 小時測得的血糖。",
+    zones: [
+      { lt: 140, tone: "green", label: "正常 <140" },
+      { lt: 200, tone: "yellow", label: "偏高 140-199" },
+      { tone: "red", label: "已達糖尿病診斷切點 ≥200" },
+    ],
+  },
+  {
+    key: "nonHdl",
+    label: "非高密度脂蛋白膽固醇",
+    short: "非HDL",
+    unit: "mg/dL",
+    decimals: 0,
+    group: "lipid",
+    plausible: [20, 500],
+    note: "總膽固醇減去 HDL，代表所有「壞」膽固醇的總和。",
+    zones: [
+      { lt: 160, tone: "green", label: "正常 <160" },
+      { lt: 190, tone: "yellow", label: "邊緣偏高 160-189" },
+      { tone: "red", label: "偏高 ≥190" },
+    ],
+  },
+  {
+    key: "hb",
+    label: "血色素",
+    short: "血色素",
+    unit: "g/dL",
+    decimals: 1,
+    group: "blood",
+    plausible: [3, 25],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    note: "偏低常見於貧血，原因很多，需要醫師判斷。",
+    zonesFor: (gender) =>
+      gender === "male"
+        ? [
+              { lt: 13.5, tone: "yellow", label: "偏低 <13.5" },
+              { lt: 17.6, tone: "green", label: "正常 13.5-17.5" },
+              { tone: "yellow", label: "偏高 >17.5" },
+          ]
+        : [
+              { lt: 12, tone: "yellow", label: "偏低 <12" },
+              { lt: 16.1, tone: "green", label: "正常 12-16" },
+              { tone: "yellow", label: "偏高 >16" },
+          ],
+  },
+  {
+    key: "hct",
+    label: "血球容積比",
+    short: "Hct",
+    unit: "%",
+    decimals: 1,
+    group: "blood",
+    plausible: [10, 70],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zonesFor: (gender) =>
+      gender === "male"
+        ? [
+              { lt: 40, tone: "yellow", label: "偏低 <40" },
+              { lt: 52.1, tone: "green", label: "正常 40-52" },
+              { tone: "yellow", label: "偏高 >52" },
+          ]
+        : [
+              { lt: 36, tone: "yellow", label: "偏低 <36" },
+              { lt: 48.1, tone: "green", label: "正常 36-48" },
+              { tone: "yellow", label: "偏高 >48" },
+          ],
+  },
+  {
+    key: "rbc",
+    label: "紅血球",
+    short: "RBC",
+    unit: "10⁶/µL",
+    decimals: 2,
+    group: "blood",
+    plausible: [1, 10],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zonesFor: (gender) =>
+      gender === "male"
+        ? [
+              { lt: 4.5, tone: "yellow", label: "偏低 <4.5" },
+              { lt: 6, tone: "green", label: "正常 4.5-5.9" },
+              { tone: "yellow", label: "偏高 ≥6.0" },
+          ]
+        : [
+              { lt: 4, tone: "yellow", label: "偏低 <4.0" },
+              { lt: 5.3, tone: "green", label: "正常 4.0-5.2" },
+              { tone: "yellow", label: "偏高 ≥5.3" },
+          ],
+  },
+  {
+    key: "wbc",
+    label: "白血球",
+    short: "WBC",
+    unit: "10³/µL",
+    decimals: 1,
+    group: "blood",
+    plausible: [0.5, 100],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    note: "偏高常與感染或發炎有關，偏低也需要醫師評估。",
+    zones: [
+      { lt: 4, tone: "yellow", label: "偏低 <4.0" },
+      { lt: 10.1, tone: "green", label: "正常 4.0-10.0" },
+      { tone: "yellow", label: "偏高 >10.0" },
+    ],
+  },
+  {
+    key: "platelet",
+    label: "血小板",
+    short: "血小板",
+    unit: "10³/µL",
+    decimals: 0,
+    group: "blood",
+    plausible: [5, 1500],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 150, tone: "yellow", label: "偏低 <150" },
+      { lt: 401, tone: "green", label: "正常 150-400" },
+      { tone: "yellow", label: "偏高 >400" },
+    ],
+  },
+  {
+    key: "mcv",
+    label: "平均紅血球體積",
+    short: "MCV",
+    unit: "fL",
+    decimals: 1,
+    group: "blood",
+    plausible: [40, 150],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    note: "和血色素一起看，可以幫助醫師分辨貧血的類型。",
+    zones: [
+      { lt: 80, tone: "yellow", label: "偏低 <80" },
+      { lt: 100.1, tone: "green", label: "正常 80-100" },
+      { tone: "yellow", label: "偏高 >100" },
+    ],
+  },
+  {
+    key: "ggt",
+    label: "γ-GT",
+    short: "γ-GT",
+    unit: "U/L",
+    decimals: 0,
+    group: "liver",
+    plausible: [1, 2000],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    note: "對酒精與藥物特別敏感，需要醫師一起看其他肝指數。",
+    zonesFor: (gender) =>
+      gender === "male"
+        ? [
+              { lt: 51, tone: "green", label: "正常 ≤50" },
+              { lt: 101, tone: "yellow", label: "偏高 51-100" },
+              { tone: "red", label: "明顯偏高 >100" },
+          ]
+        : [
+              { lt: 33, tone: "green", label: "正常 ≤32" },
+              { lt: 65, tone: "yellow", label: "偏高 33-64" },
+              { tone: "red", label: "明顯偏高 >64" },
+          ],
+  },
+  {
+    key: "alp",
+    label: "鹼性磷酸酶",
+    short: "ALP",
+    unit: "U/L",
+    decimals: 0,
+    group: "liver",
+    plausible: [5, 2000],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 35, tone: "yellow", label: "偏低 <35" },
+      { lt: 111, tone: "green", label: "正常 35-110" },
+      { tone: "yellow", label: "偏高 >110" },
+    ],
+  },
+  {
+    key: "bilirubin",
+    label: "總膽紅素",
+    short: "膽紅素",
+    unit: "mg/dL",
+    decimals: 2,
+    group: "liver",
+    plausible: [0.05, 30],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 1.3, tone: "green", label: "正常 ≤1.2" },
+      { lt: 3, tone: "yellow", label: "偏高 1.3-2.9" },
+      { tone: "red", label: "明顯偏高 ≥3.0" },
+    ],
+  },
+  {
+    key: "albumin",
+    label: "白蛋白",
+    short: "白蛋白",
+    unit: "g/dL",
+    decimals: 1,
+    group: "liver",
+    plausible: [1, 7],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    note: "反映營養與肝臟的合成能力。",
+    zones: [
+      { lt: 3.5, tone: "yellow", label: "偏低 <3.5" },
+      { lt: 5.1, tone: "green", label: "正常 3.5-5.0" },
+      { tone: "yellow", label: "偏高 >5.0" },
+    ],
+  },
+  {
+    key: "bun",
+    label: "尿素氮",
+    short: "BUN",
+    unit: "mg/dL",
+    decimals: 0,
+    group: "kidney",
+    plausible: [1, 300],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 8, tone: "yellow", label: "偏低 <8" },
+      { lt: 21, tone: "green", label: "正常 8-20" },
+      { tone: "yellow", label: "偏高 >20" },
+    ],
+  },
+  {
+    key: "tsh",
+    label: "甲狀腺刺激素",
+    short: "TSH",
+    unit: "mIU/L",
+    decimals: 2,
+    group: "thyroid",
+    plausible: [0.005, 200],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    note: "甲狀腺功能異常的原因與處理都需要醫師判斷。",
+    zones: [
+      { lt: 0.4, tone: "yellow", label: "偏低 <0.4" },
+      { lt: 4.1, tone: "green", label: "正常 0.4-4.0" },
+      { tone: "yellow", label: "偏高 >4.0" },
+    ],
+  },
+  {
+    key: "freeT4",
+    label: "游離甲狀腺素",
+    short: "free T4",
+    unit: "ng/dL",
+    decimals: 2,
+    group: "thyroid",
+    plausible: [0.05, 15],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 0.8, tone: "yellow", label: "偏低 <0.8" },
+      { lt: 1.9, tone: "green", label: "正常 0.8-1.8" },
+      { tone: "yellow", label: "偏高 >1.8" },
+    ],
+  },
+  {
+    key: "sodium",
+    label: "鈉",
+    short: "鈉",
+    unit: "mEq/L",
+    decimals: 0,
+    group: "mineral",
+    plausible: [100, 190],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 135, tone: "yellow", label: "偏低 <135" },
+      { lt: 146, tone: "green", label: "正常 135-145" },
+      { tone: "yellow", label: "偏高 >145" },
+    ],
+  },
+  {
+    key: "potassium",
+    label: "鉀",
+    short: "鉀",
+    unit: "mEq/L",
+    decimals: 1,
+    group: "mineral",
+    plausible: [1, 10],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    note: "過高或過低都會影響心臟，異常時請儘快讓醫師知道。",
+    zones: [
+      { lt: 3.5, tone: "yellow", label: "偏低 <3.5" },
+      { lt: 5.2, tone: "green", label: "正常 3.5-5.1" },
+      { tone: "red", label: "偏高 >5.1" },
+    ],
+  },
+  {
+    key: "calcium",
+    label: "鈣",
+    short: "鈣",
+    unit: "mg/dL",
+    decimals: 1,
+    group: "mineral",
+    plausible: [3, 20],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 8.6, tone: "yellow", label: "偏低 <8.6" },
+      { lt: 10.4, tone: "green", label: "正常 8.6-10.3" },
+      { tone: "yellow", label: "偏高 >10.3" },
+    ],
+  },
+  {
+    key: "vitaminD",
+    label: "維生素 D（25-OH-D）",
+    short: "維生素D",
+    unit: "ng/mL",
+    decimals: 1,
+    group: "mineral",
+    plausible: [1, 150],
+    higherIsBetter: true,
+    note: "曬太陽與飲食都會影響；要不要補充、補多少請問醫師。",
+    zones: [
+      { lt: 20, tone: "red", label: "缺乏 <20" },
+      { lt: 30, tone: "yellow", label: "不足 20-29" },
+      { tone: "green", label: "足夠 ≥30" },
+    ],
+  },
+  {
+    key: "ferritin",
+    label: "鐵蛋白",
+    short: "鐵蛋白",
+    unit: "ng/mL",
+    decimals: 0,
+    group: "mineral",
+    plausible: [1, 3000],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zonesFor: (gender) =>
+      gender === "male"
+        ? [
+              { lt: 30, tone: "yellow", label: "偏低 <30" },
+              { lt: 401, tone: "green", label: "正常 30-400" },
+              { tone: "yellow", label: "偏高 >400" },
+          ]
+        : [
+              { lt: 13, tone: "yellow", label: "偏低 <13" },
+              { lt: 151, tone: "green", label: "正常 13-150" },
+              { tone: "yellow", label: "偏高 >150" },
+          ],
+  },
+  {
+    key: "hsCrp",
+    label: "高敏感度C反應蛋白",
+    short: "hs-CRP",
+    unit: "mg/L",
+    decimals: 2,
+    group: "inflammation",
+    plausible: [0.05, 300],
+    note: "身體發炎的程度，也被用來看心血管風險；感染或受傷時會暫時升高。",
+    zones: [
+      { lt: 1, tone: "green", label: "低風險 <1" },
+      { lt: 3, tone: "yellow", label: "中風險 1-3" },
+      { tone: "red", label: "高風險 >3" },
+    ],
+  },
+  {
+    key: "afp",
+    label: "胎兒蛋白（AFP）",
+    short: "AFP",
+    unit: "ng/mL",
+    decimals: 1,
+    group: "tumour",
+    plausible: [0.1, 100000],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 20, tone: "green", label: "參考值 <20" },
+      { tone: "yellow", label: "高於參考值 ≥20" },
+    ],
+  },
+  {
+    key: "cea",
+    label: "癌胚抗原（CEA）",
+    short: "CEA",
+    unit: "ng/mL",
+    decimals: 1,
+    group: "tumour",
+    plausible: [0.1, 10000],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 5, tone: "green", label: "參考值 <5" },
+      { tone: "yellow", label: "高於參考值 ≥5" },
+    ],
+  },
+  {
+    key: "ca199",
+    label: "CA-199",
+    short: "CA-199",
+    unit: "U/mL",
+    decimals: 1,
+    group: "tumour",
+    plausible: [0.1, 100000],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    zones: [
+      { lt: 37, tone: "green", label: "參考值 <37" },
+      { tone: "yellow", label: "高於參考值 ≥37" },
+    ],
+  },
+  {
+    key: "psa",
+    label: "前列腺特定抗原（PSA）",
+    short: "PSA",
+    unit: "ng/mL",
+    decimals: 2,
+    group: "tumour",
+    plausible: [0.01, 5000],
+    /* Out of range here is a question for a clinician, not a
+       lifestyle target — see REFERRAL_ONLY in lib/plan.js. */
+    referral: true,
+    note: "男性檢查項目。",
+    zones: [
+      { lt: 4, tone: "green", label: "參考值 <4" },
+      { tone: "yellow", label: "高於參考值 ≥4" },
+    ],
+  },
+  {
+    key: "boneT",
+    label: "骨密度 T 值",
+    short: "骨密度",
+    unit: "T-score",
+    decimals: 1,
+    group: "bone",
+    plausible: [-6, 6],
+    higherIsBetter: true,
+    note: "世界衛生組織的判定：≥-1 正常、-1 到 -2.5 骨質流失、≤-2.5 骨質疏鬆。",
+    zones: [
+      { lt: -2.5, tone: "red", label: "骨質疏鬆 ≤-2.5" },
+      { lt: -1, tone: "yellow", label: "骨質流失 -2.5~-1" },
+      { tone: "green", label: "正常 ≥-1" },
     ],
   },
   {
@@ -546,6 +1031,87 @@ function outOfRangeMarkers(values, gender) {
   return out.sort((a, b) => (rank[a.zone.tone] ?? 9) - (rank[b.zone.tone] ?? 9));
 }
 
+/**
+ * The report items that are not a number but a yes or no.
+ *
+ * 糞便潛血, 尿蛋白, B型肝炎表面抗原 — every Taiwanese health check has some of
+ * these, and leaving them out meant a whole page of the report could not be
+ * recorded. They are kept deliberately simple: 陰性 or 陽性, nothing in
+ * between, because that is all a person can read off their own report without
+ * interpreting it.
+ *
+ * **Every one of these, when positive, is a referral and nothing else.** There
+ * is no lifestyle advice this app could give about a positive faecal occult
+ * blood test that would not be worse than saying "take this to your doctor".
+ * That is the whole of the app's response, and it is the right one.
+ */
+const LAB_FLAGS = [
+  {
+    key: "stoolBlood",
+    label: "糞便潛血",
+    short: "糞便潛血",
+    note: "國健署提供 50-74 歲每兩年一次免費篩檢。陽性代表需要進一步檢查，不代表就是癌症。",
+  },
+  {
+    key: "urineProtein",
+    label: "尿蛋白",
+    short: "尿蛋白",
+    note: "與腎臟功能有關，需要醫師搭配其他腎功能數值一起判讀。",
+  },
+  {
+    key: "urineGlucose",
+    label: "尿糖",
+    short: "尿糖",
+    note: "通常在血糖偏高時才會出現在尿液中。",
+  },
+  {
+    key: "urineBlood",
+    label: "尿中紅血球",
+    short: "尿中紅血球",
+    note: "原因很多（結石、發炎、女性生理期等），需要醫師判斷。",
+  },
+  {
+    key: "hbsag",
+    label: "B型肝炎表面抗原",
+    short: "B肝抗原",
+    note: "陽性代表帶有B型肝炎病毒，需要定期追蹤，請由醫師安排。",
+  },
+  {
+    key: "antiHcv",
+    label: "C型肝炎抗體",
+    short: "C肝抗體",
+    note: "陽性需要進一步確認，目前C型肝炎已有健保給付的治療，請找醫師討論。",
+  },
+  {
+    key: "helicobacter",
+    label: "幽門螺旋桿菌",
+    short: "幽門桿菌",
+    note: "與胃部疾病有關，是否需要治療由醫師評估。",
+  },
+];
+
+const LAB_FLAG_BY_KEY = Object.fromEntries(LAB_FLAGS.map((f) => [f.key, f]));
+
+/** The only two values a flag may hold. Anything else is not recorded. */
+const FLAG_VALUES = ["陰性", "陽性"];
+
+function labFlag(key) {
+  return LAB_FLAG_BY_KEY[key] || null;
+}
+
+function isFlagValue(value) {
+  return FLAG_VALUES.includes(String(value));
+}
+
+/** Flags that came back positive — each one a question for a clinician. */
+function positiveFlags(flags) {
+  const out = [];
+  for (const flag of LAB_FLAGS) {
+    if (flags && String(flags[flag.key]) === "陽性") out.push(flag);
+  }
+  return out;
+}
+
 const CONTENT_REVIEW = {
   lastReviewed: "2026-09-09",
   sources: [
@@ -564,6 +1130,10 @@ const CONTENT_REVIEW = {
     "衛生福利部國民健康署心血管疾病防治衛教：總膽固醇、三酸甘油酯、HDL、LDL 參考值",
     "2022年台灣高血壓治療指引（中華民國心臟學會／台灣高血壓學會）：130/80 mmHg 判定標準",
     "台灣慢性腎臟病臨床診療指引：eGFR 分期（≥90 正常、60-89 輕度下降、30-59 中度、<30 重度）",
+    "衛生福利部國民健康署四大癌症篩檢：糞便潛血（50-74歲每兩年一次）",
+    "台灣常見臨床檢驗參考範圍：血液計數（WBC／RBC／Hb／Hct／血小板／MCV）、肝功能（ALP／γ-GT／膽紅素／白蛋白）、腎功能（BUN）、甲狀腺（TSH／free T4）、電解質（鈉／鉀／鈣）",
+    "美國內分泌學會與台灣骨質疏鬆症學會：維生素D 30 ng/mL 為足夠、世界衛生組織骨密度 T 值分期",
+    "美國心臟協會 hs-CRP 心血管風險分層：<1 低、1-3 中、>3 高",
   ],
 };
 
@@ -976,6 +1546,11 @@ export {
   outOfRangeMarkers,
   isPlausibleLabValue,
   labNumber,
+  LAB_FLAGS,
+  FLAG_VALUES,
+  labFlag,
+  isFlagValue,
+  positiveFlags,
   SYMPTOM_OPTIONS,
   deriveActivityLevel,
   ACTIVITY_LOG_OPTIONS,

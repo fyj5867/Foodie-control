@@ -94,6 +94,8 @@ import { loadReports, saveReports, loadWorkoutLinks, saveWorkoutLinks, buildBack
 import HealthAnalysis from "./components/HealthAnalysis.jsx";
 import WorkoutSuggestions from "./components/WorkoutSuggestions.jsx";
 import WeeklyPlanCard from "./components/WeeklyPlanCard.jsx";
+import FoodImpact from "./components/FoodImpact.jsx";
+import { cleanTags } from "./lib/nutritionTags.js";
 import { AerobicIcon, ResistanceIcon, FlexibilityIcon } from "./components/ExerciseIcons.jsx";
 
 /** Traffic-light metadata for a value that may be missing or unrecognised.
@@ -634,7 +636,7 @@ function WaterCard({
   );
 }
 
-export function AnalysisModal({ analyzing, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onUseEstimate }) {
+export function AnalysisModal({ analyzing, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onUseEstimate, report, gender }) {
   if (!analyzing && !analysisError && !analysisPreview) return null;
   const r = analysisPreview?.result;
 
@@ -694,6 +696,7 @@ export function AnalysisModal({ analyzing, analysisError, analysisPreview, onCon
               )}
               {r.portionNote && <div className="analysis-macro">{r.portionNote}</div>}
               {r.reason && <div className="analysis-reason">{r.reason}</div>}
+              <FoodImpact tags={r.tags} report={report} gender={gender} />
               <div className="analysis-actions">
                 <button className="btn btn-secondary" onClick={onDiscard}>
                   <RefreshCw size={13} /> 重新選擇
@@ -1310,6 +1313,9 @@ export default function App() {
       reason: r.reason || "",
       confidence: r.confidence || "medium",
       source: "photo",
+      /* Kept with the entry so the diary can still say what a meal loaded
+         weeks later, once the photo itself has aged out. */
+      tags: cleanTags(r.tags),
       photo,
     };
     try {
@@ -2594,6 +2600,42 @@ export default function App() {
           z-index:50;
         }
 
+        /* --- 這一餐的影響 -------------------------------------------------
+           Burdens are amber and benefits green, not red and green: red on a
+           meal she has already eaten is a telling-off, and the point is the
+           next meal. */
+        .food-impact{
+          border-top:1px solid var(--line);
+          margin:8px 0 10px; padding-top:9px;
+        }
+        .fi-headline{
+          font-size:11.5px; font-weight:700; color:var(--brand);
+          background:var(--brand-soft); border-radius:8px;
+          padding:6px 8px; margin-bottom:8px; line-height:1.5;
+        }
+        .fi-block{ margin-bottom:8px; }
+        .fi-block-title{ font-size:11px; font-weight:700; margin-bottom:4px; }
+        .fi-block-title.burden{ color:var(--amber); }
+        .fi-block-title.benefit{ color:var(--green); }
+        .fi-row{ margin-bottom:7px; }
+        .fi-row:last-child{ margin-bottom:0; }
+        .fi-head{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 6px; margin-bottom:2px; }
+        .fi-chip{
+          font-size:10.5px; font-weight:700; border-radius:999px;
+          padding:2px 8px; white-space:nowrap;
+        }
+        .fi-chip.burden{ background:var(--amber-soft); color:var(--amber); }
+        .fi-chip.benefit{ background:var(--green-soft); color:var(--green); }
+        /* A chip that touches one of her own out-of-range values gets an
+           outline, so the diary strip still shows which ones were about her. */
+        .fi-chip.is-personal{ box-shadow:inset 0 0 0 1px var(--amber); }
+        .fi-personal{ font-size:10px; color:var(--ink); font-weight:700; }
+        .fi-text{ font-size:11px; color:var(--ink-soft); line-height:1.65; }
+        .fi-risk{ font-size:10.5px; color:var(--amber); line-height:1.6; margin-top:2px; }
+        .fi-swap{ font-size:10.5px; color:var(--brand); line-height:1.6; margin-top:2px; }
+        .fi-note{ font-size:10px; color:var(--ink-soft); line-height:1.6; margin-top:6px; }
+        .fi-chips{ display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+
         /* --- 每週運動目標 ------------------------------------------------
            Seven day rows, not a table. Every row is a grid so the day chip,
            the character, the activity and the verdict each hold their own
@@ -2743,6 +2785,38 @@ export default function App() {
         .ms-limit{ display:block; font-size:8.5px; color:var(--ink-soft); line-height:1.3; margin:2px 0; }
         .ms-value{ display:block; font-size:10.5px; font-family:'JetBrains Mono', monospace; }
         .ms-note{ font-size:10.5px; color:var(--ink-soft); line-height:1.65; margin:8px 0 0; }
+
+        /* A referral card lists what it is referring, each with its own
+           reason — one card for the lot, because with forty markers on a
+           report a card per finding would bury the two things she can act on
+           this week. */
+        .refer-items{ margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+        .refer-item{
+          background:#fff; border-radius:8px; padding:7px 9px;
+          border:1px solid var(--line);
+        }
+        .refer-item-head{ font-size:12px; font-weight:700; }
+        .refer-item-note{ font-size:10.5px; color:var(--ink-soft); line-height:1.6; margin-top:2px; }
+
+        .draft-group-toggle{
+          display:flex; align-items:center; gap:6px; width:100%;
+          background:none; border:none; padding:6px 0; cursor:pointer;
+          font-family:inherit; font-size:11.5px; font-weight:700;
+          color:var(--ink-soft); border-bottom:1px solid var(--line);
+          margin-bottom:4px;
+        }
+        .draft-group-count{
+          font-size:10px; font-weight:500; color:var(--brand);
+          background:var(--brand-soft); border-radius:999px; padding:1px 6px;
+        }
+        .draft-group-caret{ margin-left:auto; font-size:8px; }
+
+        .draft-flag{
+          display:flex; align-items:center; gap:8px; padding:4px 0;
+        }
+        .draft-flag-label{ flex:1; min-width:0; font-size:12px; }
+        .draft-flag-chips{ display:flex; gap:4px; flex-shrink:0; }
+        .draft-flag-chips .chip{ padding:4px 10px; font-size:11px; }
 
         .lab-group{ margin-bottom:10px; }
         .lab-group-title{ font-size:11.5px; font-weight:700; color:var(--ink-soft); margin-bottom:4px; }
@@ -3416,6 +3490,7 @@ export default function App() {
               onPersistFoodEntryCalories={handlePersistFoodEntryCalories}
               foodMemory={foodMemory}
               onForgetCalories={forgetCalories}
+              report={latestReport(reports)}
             />
           )}
 
@@ -3554,6 +3629,8 @@ export default function App() {
         onDiscard={discardAnalysis}
         onEditCalories={updateAnalysisCalories}
         onUseEstimate={useAnalysisEstimate}
+        report={latestReport(reports)}
+        gender={profile && profile.gender === "male" ? "male" : "female"}
       />
 
       {showReset && (
@@ -4111,6 +4188,7 @@ function DietTab({
   onPersistFoodEntryCalories,
   foodMemory,
   onForgetCalories,
+  report,
 }) {
   const [showMemory, setShowMemory] = useState(false);
   /* What is already remembered for the name being typed by hand. Offered,
@@ -4305,6 +4383,8 @@ function DietTab({
       <DietDiary
         entries={foodLog}
         summaries={summaries}
+        report={report}
+        gender={profile && profile.gender === "male" ? "male" : "female"}
         onUpdateFoodEntryCalories={onUpdateFoodEntryCalories}
         onPersistFoodEntryCalories={onPersistFoodEntryCalories}
         onDeleteFoodEntry={onDeleteFoodEntry}

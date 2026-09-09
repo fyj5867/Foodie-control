@@ -8,6 +8,7 @@
  * complete even though the pictures cannot.
  */
 
+import FoodImpact from "./FoodImpact.jsx";
 import React, { useMemo, useState } from "react";
 import { Pencil, Trash2, Utensils, ChevronDown } from "lucide-react";
 import { todayStr, daysAgoStr } from "../lib/health.js";
@@ -77,7 +78,7 @@ function DayHeader({ date, total, target, met }) {
   );
 }
 
-function Entry({ entry, onUpdateCalories, onPersistCalories, onDelete, lightWord, PillComponent }) {
+function Entry({ entry, onUpdateCalories, onPersistCalories, onDelete, lightWord, PillComponent, report, gender }) {
   return (
     <div className="diary-post">
       {entry.photo ? (
@@ -115,6 +116,9 @@ function Entry({ entry, onUpdateCalories, onPersistCalories, onDelete, lightWord
 
       <div className="diary-name">{entry.foodName || "未命名"}</div>
       {entry.reason ? <div className="diary-note">{entry.reason}</div> : null}
+      {/* The tags outlive the photo: at 30 days the picture is dropped and this
+          strip is what still says what the meal loaded. */}
+      <FoodImpact tags={entry.tags} report={report} gender={gender} compact />
     </div>
   );
 }
@@ -122,6 +126,8 @@ function Entry({ entry, onUpdateCalories, onPersistCalories, onDelete, lightWord
 export default function DietDiary({
   entries,
   summaries,
+  report = null,
+  gender = "female",
   onUpdateFoodEntryCalories,
   onPersistFoodEntryCalories,
   onDeleteFoodEntry,
@@ -159,6 +165,8 @@ export default function DietDiary({
               entry={entry}
               onUpdateCalories={onUpdateFoodEntryCalories}
               onPersistCalories={onPersistFoodEntryCalories}
+              report={report}
+              gender={gender}
               onDelete={onDeleteFoodEntry}
               lightWord={lightWord}
               PillComponent={PillComponent}

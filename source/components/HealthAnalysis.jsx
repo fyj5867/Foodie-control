@@ -18,7 +18,17 @@
 
 import React, { useMemo, useState } from "react";
 import { Camera, Image as ImageIcon, Trash2, Info, Check, Loader2, Plus, RefreshCw } from "lucide-react";
-import { LAB_MARKERS, labZone, labMarker, metabolicSyndrome, fmtNum, todayStr } from "../lib/health.js";
+import {
+  LAB_MARKERS,
+  LAB_FLAGS,
+  FLAG_VALUES,
+  labZone,
+  labMarker,
+  metabolicSyndrome,
+  positiveFlags,
+  fmtNum,
+  todayStr,
+} from "../lib/health.js";
 import { cleanValues, emptyDraft, latestReport, markerChange, mergeReadings, MAX_PAGES } from "../lib/reports.js";
 import { weeklyPlan, monthlyAnalysis, monthsWithData, monthOf, isMonthEnd, CYCLE_DAYS } from "../lib/plan.js";
 
@@ -26,10 +36,40 @@ const GROUP_LABEL = {
   sugar: "血糖",
   lipid: "血脂",
   pressure: "血壓",
-  other: "肝腎與尿酸",
+  blood: "血液計數",
+  liver: "肝功能",
+  kidney: "腎功能",
+  thyroid: "甲狀腺",
+  mineral: "電解質與營養素",
+  inflammation: "發炎指標",
+  tumour: "腫瘤標記",
+  bone: "骨質",
+  other: "其他",
   body: "身體數值",
 };
-const GROUP_ORDER = ["sugar", "lipid", "pressure", "other", "body"];
+
+/* Read in the order a report is usually laid out, and the order she is most
+   likely to care about: the three this app is built around first. */
+const GROUP_ORDER = [
+  "sugar",
+  "lipid",
+  "pressure",
+  "blood",
+  "liver",
+  "kidney",
+  "thyroid",
+  "mineral",
+  "inflammation",
+  "tumour",
+  "bone",
+  "other",
+  "body",
+];
+
+/* Which groups the manual form opens with. Forty-one fields at once is a wall;
+   these are the ones this app is actually about, and the rest are one tap
+   away. Any group that already has a value is opened regardless. */
+const DEFAULT_OPEN = ["sugar", "lipid", "pressure"];
 
 function ValueRow({ marker, value, gender, change }) {
   const zone = labZone(marker.key, value, gender);
@@ -50,6 +90,28 @@ function ValueRow({ marker, value, gender, change }) {
         ) : null}
       </div>
       {zone ? <span className={`lab-zone tone-${tone}`}>{zone.label}</span> : <span className="lab-zone">—</span>}
+    </div>
+  );
+}
+
+/** The yes/no results. Only 陽性 is called out — a page of 陰性 is good news
+ *  and does not need emphasis. */
+function FlagList({ flags }) {
+  const rows = LAB_FLAGS.filter((f) => flags && flags[f.key]);
+  if (!rows.length) return null;
+  return (
+    <div className="lab-group">
+      <div className="lab-group-title">其他檢查</div>
+      {rows.map((f) => {
+        const positive = flags[f.key] === "陽性";
+        return (
+          <div className="lab-row" key={f.key}>
+            <div className="lab-name">{f.label}</div>
+            <div className={`lab-value ${positive ? "tone-red" : ""}`}>{flags[f.key]}</div>
+            <span className={`lab-zone ${positive ? "tone-red" : ""}`}>{positive ? "需要醫師判讀" : "—"}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -91,6 +153,16 @@ function FocusCard({ focus }) {
       <div className="focus-title">{focus.title}</div>
       {focus.why && <div className="focus-why">{focus.why}</div>}
       <div className="focus-action">{focus.action}</div>
+      {focus.items && focus.items.length > 0 && (
+        <div className="refer-items">
+          {focus.items.map((item) => (
+            <div className="refer-item" key={item.key}>
+              <div className="refer-item-head">{item.detail}</div>
+              <div className="refer-item-note">{item.note}</div>
+            </div>
+          ))}
+        </div>
+      )}
       {p ? (
         <div className="focus-progress">
           <div className="focus-progress-head">
@@ -119,8 +191,29 @@ function DraftEditor({ draft, setDraft, rejected, notes, onSave, onCancel, gende
       return { ...d, values };
     });
 
+  const setFlag = (key, value) =>
+    setDraft((d) => {
+      const flags = { ...(d.flags || {}) };
+      if (value == null) delete flags[key];
+      else flags[key] = value;
+      return { ...d, flags };
+    });
+
   const filled = LAB_MARKERS.filter((m) => draft.values[m.key] != null && draft.values[m.key] !== "");
+  const flagCount = Object.keys(draft.flags || {}).length;
   const { rejected: nowRejected } = cleanValues(draft.values);
+
+  /* Groups start open when they hold something — a photo that read fifteen
+     values across six panels should show all fifteen without hunting. */
+  const [openGroups, setOpenGroups] = useState(() => {
+    const withValues = GROUP_ORDER.filter((g) =>
+      LAB_MARKERS.some((m) => m.group === g && draft.values[m.key] != null && draft.values[m.key] !== "")
+    );
+    const flagsOpen = Object.keys(draft.flags || {}).length ? ["flags"] : [];
+    return [...new Set([...DEFAULT_OPEN, ...withValues, ...flagsOpen])];
+  });
+  const toggleGroup = (group) =>
+    setOpenGroups((list) => (list.includes(group) ? list.filter((g) => g !== group) : [...list, group]));
 
   return (
     <div className="draft-box">
@@ -194,27 +287,64 @@ function DraftEditor({ draft, setDraft, rejected, notes, onSave, onCancel, gende
 
       {GROUP_ORDER.map((group) => {
         const markers = LAB_MARKERS.filter((m) => m.group === group);
+        if (!markers.length) return null;
+        const filledHere = markers.filter((m) => draft.values[m.key] != null && draft.values[m.key] !== "").length;
+        const open = openGroups.includes(group);
         return (
           <div key={group} className="draft-group">
-            <div className="draft-group-title">{GROUP_LABEL[group]}</div>
-            {markers.map((m) => (
-              <div className="draft-field" key={m.key}>
-                <label>
-                  {m.label}
-                  <span className="lab-unit">{m.unit}</span>
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  inputMode="decimal"
-                  value={draft.values[m.key] ?? ""}
-                  onChange={(e) => setValue(m.key, e.target.value)}
-                />
-              </div>
-            ))}
+            <button type="button" className="draft-group-toggle" onClick={() => toggleGroup(group)}>
+              <span>{GROUP_LABEL[group]}</span>
+              {filledHere > 0 && <span className="draft-group-count">{filledHere} 項</span>}
+              <span className="draft-group-caret">{open ? "▲" : "▼"}</span>
+            </button>
+            {open &&
+              markers.map((m) => (
+                <div className="draft-field" key={m.key}>
+                  <label>
+                    {m.label}
+                    <span className="lab-unit">{m.unit}</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    inputMode="decimal"
+                    value={draft.values[m.key] ?? ""}
+                    onChange={(e) => setValue(m.key, e.target.value)}
+                  />
+                </div>
+              ))}
           </div>
         );
       })}
+
+      {/* The yes/no page of the report. Three states, because "not tested" and
+          "tested and negative" are different things and next year's comparison
+          needs to tell them apart. */}
+      <div className="draft-group">
+        <button type="button" className="draft-group-toggle" onClick={() => toggleGroup("flags")}>
+          <span>其他檢查（尿液、糞便、肝炎）</span>
+          {flagCount > 0 && <span className="draft-group-count">{flagCount} 項</span>}
+          <span className="draft-group-caret">{openGroups.includes("flags") ? "▲" : "▼"}</span>
+        </button>
+        {openGroups.includes("flags") &&
+          LAB_FLAGS.map((f) => (
+            <div className="draft-flag" key={f.key}>
+              <span className="draft-flag-label">{f.label}</span>
+              <span className="draft-flag-chips">
+                {FLAG_VALUES.map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={`chip ${draft.flags && draft.flags[f.key] === value ? "active" : ""}`}
+                    onClick={() => setFlag(f.key, draft.flags && draft.flags[f.key] === value ? null : value)}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </span>
+            </div>
+          ))}
+      </div>
 
       {nowRejected.length > 0 && (
         <div className="draft-warn">
@@ -227,7 +357,12 @@ function DraftEditor({ draft, setDraft, rejected, notes, onSave, onCancel, gende
         <button type="button" className="btn btn-secondary" onClick={onCancel}>
           取消
         </button>
-        <button type="button" className="btn btn-primary" onClick={onSave} disabled={!draft.date || !filled.length}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={onSave}
+          disabled={!draft.date || (!filled.length && !flagCount)}
+        >
           <Check size={13} /> 儲存報告
         </button>
       </div>
@@ -326,7 +461,7 @@ export default function HealthAnalysis({
     setRejected(merged.rejected);
     setNotes(merged);
 
-    if (!Object.keys(merged.values).length) {
+    if (!Object.keys(merged.values).length && !Object.keys(merged.flags || {}).length) {
       setError(
         lastError && files.length === 1
           ? lastError.message || "報告辨識失敗，請再試一次，或用手動輸入。"
@@ -341,6 +476,7 @@ export default function HealthAnalysis({
       labName: merged.labName || "",
       source: "photo",
       values: merged.values,
+      flags: merged.flags || {},
     });
   }
 
@@ -450,6 +586,8 @@ export default function HealthAnalysis({
           </div>
 
           <MetabolicCard result={ms} />
+
+          <FlagList flags={report.flags} />
 
           {GROUP_ORDER.map((group) => {
             const markers = LAB_MARKERS.filter((m) => m.group === group && report.values[m.key] != null);
