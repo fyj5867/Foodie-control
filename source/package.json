@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "build": "esbuild entry.jsx --bundle --minify --loader:.jsx=jsx --format=iife --define:process.env.NODE_ENV='\"production\"' --outfile=../app.bundle.js",
-    "test": "node tools/check-imports.mjs && node tools/test-health.mjs && node tools/test-goals.mjs && node tools/test-coach.mjs"
+    "test": "node tools/check-imports.mjs && node tools/test-health.mjs && node tools/test-goals.mjs && node tools/test-sprout.mjs && node tools/test-coach.mjs"
   },
   "keywords": [],
   "author": "",

@@ -2,27 +2,32 @@
  * The garden — every finished tree, kept.
  *
  * This is the long-term payoff: one tree per 30 met days, planted and never
- * removed. Trees are laid out on a shallow landscape and given small,
- * deterministic variations in size, position and leaf tint, so a row of them
- * reads as a grove rather than one drawing stamped repeatedly. The variation
- * is derived from the tree's index, so a given tree looks the same every time
- * the screen is opened.
+ * removed. Trees are laid out on a shallow landscape with small, deterministic
+ * variations in size and position so a row of them reads as a grove rather
+ * than one drawing stamped repeatedly. The variation is derived from the
+ * tree's index, so a given tree looks the same every time the screen is
+ * opened. Colour is deliberately NOT varied — the Health Forest canvas fixes
+ * every outline at #3A4C3A over one set of fills, and retinting would break
+ * that.
  */
 
 import React from "react";
-import { PlantBody } from "./Sprout.jsx";
+import { PlantBody, groundY } from "./Sprout.jsx";
 
 const VIEW_W = 358;
 const VIEW_H = 300;
 
-/** Where the still-growing tree stands: front-right, clear of the rows behind. */
-/** Where PlantBody stands the plant inside its own drawing space — the soil
- * line, since stages 5-6 have no bean at the base at all. */
-const PLANT_BASE = 170;
+/* PlantBody draws in the Health Forest canvas's own 96x96 space. Where the
+ * plant meets the ground is not the same for every stage — the potted stages
+ * rest on the bottom of the pot, the finished tree on its own grass mound —
+ * so it comes from groundY(stage) rather than one constant. */
+const PLANT_MID = 48;
+const TREE_BASE = groundY("forest");
 
+/** Where the still-growing plant stands: front-right, clear of the rows behind. */
 const GROWING_X = 302;
 const GROWING_Y = 278;
-const GROWING_SCALE = 0.5;
+const GROWING_SCALE = 0.95;
 
 /** Cheap deterministic pseudo-random in [0,1) from an integer seed. */
 function jitter(seed, salt) {
@@ -30,7 +35,9 @@ function jitter(seed, salt) {
   return x - Math.floor(x);
 }
 
-const LEAF_TINTS = ["var(--leaf)", "var(--leaf-bright)", "var(--leaf-dk)"];
+/* The canvas draws one plant, not a palette of them, so finished plants vary
+ * by size and position only — recolouring them would break the design's rule
+ * that every outline is #3A4C3A over a fixed set of fills. */
 
 /**
  * Place up to `perRow` trees across the width, in rows that step down the
@@ -52,15 +59,14 @@ function layout(count) {
     // tallest tree's crown clear of the top edge — a clipped treetop reads
     // as a rendering bug rather than depth.
     const depth = rows === 1 ? 1 : 1 - row / rows;
-    const baseY = PLANT_BASE + (VIEW_H - 190) * (0.5 + 0.42 * (1 - depth));
+    const baseY = TREE_BASE + (VIEW_H - 190) * (0.5 + 0.42 * (1 - depth));
     const slotW = VIEW_W / (inRow + 1);
     const baseX = slotW * (col + 1);
 
     spots.push({
       x: baseX + (jitter(i, 1) - 0.5) * slotW * 0.3,
       y: baseY + (jitter(i, 2) - 0.5) * 12,
-      scale: 0.46 + depth * 0.28 + jitter(i, 3) * 0.1,
-      tint: LEAF_TINTS[Math.floor(jitter(i, 4) * LEAF_TINTS.length)],
+      scale: 0.9 + depth * 0.5 + jitter(i, 3) * 0.18,
       seed: i,
     });
   }
@@ -95,6 +101,7 @@ function GroundCover() {
  */
 export default function Garden({ completedTrees = 0, currentStage = "seed", vitality = "fair" }) {
   const spots = layout(completedTrees);
+  const growingBase = groundY(currentStage);
   const label =
     completedTrees === 0
       ? "花園裡還沒有完成的樹，第一棵正在長"
@@ -118,15 +125,15 @@ export default function Garden({ completedTrees = 0, currentStage = "seed", vita
           <ellipse
             cx={spot.x}
             cy={spot.y + 3 * spot.scale}
-            rx={34 * spot.scale}
-            ry={5.5 * spot.scale}
+            rx={20 * spot.scale}
+            ry={3.4 * spot.scale}
             fill="var(--ink)"
             opacity="0.08"
           />
           <g
-            transform={`translate(${spot.x - 100 * spot.scale},${spot.y - PLANT_BASE * spot.scale}) scale(${spot.scale})`}
+            transform={`translate(${spot.x - PLANT_MID * spot.scale},${spot.y - TREE_BASE * spot.scale}) scale(${spot.scale})`}
           >
-            <PlantBody stage="bloom" vitality="fair" leafTint={spot.tint} />
+            <PlantBody stage="forest" vitality="fair" />
           </g>
         </g>
       ))}
@@ -137,13 +144,13 @@ export default function Garden({ completedTrees = 0, currentStage = "seed", vita
       <ellipse
         cx={GROWING_X}
         cy={GROWING_Y + 3 * GROWING_SCALE}
-        rx={34 * GROWING_SCALE}
-        ry={5.5 * GROWING_SCALE}
+        rx={20 * GROWING_SCALE}
+        ry={3.4 * GROWING_SCALE}
         fill="var(--ink)"
         opacity="0.08"
       />
       <g
-        transform={`translate(${GROWING_X - 100 * GROWING_SCALE},${GROWING_Y - PLANT_BASE * GROWING_SCALE}) scale(${GROWING_SCALE})`}
+        transform={`translate(${GROWING_X - PLANT_MID * GROWING_SCALE},${GROWING_Y - growingBase * GROWING_SCALE}) scale(${GROWING_SCALE})`}
       >
         <PlantBody stage={currentStage} vitality={vitality} />
       </g>

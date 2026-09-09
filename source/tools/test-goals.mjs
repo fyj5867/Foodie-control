@@ -20,8 +20,10 @@ import {
   FIELDS,
   CALORIE_CEILING,
   CALORIE_MIN_LOGGED,
+  STAGES,
 } from "../lib/goals.js";
 import { daysAgoStr, todayStr } from "../lib/health.js";
+import { readFileSync } from "node:fs";
 
 let passed = 0;
 const failures = [];
@@ -31,6 +33,11 @@ function check(name, actual, expected) {
   const e = JSON.stringify(expected);
   if (a === e) passed += 1;
   else failures.push(`${name}\n    expected ${e}\n    actual   ${a}`);
+}
+
+function ok(name, cond, detail = "") {
+  if (cond) passed += 1;
+  else failures.push(`${name}${detail ? "\n    " + detail : ""}`);
 }
 
 const D = todayStr();
@@ -110,14 +117,32 @@ const otherDay = evaluateDay(D, {
 check("yesterday's food does not count today", otherDay.calorie, false);
 
 /* --- stages --- */
+/* Eight stages, matching the Health Forest canvas artwork. Every key here
+ * must have a drawing in components/Sprout.jsx. */
 check("0 days is seed", stageForDays(0).key, "seed");
 check("1 day is sprout", stageForDays(1).key, "sprout");
-check("6 days still seedling", stageForDays(6).key, "seedling");
-check("7 days is sapling", stageForDays(7).key, "sapling");
-check("29 days is tree not bloom", stageForDays(29).key, "tree");
-check("30 days is bloom", stageForDays(30).key, "bloom");
-check("next stage from 3 is sapling at 7", nextStageForDays(3).days, 7);
+check("3 days is shoot", stageForDays(3).key, "shoot");
+check("5 days still shoot", stageForDays(5).key, "shoot");
+check("6 days is seedling", stageForDays(6).key, "seedling");
+check("11 days is growing", stageForDays(11).key, "growing");
+check("17 days is mature", stageForDays(17).key, "mature");
+check("24 days is ready", stageForDays(24).key, "ready");
+check("29 days is still ready", stageForDays(29).key, "ready");
+check("30 days is the forest tree", stageForDays(30).key, "forest");
+check("next stage from 3 is seedling at 6", nextStageForDays(3).days, 6);
 check("no next stage at 30", nextStageForDays(30), null);
+check("eight stages in all", STAGES.length, 8);
+check("the last stage lands exactly on a finished tree", STAGES[STAGES.length - 1].days, TREE_DAYS);
+ok("stage days only ever increase", STAGES.every((s, i) => i === 0 || s.days > STAGES[i - 1].days));
+
+/* Every stage must have a drawing. The artwork is transcribed from the
+ * Health Forest canvas and keyed by these names, so adding a stage here
+ * without adding its drawing would silently fall back to another plant.
+ * Read as text because the component is JSX and cannot be imported here. */
+const sproutSrc = readFileSync(new URL("../components/Sprout.jsx", import.meta.url), "utf8");
+for (const stage of STAGES) {
+  ok(`${stage.key} has artwork`, sproutSrc.includes(`\n  ${stage.key}: (`), stage.key);
+}
 
 /* --- garden accumulation --- */
 function metDays(n, startDaysAgo = 200) {

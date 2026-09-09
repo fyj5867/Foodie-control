@@ -1870,7 +1870,8 @@ export default function App() {
         /* The sprout is capped so the illustration stays a modest header; at
            full width it dominated the card and every rough edge scaled with it. */
         .growth-scene.is-sprout{
-          height:150px; display:flex; align-items:center; justify-content:center;
+          height:160px; display:flex; align-items:center; justify-content:center;
+          background:#FBF8EE;
         }
         .growth-scene.is-sprout svg{ height:100%; width:auto; max-width:100%; }
         /* The garden is a landscape — it keeps its own aspect. */
@@ -1923,14 +1924,16 @@ export default function App() {
         .growth-bar{ height:6px; border-radius:3px; background:var(--surface-3); overflow:hidden; }
         .growth-bar i{ display:block; height:100%; border-radius:3px; background:var(--brand); }
 
-        .stage-track{ display:flex; justify-content:space-between; margin-top:10px; }
-        .stage-dot{ display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; }
+        /* Eight steps on a phone width: the labels have to be allowed to sit
+           tight, and the last one ("森林之樹") is wider than the rest. */
+        .stage-track{ display:flex; justify-content:space-between; margin-top:10px; gap:2px; }
+        .stage-dot{ display:flex; flex-direction:column; align-items:center; gap:4px; flex:1 1 0; min-width:0; }
         .stage-mark{
           width:9px; height:9px; border-radius:50%;
           background:var(--surface-3); border:1.5px solid var(--surface-3);
         }
         .stage-dot.reached .stage-mark{ background:var(--brand); border-color:var(--brand); }
-        .stage-label{ font-size:10.5px; color:var(--ink-soft); }
+        .stage-label{ font-size:9.5px; color:var(--ink-soft); white-space:nowrap; }
         .stage-dot.reached .stage-label{ color:var(--brand); font-weight:600; }
 
         .gauge-caveat{
@@ -2270,6 +2273,23 @@ export default function App() {
           color:var(--ink);
         }
         .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        /* Grid and flex children refuse to shrink below their content by
+           default (min-width:auto), so one wide field pushes the whole row
+           past the card's edge instead of the two columns sharing the space. */
+        .field-row > .field{ min-width:0; }
+        /* iOS renders date and time inputs as native controls sized by their
+           own content and ignores width:100%, which pushed the 日期 field out
+           over the right edge of the card. Turning the native appearance off
+           makes them lay out like every other input here. Desktop browsers
+           already fit, so this changes nothing there. */
+        .field input[type="date"], .field input[type="time"]{
+          -webkit-appearance:none;
+          appearance:none;
+          display:block;
+          min-width:0;
+          max-width:100%;
+          text-align:left;
+        }
 
         .chip-grid{ display:flex; flex-wrap:wrap; gap:8px; }
         .chip{

@@ -45,14 +45,24 @@ export const CALORIE_MIN_LOGGED = 500;
  * few days just pushes the finish out, it never resets progress. */
 export const TREE_DAYS = 30;
 
-/** Growth stages within one tree, keyed on met days accumulated toward it. */
+/**
+ * Growth stages within one plant, keyed on met days accumulated toward it.
+ *
+ * Eight stages, names and order taken from the Health Forest 植物養成圖示系統
+ * canvas — the artwork in components/Sprout.jsx is drawn for exactly these,
+ * so the two lists have to stay in step. Days are spread over TREE_DAYS with
+ * the early steps close together: the first few days are when a habit is
+ * easiest to abandon, so that is where visible progress should come fastest.
+ */
 export const STAGES = [
-  { key: "seed", label: "種子", days: 0 },
-  { key: "sprout", label: "冒芽", days: 1 },
-  { key: "seedling", label: "小苗", days: 3 },
-  { key: "sapling", label: "幼苗", days: 7 },
-  { key: "tree", label: "小樹", days: 14 },
-  { key: "bloom", label: "開花", days: TREE_DAYS },
+  { key: "seed", label: "種子", days: 0, note: "開始養成" },
+  { key: "sprout", label: "發芽", days: 1, note: "萌芽出土" },
+  { key: "shoot", label: "幼芽", days: 3, note: "兩葉成長" },
+  { key: "seedling", label: "小苗", days: 6, note: "葉片增加" },
+  { key: "growing", label: "成長", days: 11, note: "枝葉茂盛" },
+  { key: "mature", label: "成熟", days: 17, note: "花苞出現" },
+  { key: "ready", label: "破土", days: 24, note: "準備移植" },
+  { key: "forest", label: "森林之樹", days: TREE_DAYS, note: "種入森林" },
 ];
 
 /** Vitality shown on the sprout: one level per number of conditions met,

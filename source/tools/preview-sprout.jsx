@@ -2,7 +2,7 @@
  * Throwaway harness: every stage against every mood, on one page.
  *
  * Judging a character design one screenshot at a time does not work — the
- * whole point is whether the six stages read as one creature growing, and
+ * whole point is whether the stages read as one creature growing, and
  * whether the four faces read as the same creature in different moods.
  *
  * Build (from source/):
@@ -23,7 +23,7 @@ const MOOD_LABELS = Object.fromEntries(VITALITY.map((v) => [v.key, `${v.metCount
 function Grid() {
   return (
     <div className="wrap">
-      <h1>樹苗 —— 六個階段 × 四種表情</h1>
+      <h1>{`植物 —— ${STAGES.length} 個階段 × ${MOOD_KEYS.length} 種表情`}</h1>
       <div className="grid" style={{ gridTemplateColumns: `90px repeat(${STAGES.length}, 1fr)` }}>
         <div />
         {STAGES.map((s) => (
