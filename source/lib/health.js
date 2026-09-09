@@ -127,8 +127,427 @@ function sleepZones() {
   ];
 }
 
+/**
+ * Health check report markers, and the published ranges they are read against.
+ *
+ * Everything here is a REFERENCE RANGE, not a diagnosis. A value outside a
+ * range is a reason to ask a doctor about it, and that is the strongest thing
+ * this app is ever allowed to say about it. Two consequences run through the
+ * whole design:
+ *
+ *   - Zones carry the range in their label（"糖尿病前期範圍 100-125"）so what
+ *     is on screen is a comparison a person can check, not a verdict they have
+ *     to take on trust.
+ *   - Every lab prints its own reference range on the report, and they differ
+ *     between labs and methods. So the app says which standard it used and
+ *     tells the person to go by their own report and their doctor.
+ *
+ * A zone matches when the value is below its `lt`; the last zone has no `lt`
+ * and catches everything above. Markers whose ranges differ by sex take the
+ * profile's gender, the same way bodyFatZones does.
+ *
+ * `plausible` is a data-hygiene bound, not a reference range: these numbers
+ * are read off a photograph by a model, and a misplaced decimal point or a
+ * value picked out of the neighbouring 「參考值」 column has to be rejected
+ * rather than shown as an alarming finding.
+ */
+const LAB_MARKERS = [
+  {
+    key: "fastingGlucose",
+    plausible: [20, 800],
+    label: "空腹血糖",
+    short: "血糖",
+    unit: "mg/dL",
+    decimals: 0,
+    group: "sugar",
+    /* 中華民國糖尿病學會／ADA 判讀切點。100-125 是「糖尿病前期」，也就是這個
+       App 存在的原因，所以它是黃色而不是紅色：需要處理，不是壞消息。 */
+    zones: [
+      { lt: 70, tone: "yellow", label: "偏低 <70" },
+      { lt: 100, tone: "green", label: "正常 <100" },
+      { lt: 126, tone: "yellow", label: "糖尿病前期範圍 100-125" },
+      { tone: "red", label: "已達糖尿病診斷切點 ≥126" },
+    ],
+  },
+  {
+    key: "hba1c",
+    plausible: [3, 20],
+    label: "糖化血色素",
+    short: "HbA1c",
+    unit: "%",
+    decimals: 1,
+    group: "sugar",
+    note: "反映近 2-3 個月的平均血糖，比單次空腹血糖穩定。",
+    zones: [
+      { lt: 5.7, tone: "green", label: "正常 <5.7" },
+      { lt: 6.5, tone: "yellow", label: "糖尿病前期範圍 5.7-6.4" },
+      { tone: "red", label: "已達糖尿病診斷切點 ≥6.5" },
+    ],
+  },
+  {
+    key: "totalCholesterol",
+    plausible: [50, 600],
+    label: "總膽固醇",
+    short: "總膽固醇",
+    unit: "mg/dL",
+    decimals: 0,
+    group: "lipid",
+    zones: [
+      { lt: 200, tone: "green", label: "理想 <200" },
+      { lt: 240, tone: "yellow", label: "邊緣偏高 200-239" },
+      { tone: "red", label: "偏高 ≥240" },
+    ],
+  },
+  {
+    key: "triglycerides",
+    plausible: [20, 3000],
+    label: "三酸甘油酯",
+    short: "三酸甘油酯",
+    unit: "mg/dL",
+    decimals: 0,
+    group: "lipid",
+    note: "對含糖飲料、精緻澱粉與酒精特別敏感，也是最容易靠飲食改變的一項。",
+    zones: [
+      { lt: 150, tone: "green", label: "正常 <150" },
+      { lt: 200, tone: "yellow", label: "邊緣偏高 150-199" },
+      { tone: "red", label: "偏高 ≥200" },
+    ],
+  },
+  {
+    key: "hdl",
+    plausible: [10, 150],
+    label: "高密度脂蛋白（HDL）",
+    short: "HDL",
+    unit: "mg/dL",
+    decimals: 0,
+    group: "lipid",
+    higherIsBetter: true,
+    note: "這一項是愈高愈好，規律有氧運動是少數確定能拉高它的方式。",
+    zonesFor: (gender) =>
+      gender === "male"
+        ? [
+            { lt: 40, tone: "red", label: "偏低 <40" },
+            { lt: 60, tone: "green", label: "正常 40-59" },
+            { tone: "green", label: "良好 ≥60" },
+          ]
+        : [
+            { lt: 50, tone: "red", label: "偏低 <50" },
+            { lt: 60, tone: "green", label: "正常 50-59" },
+            { tone: "green", label: "良好 ≥60" },
+          ],
+  },
+  {
+    key: "ldl",
+    plausible: [10, 400],
+    label: "低密度脂蛋白（LDL）",
+    short: "LDL",
+    unit: "mg/dL",
+    decimals: 0,
+    group: "lipid",
+    note: "已有心血管疾病或糖尿病的人，醫師設定的目標會比這裡的一般參考值更低。",
+    zones: [
+      { lt: 130, tone: "green", label: "正常 <130" },
+      { lt: 160, tone: "yellow", label: "邊緣偏高 130-159" },
+      { tone: "red", label: "偏高 ≥160" },
+    ],
+  },
+  {
+    key: "systolic",
+    plausible: [60, 260],
+    label: "收縮壓",
+    short: "收縮壓",
+    unit: "mmHg",
+    decimals: 0,
+    group: "pressure",
+    zones: [
+      { lt: 120, tone: "green", label: "正常 <120" },
+      { lt: 130, tone: "yellow", label: "血壓升高 120-129" },
+      { tone: "red", label: "偏高 ≥130" },
+    ],
+  },
+  {
+    key: "diastolic",
+    plausible: [30, 180],
+    label: "舒張壓",
+    short: "舒張壓",
+    unit: "mmHg",
+    decimals: 0,
+    group: "pressure",
+    zones: [
+      { lt: 80, tone: "green", label: "正常 <80" },
+      { tone: "red", label: "偏高 ≥80" },
+    ],
+  },
+  {
+    key: "uricAcid",
+    plausible: [1, 20],
+    label: "尿酸",
+    short: "尿酸",
+    unit: "mg/dL",
+    decimals: 1,
+    group: "other",
+    zonesFor: (gender) =>
+      gender === "male"
+        ? [
+            { lt: 3.5, tone: "yellow", label: "偏低 <3.5" },
+            { lt: 7.2, tone: "green", label: "正常 3.5-7.2" },
+            { tone: "red", label: "偏高 >7.2" },
+          ]
+        : [
+            { lt: 2.6, tone: "yellow", label: "偏低 <2.6" },
+            { lt: 6.0, tone: "green", label: "正常 2.6-6.0" },
+            { tone: "red", label: "偏高 >6.0" },
+          ],
+  },
+  {
+    key: "alt",
+    plausible: [1, 2000],
+    label: "肝功能 GPT（ALT）",
+    short: "GPT",
+    unit: "U/L",
+    decimals: 0,
+    group: "other",
+    zones: [
+      { lt: 41, tone: "green", label: "正常 ≤40" },
+      { lt: 81, tone: "yellow", label: "偏高 41-80" },
+      { tone: "red", label: "明顯偏高 >80" },
+    ],
+  },
+  {
+    key: "ast",
+    plausible: [1, 2000],
+    label: "肝功能 GOT（AST）",
+    short: "GOT",
+    unit: "U/L",
+    decimals: 0,
+    group: "other",
+    zones: [
+      { lt: 41, tone: "green", label: "正常 ≤40" },
+      { lt: 81, tone: "yellow", label: "偏高 41-80" },
+      { tone: "red", label: "明顯偏高 >80" },
+    ],
+  },
+  {
+    key: "creatinine",
+    plausible: [0.1, 20],
+    label: "肌酸酐",
+    short: "肌酸酐",
+    unit: "mg/dL",
+    decimals: 2,
+    group: "other",
+    zonesFor: (gender) =>
+      gender === "male"
+        ? [
+            { lt: 0.7, tone: "yellow", label: "偏低 <0.7" },
+            { lt: 1.4, tone: "green", label: "正常 0.7-1.3" },
+            { tone: "red", label: "偏高 ≥1.4" },
+          ]
+        : [
+            { lt: 0.5, tone: "yellow", label: "偏低 <0.5" },
+            { lt: 1.2, tone: "green", label: "正常 0.5-1.1" },
+            { tone: "red", label: "偏高 ≥1.2" },
+          ],
+  },
+  {
+    key: "egfr",
+    plausible: [1, 200],
+    label: "腎絲球過濾率（eGFR）",
+    short: "eGFR",
+    unit: "mL/min/1.73m²",
+    decimals: 0,
+    group: "other",
+    higherIsBetter: true,
+    zones: [
+      { lt: 30, tone: "red", label: "明顯下降 <30" },
+      { lt: 60, tone: "red", label: "中度下降 30-59" },
+      { lt: 90, tone: "yellow", label: "輕度下降 60-89" },
+      { tone: "green", label: "正常 ≥90" },
+    ],
+  },
+  {
+    key: "waist",
+    plausible: [40, 200],
+    label: "腰圍",
+    short: "腰圍",
+    unit: "cm",
+    decimals: 1,
+    group: "body",
+    zonesFor: (gender) =>
+      gender === "male"
+        ? [
+            { lt: 90, tone: "green", label: "正常 <90" },
+            { tone: "red", label: "過大 ≥90" },
+          ]
+        : [
+            { lt: 80, tone: "green", label: "正常 <80" },
+            { tone: "red", label: "過大 ≥80" },
+          ],
+  },
+  {
+    key: "weight",
+    plausible: [20, 300],
+    label: "體重",
+    short: "體重",
+    unit: "kg",
+    decimals: 1,
+    group: "body",
+    /* No zones: a weight on its own is not high or low, BMI is what the app
+       already judges. Kept so a value read off the report is not thrown away. */
+    zones: null,
+  },
+];
+
+const LAB_MARKER_BY_KEY = Object.fromEntries(LAB_MARKERS.map((m) => [m.key, m]));
+
+function labMarker(key) {
+  return LAB_MARKER_BY_KEY[key] || null;
+}
+
+/**
+ * A lab value as a number, or null when there isn't one.
+ *
+ * Number(null) and Number("") are both 0, and 0 sits inside the 「正常」 band
+ * of several markers — so passing a raw Number() through meant a value nobody
+ * measured came back graded as normal. Absent has to stay absent.
+ */
+function labNumber(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** The zones for one marker, resolved for this person. */
+function labZonesFor(key, gender) {
+  const marker = labMarker(key);
+  if (!marker) return null;
+  if (marker.zonesFor) return marker.zonesFor(gender === "male" ? "male" : "female");
+  return marker.zones;
+}
+
+/**
+ * Which zone a value falls in. Returns null when there is nothing to judge —
+ * an unknown marker, a missing value, or one this app deliberately does not
+ * grade (weight).
+ */
+function labZone(key, value, gender) {
+  const zones = labZonesFor(key, gender);
+  if (!zones || !zones.length) return null;
+  const n = labNumber(value);
+  if (n == null) return null;
+  for (const zone of zones) {
+    if (zone.lt == null || n < zone.lt) return zone;
+  }
+  return zones[zones.length - 1];
+}
+
+/**
+ * 代謝症候群自我檢查（衛生福利部國民健康署的五項條件）.
+ *
+ * This is the one place the app joins a report to what it already records:
+ * waist comes from 體態紀錄, the other four from the report. Three or more
+ * met is the published threshold.
+ *
+ * The official criteria also count "已在服用相關藥物" for blood pressure,
+ * glucose and triglycerides. The app cannot know that, so it says so rather
+ * than quietly reporting a lower count than a clinician would.
+ */
+const METABOLIC_SYNDROME_THRESHOLD = 3;
+
+function metabolicSyndrome({ values = {}, waistCm = null, gender = "female" } = {}) {
+  const male = gender === "male";
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+
+  const waist = num(waistCm != null ? waistCm : values.waist);
+  const sys = num(values.systolic);
+  const dia = num(values.diastolic);
+  const glucose = num(values.fastingGlucose);
+  const tg = num(values.triglycerides);
+  const hdl = num(values.hdl);
+
+  const criteria = [
+    {
+      key: "waist",
+      label: "腰圍",
+      limit: male ? "≥90" : "≥80",
+      unit: "cm",
+      value: waist,
+      met: waist != null && waist >= (male ? 90 : 80),
+    },
+    {
+      key: "pressure",
+      label: "血壓",
+      limit: "≥130/85",
+      unit: "mmHg",
+      value: sys != null || dia != null ? `${sys ?? "—"}/${dia ?? "—"}` : null,
+      met: (sys != null && sys >= 130) || (dia != null && dia >= 85),
+    },
+    {
+      key: "glucose",
+      label: "空腹血糖",
+      limit: "≥100",
+      unit: "mg/dL",
+      value: glucose,
+      met: glucose != null && glucose >= 100,
+    },
+    {
+      key: "triglycerides",
+      label: "三酸甘油酯",
+      limit: "≥150",
+      unit: "mg/dL",
+      value: tg,
+      met: tg != null && tg >= 150,
+    },
+    {
+      key: "hdl",
+      label: "高密度脂蛋白",
+      short: "HDL",
+      limit: male ? "<40" : "<50",
+      unit: "mg/dL",
+      value: hdl,
+      met: hdl != null && hdl < (male ? 40 : 50),
+    },
+  ];
+
+  const known = criteria.filter((c) => c.value != null).length;
+  const met = criteria.filter((c) => c.met).length;
+
+  return {
+    criteria,
+    met,
+    known,
+    total: criteria.length,
+    threshold: METABOLIC_SYNDROME_THRESHOLD,
+    /* Below the threshold with items unmeasured is not "you are fine" — it is
+       "not enough was measured to say". The two must not read the same. */
+    complete: known === criteria.length,
+    reachesThreshold: met >= METABOLIC_SYNDROME_THRESHOLD,
+  };
+}
+
+/** Whether a value could be a real reading for this marker — see `plausible`. */
+function isPlausibleLabValue(key, value) {
+  const marker = labMarker(key);
+  if (!marker || !marker.plausible) return false;
+  const n = labNumber(value);
+  const [lo, hi] = marker.plausible;
+  return n != null && n >= lo && n <= hi;
+}
+
+/** Report values that fall outside their reference range, worst first. */
+function outOfRangeMarkers(values, gender) {
+  const out = [];
+  for (const marker of LAB_MARKERS) {
+    const value = values ? values[marker.key] : null;
+    const zone = labZone(marker.key, value, gender);
+    if (!zone || zone.tone === "green") continue;
+    out.push({ key: marker.key, label: marker.label, value: Number(value), unit: marker.unit, zone, marker });
+  }
+  const rank = { red: 0, yellow: 1 };
+  return out.sort((a, b) => (rank[a.zone.tone] ?? 9) - (rank[b.zone.tone] ?? 9));
+}
+
 const CONTENT_REVIEW = {
-  lastReviewed: "2026-09-08",
+  lastReviewed: "2026-09-09",
   sources: [
     "衛生福利部國民健康署《我的餐盤》飲食指南與「顧血糖4招」衛教資訊",
     "衛生福利部國民健康署《糖尿病防治手冊》",
@@ -140,6 +559,11 @@ const CONTENT_REVIEW = {
     "衛生福利部國民健康署代謝症候群學習手冊：腰圍標準",
     "衛生福利部食品藥物管理署《食品營養成分資料庫（新版）》：食物熱量查詢",
     "衛生福利部國民健康署睡眠健康衛教資訊、美國National Sleep Foundation 2015共識：成人每晚7-9小時",
+    "衛生福利部國民健康署《代謝症候群判定標準》：腰圍、血壓、空腹血糖、三酸甘油酯、高密度脂蛋白五項，三項以上",
+    "社團法人中華民國糖尿病學會／美國糖尿病學會：空腹血糖 100-125 mg/dL、糖化血色素 5.7-6.4% 為糖尿病前期",
+    "衛生福利部國民健康署心血管疾病防治衛教：總膽固醇、三酸甘油酯、HDL、LDL 參考值",
+    "2022年台灣高血壓治療指引（中華民國心臟學會／台灣高血壓學會）：130/80 mmHg 判定標準",
+    "台灣慢性腎臟病臨床診療指引：eGFR 分期（≥90 正常、60-89 輕度下降、30-59 中度、<30 重度）",
   ],
 };
 
@@ -533,6 +957,15 @@ function buildWeeklyCalorieData(foodLog) {
 }
 
 export {
+  LAB_MARKERS,
+  labMarker,
+  labZonesFor,
+  labZone,
+  metabolicSyndrome,
+  METABOLIC_SYNDROME_THRESHOLD,
+  outOfRangeMarkers,
+  isPlausibleLabValue,
+  labNumber,
   SYMPTOM_OPTIONS,
   deriveActivityLevel,
   ACTIVITY_LOG_OPTIONS,

@@ -5,6 +5,7 @@ import {
   Utensils,
   Dumbbell,
   Activity,
+  HeartPulse,
   Plus,
   Trash2,
   Info,
@@ -87,6 +88,11 @@ import DailyCoach from "./components/DailyCoach.jsx";
 import { coachSlot, dailyMessage, eveningSummary } from "./lib/coach.js";
 import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM, KEYS, loadFoodMemory, saveFoodMemory } from "./lib/storage.js";
 import { remember, forget, lookup, suggestion, sortedMemory, isLearnable } from "./lib/foodMemory.js";
+import { askAboutImage, FOOD_PROMPT, LAB_PROMPT } from "./lib/vision.js";
+import { upsertReport, removeReport, latestReport } from "./lib/reports.js";
+import { loadReports, saveReports, loadWorkoutLinks, saveWorkoutLinks, buildBackupFrom } from "./lib/storage.js";
+import HealthAnalysis from "./components/HealthAnalysis.jsx";
+import WorkoutSuggestions from "./components/WorkoutSuggestions.jsx";
 
 /** Traffic-light metadata for a value that may be missing or unrecognised.
  * Falls back to yellow — "watch the portion" is the safe thing to say when
@@ -141,110 +147,34 @@ function compressImageDataUrl(dataUrl, maxDim = 180, quality = 0.55) {
   });
 }
 
-/** Sends a food photo to an AI vision model for a rough calorie / traffic-light
- * estimate. Returns a parsed JSON object, or throws on failure.
- * This standalone build calls the provider's API directly from the browser
- * using a key the user enters and stores locally on their own device (see
- * Settings in the 個人資料 tab). The key never leaves the device except in
- * requests sent straight to the provider's own API. Supports:
- *  - "anthropic": Claude API (api.anthropic.com), paid, needs billing set up.
- *  - "gemini": Google Gemini API (generativelanguage.googleapis.com), has a
- *    genuine no-credit-card free tier via Google AI Studio.
+/**
+ * Ask the vision model about a food photo.
+ *
+ * The transport, the two providers and the error wording all live in
+ * lib/vision.js now — the health check report reads photos through the same
+ * path, and two copies of the fetch-and-unwrap-the-JSON dance would drift.
  */
 async function analyzeFoodPhoto(base64Data, mediaType, provider, apiKey, geminiModel) {
-  if (!apiKey) {
-    throw new Error(
-      provider === "gemini"
-        ? "尚未設定 Google Gemini API Key，請先到「個人資料」頁下方的設定輸入金鑰。"
-        : "尚未設定 Anthropic API Key，請先到「個人資料」頁下方的設定輸入金鑰。"
-    );
-  }
+  return askAboutImage({ prompt: FOOD_PROMPT, base64Data, mediaType, provider, apiKey, geminiModel });
+}
 
-  const prompt = `請你以營養師角度分析這張食物照片，並「只」回傳純 JSON（不要任何前後文字、不要 markdown 符號），格式如下：
-{"foodName": "食物名稱（繁體中文，多項用、分隔）", "estimatedCalories": 數字, "carbsG": 數字, "proteinG": 數字, "fatG": 數字, "portionNote": "份量估計簡短說明", "light": "green或yellow或red", "reason": "20字以內的燈號原因", "confidence": "low或medium或high", "sourceType": "label或estimate"}
-
-重要：如果照片中拍到包裝食品的「營養標示」欄位（例如熱量、每份含量等印刷文字），請優先
-「讀取」標示上實際印的數字作為 estimatedCalories 等數值，不要用外觀去估算份量；並將
-sourceType 填 "label"，confidence 填 "high"，portionNote 註明是讀取自包裝標示。如果
-標示上是「每100克」或「每份」而非整包的量，請依包裝上標示的總重量或總份數換算成整包
-（或照片中呈現的實際份量）的總熱量。
-如果沒有看到營養標示、只能靠外觀估算份量與熱量，sourceType 請填 "estimate"，並依實際
-把握程度誠實填寫 confidence（份量或食材較難判斷時，請填 low 或 medium，不要為了看起來
-準確而灌水成 high）。
-
-燈號判斷原則（第二型糖尿病預防飲食）：
-- green：原型食物、高纖蔬菜、全穀雜糧、瘦肉蛋白、烹調清淡（清蒸水煮烤）
-- yellow：白飯白麵等精緻澱粉適量、水果、全脂乳品，份量需留意
-- red：油炸、含糖飲料或甜點、加工肉品、高油勾芡，建議避免或大幅減量
-
-若照片中有多種食物，estimatedCalories 等數值請加總為整餐估計。若無法辨識出食物，foodName 請填"無法辨識"，estimatedCalories 填 0，confidence 填 low。`;
-
-  if (provider === "gemini") {
-    const model = geminiModel && geminiModel.trim() ? geminiModel.trim() : "gemini-3.6-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }, { inline_data: { mime_type: mediaType, data: base64Data } }],
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 400 || response.status === 403)
-        throw new Error("Gemini API Key 無效，請到設定重新輸入，或確認金鑰有效。");
-      if (response.status === 404)
-        throw new Error(`找不到模型「${model}」，Google 可能已更新模型名稱，請到設定的「進階」欄位更新模型名稱。`);
-      if (response.status === 429) throw new Error("已達到 Gemini 免費額度上限（有速率限制），請稍後再試。");
-      throw new Error("辨識服務暫時無法使用，請稍後再試。");
-    }
-    const data = await response.json();
-    const parts = data?.candidates?.[0]?.content?.parts || [];
-    const textPart = parts.find((p) => typeof p.text === "string");
-    if (!textPart) throw new Error("未取得辨識結果");
-    const cleaned = textPart.text.replace(/```json|```/g, "").trim();
-    return JSON.parse(cleaned);
-  }
-
-  // Anthropic Claude
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
-            { type: "text", text: prompt },
-          ],
-        },
-      ],
-    }),
+/**
+ * Read the printed numbers off a health check report.
+ *
+ * maxTokens is raised because a report page carries a whole panel of values,
+ * not one meal. The model is asked only to transcribe: what the numbers mean
+ * is decided in lib/health.js against published reference ranges.
+ */
+async function analyzeLabReport(base64Data, mediaType, provider, apiKey, geminiModel) {
+  return askAboutImage({
+    prompt: LAB_PROMPT,
+    base64Data,
+    mediaType,
+    provider,
+    apiKey,
+    geminiModel,
+    maxTokens: 2000,
   });
-
-  if (!response.ok) {
-    if (response.status === 401) throw new Error("API Key 無效或已過期，請到設定重新輸入。");
-    if (response.status === 429) throw new Error("已達到 API 使用額度上限，請稍後再試。");
-    throw new Error("辨識服務暫時無法使用，請稍後再試。");
-  }
-  const data = await response.json();
-  const textBlock = (data.content || []).find((b) => b.type === "text");
-  if (!textBlock) throw new Error("未取得辨識結果");
-  const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
-  const parsed = JSON.parse(cleaned);
-  return parsed;
 }
 
 /* ----------------------------------------------------------------------- */
@@ -830,6 +760,10 @@ export default function App() {
   const [manualForm, setManualForm] = useState({ name: "", calories: "" });
   /** Calorie figures corrected by hand, per food. See lib/foodMemory.js. */
   const [foodMemory, setFoodMemory] = useState([]);
+  /** Health check reports — confirmed numbers only, never the photo. */
+  const [reports, setReports] = useState([]);
+  /** Videos pinned to an exercise suggestion, by workout id. */
+  const [workoutLinks, setWorkoutLinks] = useState({});
   /* Which diary rows had their calories actually typed in this session. A
      figure only counts as a correction if the person changed it — reading
      back an untouched row would teach the AI's own guess as a standard. */
@@ -891,6 +825,16 @@ export default function App() {
         setFoodMemory(await loadFoodMemory());
       } catch (e) {
         /* nothing corrected yet */
+      }
+      try {
+        setReports(await loadReports());
+      } catch (e) {
+        /* no health check report uploaded yet */
+      }
+      try {
+        setWorkoutLinks(await loadWorkoutLinks());
+      } catch (e) {
+        /* no video pinned yet */
       }
       try {
         const wl = await window.storage.get("water-log", false);
@@ -1124,6 +1068,66 @@ export default function App() {
     } catch (e) {
       /* The entry itself is already saved. A lost correction costs one more
          edit later; failing the save would cost the meal. */
+    }
+  }
+
+  /**
+   * Read a health check report photo.
+   *
+   * Returns the parsed reading to the screen that asked for it — nothing is
+   * stored here. The photo is not kept at all and the numbers are not saved
+   * until she has seen them and pressed save. See lib/reports.js.
+   */
+  async function analyzeReportPhoto(file) {
+    const base64 = await fileToBase64(file);
+    const mediaType = file.type || "image/jpeg";
+    const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
+    return analyzeLabReport(base64, mediaType, aiProvider, activeKey, geminiModel);
+  }
+
+  async function handleSaveReport(draft) {
+    const next = upsertReport(reports, draft);
+    setReports(next);
+    try {
+      await saveReports(next);
+      flashSaved("已儲存健檢報告");
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
+    }
+  }
+
+  async function handleDeleteReport(id) {
+    const next = removeReport(reports, id);
+    setReports(next);
+    try {
+      await saveReports(next);
+    } catch (e) {
+      flashSaved("刪除失敗，請再試一次");
+    }
+  }
+
+  async function handleSaveWorkoutLink(id, url) {
+    const next = { ...workoutLinks };
+    if (url) next[id] = url;
+    else delete next[id];
+    const clean = await saveWorkoutLinks(next).catch(() => next);
+    setWorkoutLinks(clean);
+  }
+
+  /** Record a suggested workout without retyping it into the form. */
+  async function handleQuickAddWorkout(activityId, label, minutes) {
+    const entry = {
+      id: `${Date.now()}`,
+      date: todayStr(),
+      activityId,
+      activityLabel: label,
+      durationMin: Math.round(Number(minutes)) || 0,
+    };
+    try {
+      await persistExerciseLog([...exerciseLog, entry]);
+      flashSaved(`已記錄 ${label} ${entry.durationMin} 分鐘`);
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
     }
   }
 
@@ -1425,10 +1429,18 @@ export default function App() {
     try {
       await window.storage.delete(KEYS.foodMemory, false);
     } catch (e) {}
+    try {
+      await window.storage.delete(KEYS.healthReports, false);
+    } catch (e) {}
+    try {
+      await window.storage.delete(KEYS.workoutLinks, false);
+    } catch (e) {}
     setProfile(null);
     setRecords([]);
     setFoodLog([]);
     setFoodMemory([]);
+    setReports([]);
+    setWorkoutLinks({});
     setWaterLog([]);
     setExerciseLog([]);
     setForm({
@@ -1453,18 +1465,20 @@ export default function App() {
   async function handleExportBackup() {
     let blob;
     try {
-      const backup = {
-        app: "healthy-care",
-        exportedAt: new Date().toISOString(),
+      // Assembled by lib/storage.js so the file always carries every field
+      // a restore knows how to read. Listing them here by hand is how the
+      // corrected calorie figures went missing from the download.
+      const backup = buildBackupFrom({
         profile,
         records,
         foodLog,
         waterLog,
         exerciseLog,
-        // Without this the garden does not survive a restore: met days cannot
-        // be recomputed once the detailed logs have aged out.
         dailySummary: goalSummaries,
-      };
+        foodMemory,
+        healthReports: reports,
+        workoutLinks,
+      });
       blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     } catch (e) {
       flashSaved("匯出失敗，請再試一次");
@@ -1550,6 +1564,13 @@ export default function App() {
         await window.storage.set("exercise-log", JSON.stringify(data.exerciseLog), false);
         setExerciseLog(data.exerciseLog);
         restoredParts.push("運動紀錄");
+      }
+      if (Array.isArray(data.healthReports)) {
+        setReports(await saveReports(data.healthReports));
+        restoredParts.push("健檢報告");
+      }
+      if (data.workoutLinks && typeof data.workoutLinks === "object") {
+        setWorkoutLinks(await saveWorkoutLinks(data.workoutLinks));
       }
       if (Array.isArray(data.foodMemory)) {
         // Saved through the same repair pass a normal load uses — a backup
@@ -2552,11 +2573,177 @@ export default function App() {
           z-index:50;
         }
 
+        /* --- 健康分析 and 運動建議 --------------------------------------- */
+
+        .muted-line{ font-size:11.5px; color:var(--ink-soft); line-height:1.65; margin:0 0 10px; }
+        .tone-green{ color:var(--green); }
+        .tone-yellow{ color:var(--yellow); }
+        .tone-red{ color:var(--red); }
+
+        .cycle-badge{
+          font-size:10.5px; font-weight:500; color:var(--ink-soft);
+          margin-left:auto; white-space:nowrap;
+        }
+        .month-select{
+          margin-left:auto; font-size:11.5px; font-family:inherit;
+          border:1px solid var(--line); border-radius:8px; padding:3px 6px;
+          background:#fff; color:var(--ink);
+        }
+
+        /* One focus for the week. The reason sits between the title and the
+           action on purpose: the number is why this line is here at all. */
+        .focus-card{
+          border:1px solid var(--line); border-left:3px solid var(--brand);
+          border-radius:10px; padding:10px 12px; margin-bottom:10px;
+          background:var(--card);
+        }
+        .focus-card.is-refer{ border-left-color:var(--amber); background:var(--amber-soft); }
+        .focus-title{ font-size:13.5px; font-weight:700; margin-bottom:4px; }
+        .focus-why{ font-size:11px; color:var(--ink-soft); margin-bottom:6px; }
+        .focus-action{ font-size:12.5px; line-height:1.7; }
+        .focus-progress{ margin-top:9px; }
+        .focus-progress-head{
+          display:flex; justify-content:space-between; align-items:baseline;
+          font-size:11px; color:var(--ink-soft); margin-bottom:4px;
+        }
+        .focus-progress-head strong{ font-family:'JetBrains Mono', monospace; }
+        .focus-bar{ height:6px; border-radius:999px; background:var(--line); overflow:hidden; }
+        .focus-bar-fill{ height:100%; background:var(--brand); border-radius:999px; }
+        .focus-bar-fill.is-done{ background:var(--green); }
+
+        .month-stats{
+          display:grid; grid-template-columns:repeat(4,1fr); gap:6px;
+          margin:4px 0 12px; text-align:center;
+        }
+        .month-stats strong{
+          display:block; font-family:'JetBrains Mono', monospace;
+          font-size:17px; color:var(--brand);
+        }
+        .month-stats span{ font-size:10px; color:var(--ink-soft); }
+
+        .review-block{ margin-bottom:10px; }
+        .review-head{ font-size:12px; font-weight:700; margin-bottom:4px; }
+        .review-line{
+          font-size:12px; line-height:1.75; color:var(--ink);
+          padding-left:12px; position:relative;
+        }
+        .review-line::before{
+          content:"・"; position:absolute; left:0; color:var(--ink-soft);
+        }
+
+        /* 代謝症候群: five boxes, because the standard is "three of five" and a
+           count means nothing without seeing which ones. */
+        .ms-card{
+          border:1px solid var(--line); border-radius:10px;
+          padding:10px 12px; margin-bottom:12px; background:var(--paper);
+        }
+        .ms-head{
+          display:flex; justify-content:space-between; align-items:baseline;
+          font-size:12.5px; font-weight:700; margin-bottom:8px;
+        }
+        .ms-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:4px; }
+        .ms-item{
+          border:1px solid var(--line); border-radius:8px; padding:5px 3px;
+          text-align:center; background:#fff;
+        }
+        .ms-item.is-met{ border-color:var(--red); background:var(--red-soft); }
+        .ms-item.is-unknown{ opacity:0.5; }
+        .ms-label{ display:block; font-size:10px; font-weight:700; }
+        .ms-limit{ display:block; font-size:8.5px; color:var(--ink-soft); line-height:1.3; margin:2px 0; }
+        .ms-value{ display:block; font-size:10.5px; font-family:'JetBrains Mono', monospace; }
+        .ms-note{ font-size:10.5px; color:var(--ink-soft); line-height:1.65; margin:8px 0 0; }
+
+        .lab-group{ margin-bottom:10px; }
+        .lab-group-title{ font-size:11.5px; font-weight:700; color:var(--ink-soft); margin-bottom:4px; }
+        .lab-row{
+          display:flex; align-items:center; gap:8px;
+          padding:6px 0; border-bottom:1px solid var(--line);
+        }
+        .lab-row:last-child{ border-bottom:none; }
+        .lab-name{ flex:1; min-width:0; font-size:12px; }
+        .lab-unit{ font-size:9.5px; color:var(--ink-soft); margin-left:4px; }
+        .lab-value{
+          font-family:'JetBrains Mono', monospace; font-weight:700;
+          font-size:13px; white-space:nowrap;
+        }
+        .lab-change{ font-size:10px; margin-left:4px; color:var(--ink-soft); }
+        .lab-change.down{ color:var(--green); }
+        .lab-change.up{ color:var(--amber); }
+        .lab-zone{
+          font-size:9.5px; text-align:right; width:96px; flex-shrink:0;
+          color:var(--ink-soft); line-height:1.35;
+        }
+
+        .draft-box{
+          border-top:1px solid var(--line); margin-top:12px; padding-top:12px;
+        }
+        .draft-hint{ font-size:11px; color:var(--ink-soft); line-height:1.65; margin:0 0 10px; }
+        .draft-warn{
+          display:flex; gap:6px; align-items:flex-start;
+          font-size:11px; line-height:1.6; color:var(--ink);
+          background:var(--amber-soft); border-radius:8px;
+          padding:8px 10px; margin-bottom:10px;
+        }
+        .draft-group{ margin-bottom:10px; }
+        .draft-group-title{ font-size:11.5px; font-weight:700; color:var(--ink-soft); margin-bottom:4px; }
+        .draft-field{
+          display:flex; align-items:center; gap:8px; padding:3px 0;
+        }
+        .draft-field label{ flex:1; min-width:0; font-size:12px; font-weight:500; }
+        .draft-field input{
+          width:88px; flex-shrink:0;
+          border:1px solid var(--line); border-radius:8px; padding:6px 8px;
+          font-size:13px; font-family:'JetBrains Mono', monospace;
+          background:#fff; color:var(--ink);
+        }
+
+        .workout-card{
+          border:1px solid var(--line); border-radius:10px;
+          padding:10px 12px; margin-bottom:10px;
+        }
+        .workout-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:3px; }
+        .workout-name{ font-size:13.5px; font-weight:700; }
+        .workout-minutes{
+          margin-left:auto; font-size:10.5px; color:var(--ink-soft);
+          font-family:'JetBrains Mono', monospace;
+        }
+        .workout-why{ font-size:11px; color:var(--brand); font-weight:700; margin-bottom:4px; }
+        .workout-note{ font-size:11.5px; color:var(--ink-soft); line-height:1.65; margin-bottom:8px; }
+        .workout-actions{ display:flex; gap:8px; }
+        .workout-actions .btn{ flex:1; padding:7px 8px; font-size:12px; text-decoration:none; }
+        .workout-link-toggle{
+          margin-top:7px; border:none; background:none; padding:0;
+          font-size:10.5px; color:var(--ink-soft); font-family:inherit;
+          cursor:pointer; display:flex; align-items:center; gap:4px;
+        }
+        .workout-link-edit{ display:flex; gap:6px; align-items:center; margin-top:7px; }
+        .workout-link-edit input{
+          flex:1; min-width:0; border:1px solid var(--line); border-radius:8px;
+          padding:6px 8px; font-size:12px; font-family:inherit;
+          background:#fff; color:var(--ink);
+        }
+        .workout-link-warn{ font-size:10.5px; color:var(--red); margin-top:4px; }
+        .workout-cautions{
+          border-radius:10px; background:var(--amber-soft);
+          padding:10px 12px; margin-top:4px;
+        }
+        .workout-cautions-head{
+          display:flex; align-items:center; gap:5px;
+          font-size:11.5px; font-weight:700; color:var(--amber); margin-bottom:5px;
+        }
+        .workout-caution-line{
+          font-size:11px; line-height:1.7; color:var(--ink);
+          padding-left:11px; position:relative;
+        }
+        .workout-caution-line::before{ content:"・"; position:absolute; left:0; }
+
         .bottom-nav{
           position:sticky;
           bottom:0;
           display:grid;
-          grid-template-columns:repeat(5,1fr);
+          /* Six items on a 375px screen leaves about 60px each; the labels are
+             all four characters or fewer, so they fit at 10px. */
+          grid-template-columns:repeat(6,1fr);
           background:var(--card);
           border-top:1px solid var(--line);
           padding:6px 4px 10px;
@@ -2569,9 +2756,10 @@ export default function App() {
           background:none;
           border:none;
           color:var(--ink-soft);
-          font-size:10.5px;
-          padding:6px 2px;
+          font-size:10px;
+          padding:6px 1px;
           cursor:pointer;
+          white-space:nowrap;
         }
         .nav-btn.active{ color:var(--brand); }
 
@@ -3141,7 +3329,17 @@ export default function App() {
           )}
 
           {tab === "exercise" && (
-            <ExerciseTab
+            <>
+              <WorkoutSuggestions
+                profile={profile}
+                latestRecord={latestRecord}
+                report={latestReport(reports)}
+                exerciseLog={thisWeekExerciseEntries}
+                savedLinks={workoutLinks}
+                onSaveLink={handleSaveWorkoutLink}
+                onQuickAdd={handleQuickAddWorkout}
+              />
+              <ExerciseTab
               plan={exercisePlan}
               feedback={exerciseWeeklyFeedback}
               todayGoals={todayGoals}
@@ -3154,6 +3352,23 @@ export default function App() {
               onDeleteExerciseEntry={handleDeleteExerciseEntry}
               onUpdateExerciseEntry={handleUpdateExerciseEntry}
               onPersistExerciseEntry={handlePersistExerciseEntry}
+              />
+            </>
+          )}
+
+          {tab === "health" && (
+            <HealthAnalysis
+              profile={profile}
+              latestRecord={latestRecord}
+              records={records}
+              reports={reports}
+              summaries={goalSummaries}
+              foodLog={foodLog}
+              exerciseLog={exerciseLog}
+              waterLog={waterLog}
+              onAnalyzeReportPhoto={analyzeReportPhoto}
+              onSaveReport={handleSaveReport}
+              onDeleteReport={handleDeleteReport}
             />
           )}
 
@@ -3191,6 +3406,10 @@ export default function App() {
           <button className={`nav-btn ${tab === "tracking" ? "active" : ""}`} onClick={() => setTab("tracking")}>
             <Activity size={20} />
             體態紀錄
+          </button>
+          <button className={`nav-btn ${tab === "health" ? "active" : ""}`} onClick={() => setTab("health")}>
+            <HeartPulse size={20} />
+            健康分析
           </button>
         </nav>
 

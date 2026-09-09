@@ -27,6 +27,10 @@ source/lib/health.js   ★健康領域邏輯與參考值（BMI／體脂／骨骼
 source/lib/goals.js    達標判定、成長階段、花園累計。含 FIELDS（資料欄位名）
 source/lib/storage.js  所有 storage 存取、保留期規則、備份與還原
 source/lib/foodMemory.js 同一個食物的熱量標準值（她改過的數字，下次直接用）
+source/lib/vision.js   拍照送 AI 的共用傳輸層與兩份 prompt（食物、健檢報告）
+source/lib/reports.js  健檢報告的儲存格式與把關（合理範圍、只留數字不留照片）
+source/lib/plan.js     把健檢報告接到每天的紀錄：每 7 天的重點、每月總分析
+source/lib/workouts.js 運動建議的名單、排序與 YouTube 搜尋連結
 source/lib/useGarden.js 把達標判定與每日摘要包成 React hook 供 App.jsx 使用
 
 source/components/Sprout.jsx      植物（八階段 × 四活力）。**這個檔案是產生出來的**，
@@ -37,6 +41,8 @@ source/components/Rings.jsx       三環與圖例
 source/components/GrowthPanel.jsx 主畫面的樹苗／花園切換卡
 source/components/ActivityPanel.jsx 活動力畫面（三環＋本週格子）
 source/components/DietDiary.jsx   以天為單位的飲食日記
+source/components/HealthAnalysis.jsx 健康分析頁（本週重點／每月分析／健檢報告）
+source/components/WorkoutSuggestions.jsx 運動建議與影片連結
 
 source/tools/          一次性的改版工具與測試（見下）
 ```
@@ -167,6 +173,54 @@ node source/tools/serve.mjs 4173
   **角色的身體色比環的色票淺** —— 色票是圖表用色，墨色的臉壓在上面會看不見
   （`--move` 幾乎跟墨色同明度）。這跟水滴吉祥物用淺藍填色而非描邊色是同一個理由
 
+## 健康分析（2026-09 新增）
+這一頁把健檢報告接到每天的紀錄上：**本週重點 → 每月分析 → 報告本身 → 上傳**，
+順序是照「能拿來做什麼」排的，不是照好不好算排的。
+
+### 絕對不能違反的三條（`tools/test-plan.mjs` 會擋）
+1. **只做比較，不做診斷。** 每個數值旁邊一定要寫出它被拿來比的區間
+   （「糖尿病前期範圍 100-125」），畫面上呈現的是一個她可以自己核對的比較，
+   不是一個要她相信的判決
+2. **不預測任何數字會怎麼變。** 沒有人能保證「這樣做血糖就會降」，
+   照著這種承諾去做的人，處境比被誠實告知的人更差。測試裡有禁用字清單
+   （會降／就會／保證／治好／確診／停藥…）
+3. **腎功能相關的發現完全不給飲食建議。** 蛋白質、鹽分的限制是醫師依整體狀況
+   決定的，一個通用 App 亂猜會真的造成傷害。`kidney-refer` 這條規則沒有 measure、
+   沒有飲食動作，只有「把報告帶去給醫師看」。肝指數同理
+
+### 其他關鍵決定
+- **照片讀完就丟，只留她確認過的數字**（`lib/reports.js`）。報告照片又大又是
+  醫療文件，留一份在瀏覽器裡沒有任何好處
+- **每個數值都要過「合理範圍」**（`plausible`，在 `lib/health.js` 的 LAB_MARKERS）。
+  模型是從照片上讀數字，會掉小數點、會抄到旁邊那欄的「參考值」。
+  空腹血糖 1080 不是一個嚇人的發現，是一次誤讀 —— 被擋掉並告訴她「這項請自己輸入」
+- **沒量到 ≠ 正常。** `labNumber()` 存在的原因：`Number(null)` 是 0，而 0 落在好幾個
+  項目的「正常」區間裡，所以原本沒填的欄位會被判成正常。這個 bug 只有測試抓得到
+- **代謝症候群是報告和體態紀錄唯一交會的地方**：腰圍來自體態紀錄，其他四項來自報告，
+  五項中三項是國健署公布的標準。舒張壓的判定值是 **85**（代謝症候群），
+  不是血壓分區用的 80，兩者不能混用
+- 五項沒量完時，「未達三項」不等於「你沒事」，畫面上一定要說清楚還有幾項沒量
+- **每 7 天一輪，從報告日期起算**（`cycleFor`）。這樣「第 3 週」才有意義。
+  進度只算到今天為止，不然目標 5 天在第 2 天就會顯示成沒做到
+- **每月最後一天顯示總分析**，其他日子可以用月份選單回看。全部即時推算，不另存一份
+- 舊月份的飲食／喝水／運動明細會過保留期（30／60／90 天），但每日摘要永久保留。
+  這時要說「明細已超過保留期」，不能把缺資料顯示成一堆 0
+
+## 運動建議與影片（2026-09 新增）
+- **連結是 YouTube「搜尋」而不是特定影片。** 純前端的 App 沒辦法知道某支影片被刪了、
+  變成私人了，而健康計畫裡一個點不開的連結比沒有連結更糟。搜尋網址永遠打得開、
+  永遠是當下的結果，她也可以自己挑順眼的老師。**不要改成寫死 video id**，
+  `tools/test-workouts.mjs` 會擋
+- 她找到喜歡的影片可以釘在那個項目上（`workout-links`），之後就是一鍵。
+  連結只檢查 http(s)（擋掉 `javascript:`），不限平台
+- **建議是排序過的，不是清單。** 十二個項目條列出來只是型錄；四個各自附上
+  「為什麼是你」才是建議。排序用健檢報告的異常項目、個人資料的病徵、BMI、
+  以及最近一週實際記了多少運動
+- **一定會有一項阻力、一項柔軟度。** 四支有氧影片不構成一週的運動，
+  而且狀況差的日子只有最輕的那一項會真的發生
+- BMI ≥ 27 只換掉項目（改成低衝擊），不減少數量
+- 「從這一項開始最容易接上」只出現在第一張卡片。四張都寫就變成壁紙
+
 ## 頭像、稱謂與每日問候
 - **頭像**：`components/AvatarPicker.jsx`。圓形、可換，跟 LINE 一樣。選到的圖會
   **中心裁切成正方形再縮到 200px**（`AVATAR_SIZE`）才存進 profile —— 它跟健康
@@ -220,8 +274,8 @@ node source/tools/serve.mjs 4173
 ## 重要架構決策（改的時候要注意）
 - **App 名稱是 Healthy Care（2026-09 從「糖前哨」改名）。改名只動顯示字串，
   絕對不要動 localStorage 的鍵名** —— `profile`、`body-records`、`food-log`、
-  `water-log`、`exercise-log`、`daily-summary`、`food-calories` 這些是找到既有
-  資料的唯一途徑，
+  `water-log`、`exercise-log`、`daily-summary`、`food-calories`、`health-reports`、
+  `workout-links` 這些是找到既有資料的唯一途徑，
   改了等於把手機上所有紀錄變成孤兒。改名是換標籤，不是資料遷移。
   Service Worker 的 `CACHE_NAME` 則要跟著換版，否則舊快取會讓改名看不出來
 - **`lib/health.js` 已經手改過**（`sleepZones` 與對應的 CONTENT_REVIEW 條目），
@@ -244,6 +298,12 @@ node source/tools/serve.mjs 4173
   解法在 CSS：date／time 欄位加 `-webkit-appearance:none` 讓它照一般輸入框排版。
   另外 `.field-row` 是 grid，子項預設 `min-width:auto` 不會縮到比內容窄，
   所以也補了 `min-width:0` —— 兩欄式的列以後放寬欄位才不會又擠出去
+- **匯出的欄位清單只有一份（`BACKUP_FIELDS`，在 `lib/storage.js`）。**
+  匯出畫面是用 React state 組檔案、不是重讀 storage，所以曾經兩邊各寫各的，
+  結果「熱量標準值」加進了 restore 和 `buildBackup()`，**實際下載到的檔案裡卻沒有**。
+  備份只有在出事那天才有價值，而那天已經來不及發現少了一欄。
+  `tools/test-backup.mjs` 會去讀 `restoreBackup` 的原始碼，
+  要求「restore 讀得到的欄位，export 一定寫得出來」
 - **不要**把資料存取改回 `window.storage` 直接呼叫官方 Claude.ai 環境的版本；這個獨立
   版本靠 `storage-shim.js` 模擬同樣的 get/set/delete/list 介面存進 localStorage，維持
   這層抽象可以讓程式碼其餘部分不用大改

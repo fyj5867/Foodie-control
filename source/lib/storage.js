@@ -15,6 +15,8 @@
 import { daysAgoStr } from "./health.js";
 import { backfillSummaries, upsertSummary } from "./goals.js";
 import { normalizeMemory } from "./foodMemory.js";
+import { normalizeReports } from "./reports.js";
+import { normalizeLinks } from "./workouts.js";
 
 export const KEYS = {
   profile: "profile",
@@ -28,6 +30,10 @@ export const KEYS = {
   summaryBackfilled: "daily-summary-backfilled",
   /** Calorie figures the user has corrected, per food. */
   foodMemory: "food-calories",
+  /** Health check reports — the confirmed numbers, never the photo. */
+  healthReports: "health-reports",
+  /** A video the user pinned to an exercise suggestion. */
+  workoutLinks: "workout-links",
   calorieOverride: "calorie-target-override",
   anthropicKey: "anthropic-api-key",
   geminiKey: "gemini-api-key",
@@ -209,6 +215,32 @@ export async function backfillOnce({ foodLog, waterLog, exerciseLog, calorieTarg
   return { ran: true, added: merged.length - existing.length, summaries: merged };
 }
 
+/**
+ * Reports and pinned links both go through their own repair pass on the way
+ * in and out, for the same reason the food memory does: a backup file is
+ * plain text the user can edit, and a nonsense lab value would be shown back
+ * to them as a finding about their own body.
+ */
+export async function loadReports() {
+  return normalizeReports(await readArray(KEYS.healthReports));
+}
+
+export async function saveReports(reports) {
+  const clean = normalizeReports(reports);
+  await writeJson(KEYS.healthReports, clean);
+  return clean;
+}
+
+export async function loadWorkoutLinks() {
+  return normalizeLinks(await readJson(KEYS.workoutLinks, {}));
+}
+
+export async function saveWorkoutLinks(links) {
+  const clean = normalizeLinks(links);
+  await writeJson(KEYS.workoutLinks, clean);
+  return clean;
+}
+
 export async function loadFoodMemory() {
   return normalizeMemory(await readArray(KEYS.foodMemory));
 }
@@ -219,14 +251,42 @@ export async function saveFoodMemory(memory) {
   return clean;
 }
 
-/** Everything the backup file carries. The summary is included so a restore
- * brings the garden back with it, and the corrected calorie figures because
- * they are the user's own work — re-correcting every food after a restore
- * would be worse than losing a log entry. */
+/**
+ * Everything a backup file carries.
+ *
+ * This list exists so there is exactly one answer to "what gets exported".
+ * The screen builds the file from React state rather than re-reading storage,
+ * and when the two were written separately the screen quietly fell behind:
+ * 熱量標準值 was added to the export here and the actual download never
+ * included it. tools/test-backup.mjs now checks this list against what
+ * restoreBackup reads, so anything restorable that is not exportable fails.
+ */
+export const BACKUP_FIELDS = [
+  "profile",
+  "records",
+  "foodLog",
+  "waterLog",
+  "exerciseLog",
+  /* Without the summary the garden does not survive a restore: met days
+     cannot be recomputed once the detailed logs have aged out. */
+  "dailySummary",
+  /* The user's own corrections and uploads — re-doing them after a restore
+     would be worse than losing a log entry. */
+  "foodMemory",
+  "healthReports",
+  "workoutLinks",
+];
+
+/** Assemble a backup from values already in hand. Used by the export screen. */
+export function buildBackupFrom(state) {
+  const backup = { app: "healthy-care", exportedAt: new Date().toISOString() };
+  for (const field of BACKUP_FIELDS) backup[field] = state[field] ?? null;
+  return backup;
+}
+
+/** The same file, read straight out of storage. */
 export async function buildBackup() {
-  return {
-    app: "healthy-care",
-    exportedAt: new Date().toISOString(),
+  return buildBackupFrom({
     profile: await readJson(KEYS.profile, null),
     records: await readArray(KEYS.records),
     foodLog: await readArray(KEYS.foodLog),
@@ -234,7 +294,9 @@ export async function buildBackup() {
     exerciseLog: await readArray(KEYS.exerciseLog),
     dailySummary: await readArray(KEYS.dailySummary),
     foodMemory: await loadFoodMemory(),
-  };
+    healthReports: await loadReports(),
+    workoutLinks: await loadWorkoutLinks(),
+  });
 }
 
 /**
@@ -280,6 +342,14 @@ export async function restoreBackup(data) {
   if (Array.isArray(data.foodMemory)) {
     const saved = await saveFoodMemory(data.foodMemory);
     if (saved.length) restored.push(`熱量標準值 ${saved.length} 項`);
+  }
+  if (Array.isArray(data.healthReports)) {
+    const saved = await saveReports(data.healthReports);
+    if (saved.length) restored.push(`健檢報告 ${saved.length} 份`);
+  }
+  if (data.workoutLinks && typeof data.workoutLinks === "object") {
+    const saved = await saveWorkoutLinks(data.workoutLinks);
+    if (Object.keys(saved).length) restored.push("運動影片連結");
   }
 
   return restored;
