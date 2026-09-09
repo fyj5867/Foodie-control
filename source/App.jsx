@@ -3495,17 +3495,7 @@ export default function App() {
           )}
 
           {tab === "exercise" && (
-            <>
-              <WorkoutSuggestions
-                profile={profile}
-                latestRecord={latestRecord}
-                report={latestReport(reports)}
-                exerciseLog={thisWeekExerciseEntries}
-                savedLinks={workoutLinks}
-                onSaveLink={handleSaveWorkoutLink}
-                onQuickAdd={handleQuickAddWorkout}
-              />
-              <ExerciseTab
+            <ExerciseTab
               plan={exercisePlan}
               feedback={exerciseWeeklyFeedback}
               todayGoals={todayGoals}
@@ -3518,8 +3508,18 @@ export default function App() {
               onDeleteExerciseEntry={handleDeleteExerciseEntry}
               onUpdateExerciseEntry={handleUpdateExerciseEntry}
               onPersistExerciseEntry={handlePersistExerciseEntry}
-              />
-            </>
+              suggestions={
+                <WorkoutSuggestions
+                  profile={profile}
+                  latestRecord={latestRecord}
+                  report={latestReport(reports)}
+                  exerciseLog={thisWeekExerciseEntries}
+                  savedLinks={workoutLinks}
+                  onSaveLink={handleSaveWorkoutLink}
+                  onQuickAdd={handleQuickAddWorkout}
+                />
+              }
+            />
           )}
 
           {tab === "health" && (
@@ -4438,6 +4438,8 @@ function ExerciseTab({
   onPersistExerciseEntry,
   todayGoals,
   summaries,
+  /** The 運動建議 card, rendered just above 日常小習慣. */
+  suggestions,
 }) {
   const pctForBar = Math.min(feedback.pct, 100);
 
@@ -4581,6 +4583,8 @@ function ExerciseTab({
           </div>
         ))}
       </div>
+
+      {suggestions}
 
       <div className="card">
         <div className="section-title">日常小習慣</div>
