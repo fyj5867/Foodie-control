@@ -196,7 +196,16 @@ export default function ClinicVisits({
 
   const reminders = useMemo(() => dueReminders(visits, today), [visits, today]);
   const dueExams = useMemo(() => duePlans(plans, today), [plans, today]);
-  const scheduled = useMemo(() => (plans || []).filter((p) => !p.done), [plans]);
+  const scheduled = useMemo(() => {
+    const open = (plans || []).filter((p) => !p.done);
+    /* Self-added first — an exam a doctor asked for outranks one this app
+       suggested — then by date within each group. */
+    const isManual = (p) => !p.examId;
+    return open.sort((a, b) => {
+      if (isManual(a) !== isManual(b)) return isManual(a) ? -1 : 1;
+      return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+    });
+  }, [plans]);
   const suggestions = useMemo(
     () => screeningSuggestions({ report, profile, visits, today }),
     [report, profile, visits, today]
@@ -345,13 +354,17 @@ export default function ClinicVisits({
             <span className="fold-caret">{showSuggestions ? "▲" : "▼"}</span>
           </button>
 
-          {scheduled.length > 0 && (
-            <div className="plan-list">
+          {/* Above the fold on purpose: what she has committed to, and the way
+              to commit to something new. Both were reachable only by opening
+              the card, which made scheduling feel like a hidden feature. */}
+          <div className="plan-list">
+            {scheduled.length > 0 && <div className="plan-list-title">已排定</div>}
               {(showAllPlans ? scheduled : scheduled.slice(0, 3)).map((plan) => (
                 <div className="plan-row" key={plan.id}>
                   <div className="plan-main">
                     <div className="plan-when">{plan.date}</div>
                     <div className="plan-what">
+                      {!plan.examId && <span className="plan-mine">自己排的</span>}
                       {plan.department ? `${plan.department}・` : ""}
                       {plan.exam || "排定的檢查"}
                     </div>
@@ -377,18 +390,45 @@ export default function ClinicVisits({
                   </button>
                 </div>
               ))}
-              {scheduled.length > 3 && (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-block"
-                  style={{ marginTop: "4px" }}
-                  onClick={() => setShowAllPlans((v) => !v)}
-                >
-                  {showAllPlans ? "收起" : `展開全部 ${scheduled.length} 項排定`}
-                </button>
-              )}
-            </div>
-          )}
+            {scheduled.length > 3 && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-block"
+                style={{ marginTop: "4px" }}
+                onClick={() => setShowAllPlans((v) => !v)}
+              >
+                {showAllPlans ? "收起" : `展開全部 ${scheduled.length} 項排定`}
+              </button>
+            )}
+
+            {/* Somewhere to put an exam the doctor asked for that is not on
+                the suggestion list. Without it the only options are "one of
+                ours" or "nowhere". */}
+            {planDraft && !planDraft.examId ? (
+              <div className="plan-add">
+                <div className="plan-list-title">自己加一項檢查</div>
+                <PlanForm
+                  draft={planDraft}
+                  setDraft={setPlanDraft}
+                  withName
+                  onSave={() => {
+                    onSavePlan(planDraft);
+                    setPlanDraft(null);
+                  }}
+                  onCancel={() => setPlanDraft(null)}
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-secondary btn-block"
+                style={{ marginTop: scheduled.length ? "6px" : "0" }}
+                onClick={() => setPlanDraft(emptyPlan())}
+              >
+                <Plus size={14} /> 自己排一項檢查（醫師交代的、清單上沒有的）
+              </button>
+            )}
+          </div>
 
           {showSuggestions && (
             <>
@@ -447,36 +487,6 @@ export default function ClinicVisits({
                   </div>
                 );
               })}
-
-              {/* Somewhere to put an exam the doctor asked for that is not on
-                  this list. Without it the only options are "one of ours" or
-                  "nowhere". */}
-              {planDraft && planDraft.examId === "" ? (
-                <div className="sug-row">
-                  <div className="sug-head">
-                    <span className="sug-exam">自己加一項檢查</span>
-                  </div>
-                  <PlanForm
-                    draft={planDraft}
-                    setDraft={setPlanDraft}
-                    withName
-                    onSave={() => {
-                      onSavePlan(planDraft);
-                      setPlanDraft(null);
-                    }}
-                    onCancel={() => setPlanDraft(null)}
-                  />
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-block"
-                  style={{ marginTop: "4px" }}
-                  onClick={() => setPlanDraft(emptyPlan())}
-                >
-                  <Plus size={14} /> 自己加一項檢查（醫師交代的、清單上沒有的）
-                </button>
-              )}
 
               {needsAgeForProgramme(profile) && (
                 <p className="fine-print" style={{ marginTop: "10px" }}>

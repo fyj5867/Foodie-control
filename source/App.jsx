@@ -3035,6 +3035,18 @@ export default function App() {
           font-size:11px; font-weight:700; color:var(--green);
           background:var(--green-soft); border-radius:999px; padding:2px 9px;
         }
+        .plan-list-title{
+          font-size:12px; font-weight:700; color:var(--ink-soft);
+          margin:2px 0 6px;
+        }
+        .plan-add{ margin-top:6px; }
+        /* Marks the ones a doctor asked for, so they are told apart from the
+           ones this app suggested. */
+        .plan-mine{
+          display:inline-block; font-size:10.5px; font-weight:700;
+          color:#fff; background:var(--amber); border-radius:999px;
+          padding:1px 7px; margin-right:5px; vertical-align:1px;
+        }
         .plan-row{
           display:flex; align-items:flex-start; gap:8px;
           border-radius:10px; padding:9px 10px; margin-bottom:6px;
