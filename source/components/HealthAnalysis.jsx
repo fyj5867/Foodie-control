@@ -21,7 +21,8 @@ import { Camera, Image as ImageIcon, Trash2, Info, Check, Loader2, Plus, Refresh
 import {
   LAB_MARKERS,
   LAB_FLAGS,
-  FLAG_VALUES,
+  flagValues,
+  isFlagPositive,
   labZone,
   labMarker,
   metabolicSyndrome,
@@ -31,6 +32,7 @@ import {
 } from "../lib/health.js";
 import { cleanValues, emptyDraft, latestReport, markerChange, mergeReadings, MAX_PAGES } from "../lib/reports.js";
 import { weeklyPlan, monthlyAnalysis, monthsWithData, monthOf, isMonthEnd, CYCLE_DAYS } from "../lib/plan.js";
+import ClinicVisits from "./ClinicVisits.jsx";
 
 const GROUP_LABEL = {
   sugar: "血糖",
@@ -43,6 +45,7 @@ const GROUP_LABEL = {
   mineral: "電解質與營養素",
   inflammation: "發炎指標",
   tumour: "腫瘤標記",
+  eye: "眼睛",
   bone: "骨質",
   other: "其他",
   body: "身體數值",
@@ -61,6 +64,7 @@ const GROUP_ORDER = [
   "mineral",
   "inflammation",
   "tumour",
+  "eye",
   "bone",
   "other",
   "body",
@@ -107,8 +111,9 @@ function summarise(report, gender) {
   }
   for (const flag of LAB_FLAGS) {
     const value = report.flags ? report.flags[flag.key] : null;
-    if (value === "陽性") counts.refer += 1;
-    else if (value === "陰性") counts.green += 1;
+    if (!value) continue;
+    if (isFlagPositive(flag.key, value)) counts.refer += 1;
+    else counts.green += 1;
   }
   return counts;
 }
@@ -169,12 +174,14 @@ function ValueRow({ marker, value, gender, change }) {
 
 /** A yes/no result, in the same shape as a measured value. */
 function FlagRow({ flag, value }) {
-  const positive = value === "陽性";
+  /* Per flag: a stool test answers 陰性／陽性 and an eye exam answers
+     正常／異常, so which answer means "see a doctor" is the flag's to say. */
+  const positive = isFlagPositive(flag.key, value);
   return (
     <div className={`v-row tone-${positive ? "red" : "green"}`}>
       <div className="v-main">
         <div className="v-name">{flag.label}</div>
-        <div className="v-range">{positive ? flag.note : "陰性"}</div>
+        <div className="v-range">{positive ? flag.note : "在正常範圍"}</div>
       </div>
       <div className="v-num">{value}</div>
       <span className={`v-pill tone-${positive ? "red" : "green"}`}>{positive ? "需就醫" : "正常"}</span>
@@ -413,7 +420,7 @@ function DraftEditor({ draft, setDraft, rejected, notes, onSave, onCancel, gende
           needs to tell them apart. */}
       <div className="draft-group">
         <button type="button" className="draft-group-toggle" onClick={() => toggleGroup("flags")}>
-          <span>其他檢查（尿液、糞便、肝炎）</span>
+          <span>其他檢查（眼睛、尿液、糞便、肝炎）</span>
           {flagCount > 0 && <span className="draft-group-count">{flagCount} 項</span>}
           <span className="draft-group-caret">{openGroups.includes("flags") ? "▲" : "▼"}</span>
         </button>
@@ -422,7 +429,7 @@ function DraftEditor({ draft, setDraft, rejected, notes, onSave, onCancel, gende
             <div className="draft-flag" key={f.key}>
               <span className="draft-flag-label">{f.label}</span>
               <span className="draft-flag-chips">
-                {FLAG_VALUES.map((value) => (
+                {flagValues(f.key).map((value) => (
                   <button
                     type="button"
                     key={value}
@@ -474,6 +481,10 @@ export default function HealthAnalysis({
   onAnalyzeReportPhoto,
   onSaveReport,
   onDeleteReport,
+  visits = [],
+  onSaveVisit,
+  onDeleteVisit,
+  onToggleVisitDone,
   today = todayStr(),
 }) {
   const [draft, setDraft] = useState(null);
@@ -534,8 +545,9 @@ export default function HealthAnalysis({
 
   const flagRows = useMemo(() => {
     if (!report || !report.flags) return { positive: [], negative: [] };
-    const positive = LAB_FLAGS.filter((f) => report.flags[f.key] === "陽性");
-    const negative = LAB_FLAGS.filter((f) => report.flags[f.key] === "陰性");
+    const recorded = LAB_FLAGS.filter((f) => report.flags[f.key]);
+    const positive = recorded.filter((f) => isFlagPositive(f.key, report.flags[f.key]));
+    const negative = recorded.filter((f) => !isFlagPositive(f.key, report.flags[f.key]));
     return { positive, negative };
   }, [report]);
 
@@ -727,7 +739,7 @@ export default function HealthAnalysis({
             <div className="v-block">
               <div className="v-block-title watch">需要注意的項目</div>
               {flagRows.positive.map((f) => (
-                <FlagRow key={f.key} flag={f} value="陽性" />
+                <FlagRow key={f.key} flag={f} value={report.flags[f.key]} />
               ))}
               {rows.attention.map(({ marker, value }) => (
                 <ValueRow
@@ -776,7 +788,7 @@ export default function HealthAnalysis({
                     <div className="v-group">
                       <div className="v-group-title">其他檢查</div>
                       {flagRows.negative.map((f) => (
-                        <FlagRow key={f.key} flag={f} value="陰性" />
+                        <FlagRow key={f.key} flag={f} value={report.flags[f.key]} />
                       ))}
                     </div>
                   )}
@@ -791,6 +803,16 @@ export default function HealthAnalysis({
           </p>
         </div>
       )}
+
+      <ClinicVisits
+        visits={visits}
+        report={report}
+        profile={profile}
+        onSaveVisit={onSaveVisit}
+        onDeleteVisit={onDeleteVisit}
+        onToggleDone={onToggleVisitDone}
+        today={today}
+      />
 
       {/* --- adding one --- */}
       <div className="card">

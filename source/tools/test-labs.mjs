@@ -49,7 +49,10 @@ function ok(name, cond, detail = "") {
 
 /* --- every marker is properly formed --- */
 for (const marker of LAB_MARKERS) {
-  ok(`${marker.key} has a label and unit`, Boolean(marker.label && marker.unit), marker.key);
+  /* A unit may legitimately be empty — 小數視力 is dimensionless — but the
+   * field has to be there, or the row renders "undefined". */
+  ok(`${marker.key} has a label`, Boolean(marker.label), marker.key);
+  ok(`${marker.key} declares a unit`, typeof marker.unit === "string", marker.key);
   ok(`${marker.key} has plausibility bounds`, Array.isArray(marker.plausible) && marker.plausible.length === 2, marker.key);
   const zones = labZonesFor(marker.key, "female");
   if (zones) {

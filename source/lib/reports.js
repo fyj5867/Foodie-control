@@ -69,7 +69,9 @@ export function cleanValues(raw) {
 export function cleanFlags(raw) {
   const flags = {};
   for (const [key, value] of Object.entries(raw || {})) {
-    if (KNOWN_FLAGS.has(key) && isFlagValue(value)) flags[key] = String(value);
+    /* Per-flag, because the two words differ: a stool test answers
+       陰性／陽性 and an eye exam answers 正常／異常. */
+    if (KNOWN_FLAGS.has(key) && isFlagValue(key, value)) flags[key] = String(value);
   }
   return flags;
 }

@@ -32,6 +32,8 @@ source/lib/reports.js  健檢報告的儲存格式與把關（合理範圍、只
 source/lib/plan.js     把健檢報告接到每天的紀錄：每 7 天的重點、每月總分析
 source/lib/workouts.js 運動建議的名單、排序與 YouTube 搜尋連結
 source/lib/nutritionTags.js 食材標籤 →「增加什麼負擔／幫助什麼」的文案與個人化比對
+source/lib/visits.js   就醫紀錄（日期／科別／病症／醫師建議／回診日）與回診提醒
+source/lib/screening.js 建議檢查項目與科別（依報告數值＋年齡的公費篩檢）
 source/lib/useGarden.js 把達標判定與每日摘要包成 React hook 供 App.jsx 使用
 
 source/components/Sprout.jsx      植物（八階段 × 四活力）。**這個檔案是產生出來的**，
@@ -45,6 +47,7 @@ source/components/DietDiary.jsx   以天為單位的飲食日記
 source/components/HealthAnalysis.jsx 健康分析頁（本週重點／每月分析／健檢報告）
 source/components/WorkoutSuggestions.jsx 運動建議與影片連結
 source/components/FoodImpact.jsx 每一餐的影響（要留意的／有幫助的）
+source/components/ClinicVisits.jsx 回診提醒、建議檢查、就醫紀錄
 source/components/WeeklyPlanCard.jsx 每週運動目標（七天卡片，不是表格）
 source/components/ExerciseIcons.jsx 有氧／阻力／柔軟度三個小角色
 
@@ -117,6 +120,31 @@ node source/tools/serve.mjs 4173
   這類數字最容易讓人嚇到或誤以為安全
 - **手動輸入表單的分組可以收合**，預設只展開血糖／血脂／血壓（以及照片有讀到值的
   那幾組）。41 個欄位一次全開是一面牆
+
+### 眼睛、就醫紀錄與建議檢查（2026-09 新增）
+- **眼睛的項目直接套進既有的「數值＋定性」模型**：視力左右、眼壓左右是數值，
+  眼底（視網膜）檢查、白內障是定性。這樣總覽的三格計數、轉診卡、備份、
+  照片辨識的 prompt 全部自動涵蓋，不用為眼睛另開一套
+- **定性項目的兩個答案改成每一項自己決定**（`flag.values`）：抽血是「陰性／陽性」，
+  眼科是「正常／異常」。原本寫死陰陽，「眼底檢查：陽性」根本讀不懂
+- 眼睛全部標記為 `referral`：視力下降和眼壓偏高的原因都要眼科判讀，
+  眼壓還得搭配視神經與視野一起看，不是 App 能解釋的
+- **就醫紀錄（`clinic-visits`）是所有「請找醫師」的另一半。** 沒有它，
+  轉診卡是死路。欄位：就醫日期／科別／病症／醫師建議／下次回診
+- **醫師建議原封不動存、原封不動顯示。** App 沒有立場改寫醫師的話，
+  也沒有任何程式去讀這個欄位做判斷。病症也是她自己的說法，不是編碼過的診斷
+- 唯一會被程式使用的是「下次回診日」：**逾期的提醒永遠不會因為太久而消失**。
+  三個月前錯過的回診比下週要回的更值得說，把它靜靜拿掉等於 App 替她決定那件事
+  不重要了
+- **建議檢查會講「掛哪一科」**（`lib/screening.js`）。「去找醫師」誠實但幫助有限，
+  對一個沒在醫院裡繞過的人，講出是哪一個櫃檯才是重點。每一條都附：檢查項目、
+  科別、來自她報告的理由、以及這個建議的依據（國健署或學會的指引）
+- **已經看過的建議會標成「已看過」而不是消失**：一直叫她做已經做過的事，
+  這份清單她就不看了；但完全拿掉會像 App 忘記了
+- 年齡是選填欄位，所以沒填年齡時公費篩檢那幾條不出現（不是錯誤，是正常狀態），
+  畫面上會說「填了年齡之後這裡還會多幾項」
+- **建議只給檢查項目與科別，不給治療。** `tools/test-visits.mjs` 擋掉
+  吃藥／劑量／手術／確診這類字眼
 
 ### 每一餐的影響（2026-09 新增）
 - 拍照後除了熱量和燈號，會顯示「要留意的」和「對你有幫助的」，並**跟她的健檢報告
@@ -347,7 +375,7 @@ node source/tools/serve.mjs 4173
 - **App 名稱是 Healthy Care（2026-09 從「糖前哨」改名）。改名只動顯示字串，
   絕對不要動 localStorage 的鍵名** —— `profile`、`body-records`、`food-log`、
   `water-log`、`exercise-log`、`daily-summary`、`food-calories`、`health-reports`、
-  `workout-links` 這些是找到既有資料的唯一途徑，
+  `workout-links`、`clinic-visits` 這些是找到既有資料的唯一途徑，
   改了等於把手機上所有紀錄變成孤兒。改名是換標籤，不是資料遷移。
   Service Worker 的 `CACHE_NAME` 則要跟著換版，否則舊快取會讓改名看不出來
 - **`lib/health.js` 已經手改過**（`sleepZones` 與對應的 CONTENT_REVIEW 條目），
@@ -364,6 +392,11 @@ node source/tools/serve.mjs 4173
 - **飲食紀錄的照片會過期，文字不會。** 滿 30 天（`PHOTO_DAYS`）只刪照片、保留文字，
   這樣日記才有長期歷史。照片一張約 20KB，一年三餐就會超過瀏覽器 localStorage 的
   容量上限；文字一天約 300 bytes，十年才 1MB。**不要改成連文字一起刪**
+- **彈出視窗一定要有高度上限和捲動，而且按鈕要釘住。** 飲食分析卡片加上健康
+  影響說明之後就超出畫面，結果「加入紀錄」被推到螢幕外 —— **看得到卻存不了，
+  比不顯示那些說明更糟**。現在 `.analysis-modal-card` 是 `max-height:88dvh` 的
+  直向 flex、內容區自己捲動、`.analysis-actions` 用 sticky 釘在捲動區底部。
+  往卡片裡加東西之前，先確認它有沒有高度上限
 - **版面在 320px 一定要能塞得下，不能只測 375px。** 使用者回報「一打開總覽
   就要手動縮圖」，原因是整個頁面在 320px 寬的螢幕上被撐成 **397px**。
   iPhone 開了「顯示縮放（放大文字）」之後回報的就是 320px 邏輯寬度，

@@ -17,6 +17,7 @@ import { backfillSummaries, upsertSummary } from "./goals.js";
 import { normalizeMemory } from "./foodMemory.js";
 import { normalizeReports } from "./reports.js";
 import { normalizeLinks } from "./workouts.js";
+import { normalizeVisits } from "./visits.js";
 
 export const KEYS = {
   profile: "profile",
@@ -34,6 +35,8 @@ export const KEYS = {
   healthReports: "health-reports",
   /** A video the user pinned to an exercise suggestion. */
   workoutLinks: "workout-links",
+  /** 就醫紀錄: date, department, why she went, what she was told. */
+  clinicVisits: "clinic-visits",
   calorieOverride: "calorie-target-override",
   anthropicKey: "anthropic-api-key",
   geminiKey: "gemini-api-key",
@@ -231,6 +234,16 @@ export async function saveReports(reports) {
   return clean;
 }
 
+export async function loadVisits() {
+  return normalizeVisits(await readArray(KEYS.clinicVisits));
+}
+
+export async function saveVisits(visits) {
+  const clean = normalizeVisits(visits);
+  await writeJson(KEYS.clinicVisits, clean);
+  return clean;
+}
+
 export async function loadWorkoutLinks() {
   return normalizeLinks(await readJson(KEYS.workoutLinks, {}));
 }
@@ -275,6 +288,7 @@ export const BACKUP_FIELDS = [
   "foodMemory",
   "healthReports",
   "workoutLinks",
+  "clinicVisits",
 ];
 
 /** Assemble a backup from values already in hand. Used by the export screen. */
@@ -296,6 +310,7 @@ export async function buildBackup() {
     foodMemory: await loadFoodMemory(),
     healthReports: await loadReports(),
     workoutLinks: await loadWorkoutLinks(),
+    clinicVisits: await loadVisits(),
   });
 }
 
@@ -350,6 +365,10 @@ export async function restoreBackup(data) {
   if (data.workoutLinks && typeof data.workoutLinks === "object") {
     const saved = await saveWorkoutLinks(data.workoutLinks);
     if (Object.keys(saved).length) restored.push("運動影片連結");
+  }
+  if (Array.isArray(data.clinicVisits)) {
+    const saved = await saveVisits(data.clinicVisits);
+    if (saved.length) restored.push(`就醫紀錄 ${saved.length} 筆`);
   }
 
   return restored;

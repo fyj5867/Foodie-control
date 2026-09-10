@@ -90,7 +90,16 @@ import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM, KEYS, loadFoodMemory, saveFoodMem
 import { remember, forget, lookup, suggestion, sortedMemory, isLearnable } from "./lib/foodMemory.js";
 import { askAboutImage, FOOD_PROMPT, LAB_PROMPT } from "./lib/vision.js";
 import { upsertReport, removeReport, latestReport } from "./lib/reports.js";
-import { loadReports, saveReports, loadWorkoutLinks, saveWorkoutLinks, buildBackupFrom } from "./lib/storage.js";
+import {
+  loadReports,
+  saveReports,
+  loadWorkoutLinks,
+  saveWorkoutLinks,
+  loadVisits,
+  saveVisits,
+  buildBackupFrom,
+} from "./lib/storage.js";
+import { upsertVisit, removeVisit, markVisitDone } from "./lib/visits.js";
 import HealthAnalysis from "./components/HealthAnalysis.jsx";
 import WorkoutSuggestions from "./components/WorkoutSuggestions.jsx";
 import WeeklyPlanCard from "./components/WeeklyPlanCard.jsx";
@@ -769,6 +778,8 @@ export default function App() {
   const [reports, setReports] = useState([]);
   /** Videos pinned to an exercise suggestion, by workout id. */
   const [workoutLinks, setWorkoutLinks] = useState({});
+  /** 就醫紀錄 — the other half of every "go and ask a doctor". */
+  const [visits, setVisits] = useState([]);
   /* Which diary rows had their calories actually typed in this session. A
      figure only counts as a correction if the person changed it — reading
      back an untouched row would teach the AI's own guess as a standard. */
@@ -840,6 +851,11 @@ export default function App() {
         setWorkoutLinks(await loadWorkoutLinks());
       } catch (e) {
         /* no video pinned yet */
+      }
+      try {
+        setVisits(await loadVisits());
+      } catch (e) {
+        /* no clinic visit recorded yet */
       }
       try {
         const wl = await window.storage.get("water-log", false);
@@ -1109,6 +1125,30 @@ export default function App() {
     } catch (e) {
       flashSaved("刪除失敗，請再試一次");
     }
+  }
+
+  async function persistVisits(next) {
+    setVisits(next);
+    try {
+      return await saveVisits(next);
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
+      return next;
+    }
+  }
+
+  async function handleSaveVisit(draft) {
+    const saved = await persistVisits(upsertVisit(visits, draft));
+    setVisits(saved);
+    flashSaved("已儲存就醫紀錄");
+  }
+
+  async function handleDeleteVisit(id) {
+    setVisits(await persistVisits(removeVisit(visits, id)));
+  }
+
+  async function handleToggleVisitDone(id, done) {
+    setVisits(await persistVisits(markVisitDone(visits, id, done)));
   }
 
   async function handleSaveWorkoutLink(id, url) {
@@ -1443,12 +1483,16 @@ export default function App() {
     try {
       await window.storage.delete(KEYS.workoutLinks, false);
     } catch (e) {}
+    try {
+      await window.storage.delete(KEYS.clinicVisits, false);
+    } catch (e) {}
     setProfile(null);
     setRecords([]);
     setFoodLog([]);
     setFoodMemory([]);
     setReports([]);
     setWorkoutLinks({});
+    setVisits([]);
     setWaterLog([]);
     setExerciseLog([]);
     setForm({
@@ -1486,6 +1530,7 @@ export default function App() {
         foodMemory,
         healthReports: reports,
         workoutLinks,
+        clinicVisits: visits,
       });
       blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     } catch (e) {
@@ -1579,6 +1624,10 @@ export default function App() {
       }
       if (data.workoutLinks && typeof data.workoutLinks === "object") {
         setWorkoutLinks(await saveWorkoutLinks(data.workoutLinks));
+      }
+      if (Array.isArray(data.clinicVisits)) {
+        setVisits(await saveVisits(data.clinicVisits));
+        restoredParts.push("就醫紀錄");
       }
       if (Array.isArray(data.foodMemory)) {
         // Saved through the same repair pass a normal load uses — a backup
@@ -2795,6 +2844,80 @@ export default function App() {
         .rs-cell.is-zero{ border-color:var(--line); background:var(--surface-2); }
         .rs-cell.is-zero strong{ color:var(--ink-soft); }
 
+        /* --- 回診提醒／建議檢查／就醫紀錄 --------------------------------- */
+
+        .remind-row{
+          display:flex; align-items:flex-start; gap:10px;
+          border-radius:12px; padding:11px 12px; margin-bottom:8px;
+          background:var(--brand-soft);
+          border-left:4px solid var(--brand);
+        }
+        /* Overdue is red and stays red however long ago it was: a 回診 missed
+           three months ago matters more than one due next week. */
+        .remind-row.is-overdue{ background:var(--red-soft); border-left-color:var(--red); }
+        .remind-main{ flex:1; min-width:0; }
+        .remind-when{
+          font-family:'JetBrains Mono', monospace; font-weight:700; font-size:14px;
+        }
+        .remind-when span{
+          font-family:'Noto Sans TC', sans-serif; font-weight:700;
+          font-size:11.5px; margin-left:8px; color:var(--brand);
+        }
+        .remind-row.is-overdue .remind-when span{ color:var(--red); }
+        .remind-what{ font-size:13.5px; font-weight:700; margin-top:2px; }
+        .remind-advice{ font-size:12px; color:var(--ink-soft); line-height:1.6; margin-top:3px; }
+        .remind-done{ flex-shrink:0; padding:6px 10px; font-size:11.5px; }
+
+        .sug-row{
+          border:1px solid var(--line); border-radius:12px;
+          padding:11px 12px; margin-bottom:8px;
+        }
+        .sug-head{ display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 8px; }
+        .sug-dept{
+          font-size:12px; font-weight:700; color:#fff;
+          background:var(--brand); border-radius:999px; padding:3px 10px;
+          white-space:nowrap;
+        }
+        .sug-exam{ font-size:14px; font-weight:700; }
+        .sug-why{ font-size:12px; color:var(--ink); margin-top:5px; line-height:1.6; }
+        .sug-note{ font-size:11.5px; color:var(--ink-soft); margin-top:3px; line-height:1.6; }
+        .sug-source{ font-size:10.5px; color:var(--ink-soft); margin-top:4px; }
+        .sug-covered{
+          border-top:1px solid var(--line); margin-top:8px; padding-top:8px;
+          font-size:11.5px; color:var(--green); line-height:1.8;
+        }
+
+        .visit-row{
+          border-bottom:1px solid var(--line); padding:10px 0;
+        }
+        .visit-row:last-child{ border-bottom:none; }
+        .visit-row.is-done{ opacity:0.65; }
+        .visit-head{ display:flex; align-items:center; gap:8px; }
+        .visit-date{
+          font-family:'JetBrains Mono', monospace; font-weight:700; font-size:13px;
+        }
+        .visit-dept{
+          font-size:11.5px; font-weight:700; color:var(--brand);
+          background:var(--brand-soft); border-radius:999px; padding:2px 9px;
+        }
+        .visit-head .icon-btn:first-of-type{ margin-left:auto; }
+        .visit-symptom{ font-size:13.5px; margin-top:5px; }
+        /* The doctor's words, kept as typed — the app does not paraphrase them
+           and nothing reads this field to decide anything. */
+        .visit-advice{
+          font-size:12.5px; color:var(--ink-soft); line-height:1.7; margin-top:4px;
+          border-left:2px solid var(--line); padding-left:9px;
+          white-space:pre-wrap; overflow-wrap:anywhere;
+        }
+        .visit-next{ font-size:11.5px; color:var(--brand); margin-top:5px; }
+        .visit-next .inline-toggle{ margin-left:8px; margin-top:0; }
+
+        .health-page textarea{
+          width:100%; border:1px solid var(--line); border-radius:10px;
+          padding:10px 12px; font-size:14px; font-family:'Noto Sans TC', sans-serif;
+          background:#fff; color:var(--ink); resize:vertical; line-height:1.6;
+        }
+
         .v-block{ margin-bottom:12px; }
         .v-block-title{ font-size:13px; font-weight:700; margin:0 0 6px; }
         .v-block-title.watch{ color:var(--yellow); }
@@ -3080,7 +3203,16 @@ export default function App() {
         .modal-card{
           background:#fff; border-radius:16px; padding:20px; max-width:320px; width:100%;
         }
-        .analysis-modal-card{ max-width:340px; }
+        .analysis-modal-card{
+          max-width:340px;
+          /* Never taller than the screen, and never taller than the space
+             left once the keyboard is up on iOS (dvh, with vh as fallback). */
+          max-height:88vh;
+          max-height:88dvh;
+          display:flex;
+          flex-direction:column;
+          overflow:hidden;
+        }
         .modal-card h3{ font-family:'Noto Serif TC', serif; font-size:15px; margin:0 0 8px; }
         .modal-card p{ font-size:13px; color:var(--ink-soft); margin:0 0 16px; line-height:1.5; }
         .modal-actions{ display:flex; gap:10px; }
@@ -3334,6 +3466,41 @@ export default function App() {
           margin-bottom:12px;
           display:flex;
           gap:12px;
+          /* min-height:0 is what lets a flex child actually shrink and hand
+             its overflow to the scrolling body below. */
+          min-height:0;
+        }
+        /* Inside the modal the card is a column: the photo on top, then the
+           readable part, so the notes get the full width to wrap into. */
+        .analysis-modal-card .analysis-card{
+          flex-direction:column;
+          border:none;
+          padding:0;
+          margin-bottom:0;
+          gap:10px;
+          flex:1;
+          overflow:hidden;
+        }
+        .analysis-modal-card .analysis-card img{
+          width:100%;
+          height:132px;
+        }
+        .analysis-modal-card .analysis-card-body{
+          overflow-y:auto;
+          -webkit-overflow-scrolling:touch;
+          min-height:0;
+          flex:1;
+        }
+        /* Pinned to the bottom of the scroll area. Before this, a long reading
+           pushed the buttons past the bottom of the screen and the entry could
+           not be saved at all. */
+        .analysis-modal-card .analysis-actions{
+          position:sticky;
+          bottom:0;
+          background:#fff;
+          padding:10px 0 2px;
+          margin-top:6px;
+          box-shadow:0 -10px 12px -10px rgba(0,0,0,0.25);
         }
         .analysis-card img{
           width:76px;
@@ -3679,6 +3846,10 @@ export default function App() {
               onAnalyzeReportPhoto={analyzeReportPhoto}
               onSaveReport={handleSaveReport}
               onDeleteReport={handleDeleteReport}
+              visits={visits}
+              onSaveVisit={handleSaveVisit}
+              onDeleteVisit={handleDeleteVisit}
+              onToggleVisitDone={handleToggleVisitDone}
             />
           )}
 

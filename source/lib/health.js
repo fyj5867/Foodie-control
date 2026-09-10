@@ -849,6 +849,79 @@ const LAB_MARKERS = [
       { tone: "green", label: "正常 ≥-1" },
     ],
   },
+  /* --- 眼睛 ------------------------------------------------------------
+     Eyes matter more than usual here: 糖尿病視網膜病變 is one of the things
+     regular blood-sugar attention is FOR, and it is silent until it is not.
+     Vision and pressure are numbers; the fundus and cataract findings are
+     yes/no answers and live in LAB_FLAGS. */
+  {
+    key: "visionR",
+    plausible: [0.01, 2],
+    label: "視力（右）",
+    short: "視力右",
+    unit: "",
+    decimals: 2,
+    group: "eye",
+    higherIsBetter: true,
+    /* A drop in vision has many causes and none of them is something an app
+       should be interpreting. */
+    referral: true,
+    note: "小數視力。矯正後仍偏低請由眼科判斷原因。",
+    zones: [
+      { lt: 0.6, tone: "red", label: "偏低 <0.6" },
+      { lt: 0.9, tone: "yellow", label: "略降 0.6-0.8" },
+      { tone: "green", label: "正常 ≥0.9" },
+    ],
+  },
+  {
+    key: "visionL",
+    plausible: [0.01, 2],
+    label: "視力（左）",
+    short: "視力左",
+    unit: "",
+    decimals: 2,
+    group: "eye",
+    higherIsBetter: true,
+    referral: true,
+    note: "小數視力。矯正後仍偏低請由眼科判斷原因。",
+    zones: [
+      { lt: 0.6, tone: "red", label: "偏低 <0.6" },
+      { lt: 0.9, tone: "yellow", label: "略降 0.6-0.8" },
+      { tone: "green", label: "正常 ≥0.9" },
+    ],
+  },
+  {
+    key: "iopR",
+    plausible: [1, 70],
+    label: "眼壓（右）",
+    short: "眼壓右",
+    unit: "mmHg",
+    decimals: 0,
+    group: "eye",
+    referral: true,
+    note: "偏高與青光眼風險有關，需要眼科搭配視野與視神經一起看。",
+    zones: [
+      { lt: 10, tone: "yellow", label: "偏低 <10" },
+      { lt: 22, tone: "green", label: "正常 10-21" },
+      { tone: "red", label: "偏高 >21" },
+    ],
+  },
+  {
+    key: "iopL",
+    plausible: [1, 70],
+    label: "眼壓（左）",
+    short: "眼壓左",
+    unit: "mmHg",
+    decimals: 0,
+    group: "eye",
+    referral: true,
+    note: "偏高與青光眼風險有關，需要眼科搭配視野與視神經一起看。",
+    zones: [
+      { lt: 10, tone: "yellow", label: "偏低 <10" },
+      { lt: 22, tone: "green", label: "正常 10-21" },
+      { tone: "red", label: "偏高 >21" },
+    ],
+  },
   {
     key: "waist",
     plausible: [40, 200],
@@ -1047,6 +1120,22 @@ function outOfRangeMarkers(values, gender) {
  */
 const LAB_FLAGS = [
   {
+    key: "fundus",
+    label: "眼底（視網膜）檢查",
+    short: "眼底檢查",
+    /* 陰性/陽性 reads as nonsense for an eye exam, so each flag names the two
+       words it is answered with. */
+    values: ["正常", "異常"],
+    note: "血糖偏高的人建議每年檢查一次眼底。異常請由眼科安排追蹤與治療。",
+  },
+  {
+    key: "cataract",
+    label: "白內障",
+    short: "白內障",
+    values: ["無", "有"],
+    note: "是否需要處理、什麼時候處理由眼科評估。",
+  },
+  {
     key: "stoolBlood",
     label: "糞便潛血",
     short: "糞便潛血",
@@ -1092,22 +1181,34 @@ const LAB_FLAGS = [
 
 const LAB_FLAG_BY_KEY = Object.fromEntries(LAB_FLAGS.map((f) => [f.key, f]));
 
-/** The only two values a flag may hold. Anything else is not recorded. */
+/** What a flag is answered with when it does not say otherwise. */
 const FLAG_VALUES = ["陰性", "陽性"];
 
 function labFlag(key) {
   return LAB_FLAG_BY_KEY[key] || null;
 }
 
-function isFlagValue(value) {
-  return FLAG_VALUES.includes(String(value));
+/** The two words this particular flag is answered with, normal one first. */
+function flagValues(key) {
+  const flag = labFlag(key);
+  return flag && flag.values ? flag.values : FLAG_VALUES;
 }
 
-/** Flags that came back positive — each one a question for a clinician. */
+function isFlagValue(key, value) {
+  return flagValues(key).includes(String(value));
+}
+
+/** Whether this flag's recorded answer is the one that needs a doctor. */
+function isFlagPositive(key, value) {
+  const pair = flagValues(key);
+  return String(value) === pair[1];
+}
+
+/** Flags that came back abnormal — each one a question for a clinician. */
 function positiveFlags(flags) {
   const out = [];
   for (const flag of LAB_FLAGS) {
-    if (flags && String(flags[flag.key]) === "陽性") out.push(flag);
+    if (flags && isFlagPositive(flag.key, flags[flag.key])) out.push(flag);
   }
   return out;
 }
@@ -1130,7 +1231,10 @@ const CONTENT_REVIEW = {
     "衛生福利部國民健康署心血管疾病防治衛教：總膽固醇、三酸甘油酯、HDL、LDL 參考值",
     "2022年台灣高血壓治療指引（中華民國心臟學會／台灣高血壓學會）：130/80 mmHg 判定標準",
     "台灣慢性腎臟病臨床診療指引：eGFR 分期（≥90 正常、60-89 輕度下降、30-59 中度、<30 重度）",
-    "衛生福利部國民健康署四大癌症篩檢：糞便潛血（50-74歲每兩年一次）",
+    "衛生福利部國民健康署四大癌症篩檢：糞便潛血（50-74歲每兩年一次）、口腔黏膜、乳房攝影、子宮頸抹片",
+    "衛生福利部國民健康署成人預防保健「健康加值」：40-64歲每3年1次、65歲以上每年1次",
+    "社團法人中華民國糖尿病學會照護指引：糖尿病與糖尿病前期建議每年一次眼底（視網膜）檢查",
+    "台灣青光眼共識：眼壓參考範圍 10-21 mmHg，判讀需搭配視神經與視野檢查",
     "台灣常見臨床檢驗參考範圍：血液計數（WBC／RBC／Hb／Hct／血小板／MCV）、肝功能（ALP／γ-GT／膽紅素／白蛋白）、腎功能（BUN）、甲狀腺（TSH／free T4）、電解質（鈉／鉀／鈣）",
     "美國內分泌學會與台灣骨質疏鬆症學會：維生素D 30 ng/mL 為足夠、世界衛生組織骨密度 T 值分期",
     "美國心臟協會 hs-CRP 心血管風險分層：<1 低、1-3 中、>3 高",
@@ -1549,7 +1653,9 @@ export {
   LAB_FLAGS,
   FLAG_VALUES,
   labFlag,
+  flagValues,
   isFlagValue,
+  isFlagPositive,
   positiveFlags,
   SYMPTOM_OPTIONS,
   deriveActivityLevel,
