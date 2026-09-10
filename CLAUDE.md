@@ -55,36 +55,54 @@ source/components/ExerciseIcons.jsx 有氧／阻力／柔軟度三個小角色
 source/tools/          一次性的改版工具與測試（見下）
 ```
 
-## 重新打包指令（改完 source/ 之後一定要跑，app.bundle.js 才會更新）
-```bash
-cd source
-npm install
-npm run build
-```
-`npm run build` 就是原本那條 esbuild 指令，已經寫進 package.json。esbuild 版本鎖在
-0.28.2（devDependencies），這樣每次打包的產出才可重現 —— 否則沒辦法用「重打包後檔案
-有沒有變」來判斷是不是忘記打包了。
+## 重新打包（改完 source/ 之後一定要跑，app.bundle.js 才會更新）
 
-改動邏輯後跑測試：
+只有一行要記：
+
 ```bash
-cd source
-npm test
+cd source && npm run rebuild
 ```
 
-本機實際跑起來看（不需要額外安裝任何東西）：
+它會跑測試 → 打包 → 告訴你產出有沒有變、多大（`tools/build-all.mjs`）。
+**測試沒過就不會打包**，因為 `app.bundle.js` 是實際被部署出去的檔案，
+從一份規則已經不成立的程式碼打包出來比打包失敗更糟。第一次要先 `npm install`。
+
+本機看畫面：
+
 ```bash
-node source/tools/serve.mjs 4173
+cd source && npm run serve
 ```
+
 然後開 <http://localhost:4173/>。確認沒問題再 commit + push，GitHub Pages 會自動
-重新部署。
+重新部署。**改版時記得換 `sw.js` 的 `CACHE_NAME`**，否則手機上的舊快取會讓改動
+看不出來。
+
+esbuild 版本鎖在 0.28.2（devDependencies），這樣每次打包的產出才可重現 ——
+否則沒辦法用「重打包後檔案有沒有變」來判斷是不是忘記打包了。
+
+**測試清單不寫在 package.json 裡，是用掃的**（`tools/run-tests.mjs` 掃
+`tools/test-*.mjs`）。原本手寫清單的話，新增的測試檔要有人記得去加才會跑，
+而一個沒在跑的測試比沒有測試更糟 —— 它看起來像有覆蓋到。
+
+給「換一台電腦或很久以後回來」的自己看的版本在 `REBUILD.md`，那一頁是獨立的，
+不需要先讀這一份。
 
 ## source/tools/ 裡是什麼
-- `test-goals.mjs` — 達標／成長／花園規則的測試（`npm test` 跑的就是這個）
+留下來的都是還會用到的：
+
+- `build-all.mjs` — `npm run rebuild` 跑的就是它（測試 → 打包 → 回報）
+- `run-tests.mjs` — 掃出並跑完所有 `test-*.mjs`（`npm test`）
+- `check-imports.mjs` — 找出「用了但忘記 import」的名字。esbuild 抓不到這種
+  （它只抓得到缺少的 named export），漏掉會變成白畫面而不是錯誤訊息
+- `test-*.mjs` — 各項規則的測試
 - `serve.mjs` — 本機靜態伺服器
-- `extract-health.mjs` — 從舊版 App.jsx 抽出 lib/health.js。已經跑過，保留是為了
-  留下「這些數值是機械搬移、不是手打」的證據
-- `wire-modules.mjs`、`patch-*.mjs` — 這次改版的一次性修改腳本，保留當作變更紀錄，
-  **不要重跑**（它們的替換目標已經不在了，重跑只會失敗）
+- `gen-sprout.mjs` ＋ `health-forest-stages.json` — 從設計稿產生植物的圖
+- `import-quotes.mjs` — 從真乘心語的 .docx 重新匯入句子
+- `preview-sprout.jsx`／`preview-analysis.jsx` — 一次看全部狀態，用來判斷畫面
+
+**一次性的改版腳本已經刪掉了**（`patch-*.mjs`、`wire-modules.mjs`、
+`extract-health.mjs`）。它們的替換目標早就不存在，重跑只會失敗，而「當時改了什麼」
+git 記錄裡就有 —— 留著它們只是讓 tools/ 看起來比實際上複雜。
 
 ## 樹苗養成與花園（2026-09 改版新增）
 - **達標的定義**：一天要三項**全部**達成才算 —— 熱量低於 1500 大卡、
