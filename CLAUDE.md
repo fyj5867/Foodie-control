@@ -34,6 +34,7 @@ source/lib/workouts.js 運動建議的名單、排序與 YouTube 搜尋連結
 source/lib/nutritionTags.js 食材標籤 →「增加什麼負擔／幫助什麼」的文案與個人化比對
 source/lib/visits.js   就醫紀錄（日期／科別／病症／醫師建議／回診日）與回診提醒
 source/lib/screening.js 建議檢查項目與科別（依報告數值＋年齡的公費篩檢）
+source/lib/examPlans.js 排定的檢查（把建議加上日期，會進提醒卡）
 source/lib/bodyScan.js 從體重計照片讀出體態數值填進表單（合理範圍把關）
 source/lib/useGarden.js 把達標判定與每日摘要包成 React hook 供 App.jsx 使用
 
@@ -164,6 +165,19 @@ git 記錄裡就有 —— 留著它們只是讓 tools/ 看起來比實際上複
   畫面上會說「填了年齡之後這裡還會多幾項」
 - **建議只給檢查項目與科別，不給治療。** `tools/test-visits.mjs` 擋掉
   吃藥／劑量／手術／確診這類字眼
+- **每一條建議都可以「排定時間」**（`lib/examPlans.js`，存在 `exam-plans`）。
+  建議清單本來只能說「建議去做」，那是容易的一半；決定事情會不會發生的是日期，
+  而原本沒有地方放日期 —— 她看過、想著要約，下個月這張卡還是講一樣的話
+- 排定是**獨立的一筆紀錄**，不是建議上的欄位（建議每次都從報告重算，不存狀態），
+  也不是就醫紀錄（那代表「去過了」，這代表「要去」）。兩者後來會合流：
+  去過之後記一筆就醫紀錄，建議自己就安靜了
+- 另外有「自己加一項檢查」，因為醫師交代的檢查不一定在清單上。
+  沒有這個，選項只有「我們清單裡的」或「沒地方放」
+- **建議清單預設收合**（只留標題、項數、已排幾項）。它是參考資料；
+  真正要做的事 —— 已經排定日期的 —— 會出現在永遠看得見的「回診與檢查提醒」卡。
+  這是收合不會藏掉重要東西的原因
+- 排定的檢查和回診提醒放在同一張卡，因為對她來說是同一件事：
+  有日期、還沒發生。**逾期一樣永遠不會因為太久而消失**
 
 ### 每一餐的影響（2026-09 新增）
 - 拍照後除了熱量和燈號，會顯示「要留意的」和「對你有幫助的」，並**跟她的健檢報告
@@ -400,7 +414,7 @@ git 記錄裡就有 —— 留著它們只是讓 tools/ 看起來比實際上複
 - **App 名稱是 Healthy Care（2026-09 從「糖前哨」改名）。改名只動顯示字串，
   絕對不要動 localStorage 的鍵名** —— `profile`、`body-records`、`food-log`、
   `water-log`、`exercise-log`、`daily-summary`、`food-calories`、`health-reports`、
-  `workout-links`、`clinic-visits` 這些是找到既有資料的唯一途徑，
+  `workout-links`、`clinic-visits`、`exam-plans` 這些是找到既有資料的唯一途徑，
   改了等於把手機上所有紀錄變成孤兒。改名是換標籤，不是資料遷移。
   Service Worker 的 `CACHE_NAME` 則要跟著換版，否則舊快取會讓改名看不出來
 - **`lib/health.js` 已經手改過**（`sleepZones` 與對應的 CONTENT_REVIEW 條目），

@@ -99,9 +99,12 @@ import {
   saveWorkoutLinks,
   loadVisits,
   saveVisits,
+  loadPlans,
+  savePlans,
   buildBackupFrom,
 } from "./lib/storage.js";
 import { upsertVisit, removeVisit, markVisitDone } from "./lib/visits.js";
+import { upsertPlan, removePlan, markPlanDone } from "./lib/examPlans.js";
 import HealthAnalysis from "./components/HealthAnalysis.jsx";
 import WorkoutSuggestions from "./components/WorkoutSuggestions.jsx";
 import WeeklyPlanCard from "./components/WeeklyPlanCard.jsx";
@@ -794,6 +797,8 @@ export default function App() {
   const [workoutLinks, setWorkoutLinks] = useState({});
   /** 就醫紀錄 — the other half of every "go and ask a doctor". */
   const [visits, setVisits] = useState([]);
+  /** 排定的檢查 — a suggestion with a date on it. */
+  const [examPlans, setExamPlans] = useState([]);
   /** Reading 體態紀錄 off a photo of the scale. */
   const [bodyScanning, setBodyScanning] = useState(false);
   const [bodyScanNote, setBodyScanNote] = useState(null);
@@ -873,6 +878,11 @@ export default function App() {
         setVisits(await loadVisits());
       } catch (e) {
         /* no clinic visit recorded yet */
+      }
+      try {
+        setExamPlans(await loadPlans());
+      } catch (e) {
+        /* nothing scheduled yet */
       }
       try {
         const wl = await window.storage.get("water-log", false);
@@ -1198,6 +1208,29 @@ export default function App() {
 
   async function handleToggleVisitDone(id, done) {
     setVisits(await persistVisits(markVisitDone(visits, id, done)));
+  }
+
+  async function persistPlans(next) {
+    setExamPlans(next);
+    try {
+      return await savePlans(next);
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
+      return next;
+    }
+  }
+
+  async function handleSavePlan(draft) {
+    setExamPlans(await persistPlans(upsertPlan(examPlans, draft)));
+    flashSaved("已排定");
+  }
+
+  async function handleDeletePlan(id) {
+    setExamPlans(await persistPlans(removePlan(examPlans, id)));
+  }
+
+  async function handleTogglePlanDone(id, done) {
+    setExamPlans(await persistPlans(markPlanDone(examPlans, id, done)));
   }
 
   async function handleSaveWorkoutLink(id, url) {
@@ -1535,6 +1568,9 @@ export default function App() {
     try {
       await window.storage.delete(KEYS.clinicVisits, false);
     } catch (e) {}
+    try {
+      await window.storage.delete(KEYS.examPlans, false);
+    } catch (e) {}
     setProfile(null);
     setRecords([]);
     setFoodLog([]);
@@ -1542,6 +1578,7 @@ export default function App() {
     setReports([]);
     setWorkoutLinks({});
     setVisits([]);
+    setExamPlans([]);
     setWaterLog([]);
     setExerciseLog([]);
     setForm({
@@ -1580,6 +1617,7 @@ export default function App() {
         healthReports: reports,
         workoutLinks,
         clinicVisits: visits,
+        examPlans,
       });
       blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     } catch (e) {
@@ -1677,6 +1715,10 @@ export default function App() {
       if (Array.isArray(data.clinicVisits)) {
         setVisits(await saveVisits(data.clinicVisits));
         restoredParts.push("就醫紀錄");
+      }
+      if (Array.isArray(data.examPlans)) {
+        setExamPlans(await savePlans(data.examPlans));
+        restoredParts.push("排定的檢查");
       }
       if (Array.isArray(data.foodMemory)) {
         // Saved through the same repair pass a normal load uses — a backup
@@ -2942,6 +2984,22 @@ export default function App() {
         .sug-why{ font-size:12px; color:var(--ink); margin-top:5px; line-height:1.6; }
         .sug-note{ font-size:11.5px; color:var(--ink-soft); margin-top:3px; line-height:1.6; }
         .sug-source{ font-size:10.5px; color:var(--ink-soft); margin-top:4px; }
+        .fold-done{
+          font-size:11px; font-weight:700; color:var(--green);
+          background:var(--green-soft); border-radius:999px; padding:2px 9px;
+        }
+        .sug-book-btn{ margin-top:8px; padding:6px 12px; font-size:12px; }
+        .sug-booked{
+          margin-top:8px; padding:7px 9px; border-radius:8px;
+          background:var(--brand-soft); color:var(--brand);
+          font-size:12px; font-weight:700; line-height:1.7;
+        }
+        .sug-booked .inline-toggle{ margin-left:10px; margin-top:0; }
+        .plan-form{
+          margin-top:8px; padding-top:8px; border-top:1px solid var(--line);
+        }
+        .plan-form .field{ margin-bottom:8px; }
+
         .sug-covered{
           border-top:1px solid var(--line); margin-top:8px; padding-top:8px;
           font-size:11.5px; color:var(--green); line-height:1.8;
@@ -3942,6 +4000,10 @@ export default function App() {
               onSaveVisit={handleSaveVisit}
               onDeleteVisit={handleDeleteVisit}
               onToggleVisitDone={handleToggleVisitDone}
+              plans={examPlans}
+              onSavePlan={handleSavePlan}
+              onDeletePlan={handleDeletePlan}
+              onTogglePlanDone={handleTogglePlanDone}
             />
           )}
 

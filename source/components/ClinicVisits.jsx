@@ -20,8 +20,9 @@
  */
 
 import React, { useMemo, useState } from "react";
-import { Plus, Trash2, Pencil, Check, X, CalendarClock, Stethoscope } from "lucide-react";
+import { Plus, Trash2, Pencil, Check, X, CalendarClock, CalendarPlus, Stethoscope } from "lucide-react";
 import { DEPARTMENTS, emptyVisit, dueReminders } from "../lib/visits.js";
+import { emptyPlan, duePlans, planFor } from "../lib/examPlans.js";
 import { screeningSuggestions, needsAgeForProgramme } from "../lib/screening.js";
 import { todayStr } from "../lib/health.js";
 
@@ -91,6 +92,78 @@ function VisitForm({ draft, setDraft, onSave, onCancel }) {
   );
 }
 
+/**
+ * The scheduling field.
+ *
+ * One date and an optional note, because the whole point is that turning a
+ * suggestion into a plan should take one tap and one date — a second form as
+ * long as the visit form would just move the friction rather than remove it.
+ * A custom entry additionally needs a name, since nothing filled it in.
+ */
+function PlanForm({ draft, setDraft, onSave, onCancel, withName = false }) {
+  const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
+  const usable = draft.date && (draft.exam.trim() || draft.department);
+
+  return (
+    <div className="plan-form">
+      {withName && (
+        <div className="field">
+          <label>檢查項目</label>
+          <input
+            type="text"
+            value={draft.exam}
+            placeholder="例：腹部超音波"
+            onChange={(e) => set("exam", e.target.value)}
+          />
+        </div>
+      )}
+      {withName && (
+        <div className="field">
+          <label>科別</label>
+          <div className="chip-grid">
+            {DEPARTMENTS.map((d) => (
+              <button
+                type="button"
+                key={d}
+                className={`chip ${draft.department === d ? "active" : ""}`}
+                onClick={() => set("department", draft.department === d ? "" : d)}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="field-row">
+        <div className="field">
+          <label>排定日期</label>
+          <input type="date" value={draft.date} onChange={(e) => set("date", e.target.value)} />
+        </div>
+        <div className="field">
+          <label>備註（選填）</label>
+          <input
+            type="text"
+            value={draft.note}
+            placeholder="例：早上空腹"
+            onChange={(e) => set("note", e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="analysis-actions">
+        <button type="button" className="btn btn-secondary" onClick={onCancel}>
+          取消
+        </button>
+        <button type="button" className="btn btn-primary" onClick={onSave} disabled={!usable}>
+          <Check size={13} /> 存排定
+        </button>
+      </div>
+      {!usable && <p className="fine-print">要有日期，以及檢查項目或科別。</p>}
+    </div>
+  );
+}
+
 export default function ClinicVisits({
   visits = [],
   report = null,
@@ -98,12 +171,24 @@ export default function ClinicVisits({
   onSaveVisit,
   onDeleteVisit,
   onToggleDone,
+  plans = [],
+  onSavePlan,
+  onDeletePlan,
+  onTogglePlanDone,
   today = todayStr(),
 }) {
   const [draft, setDraft] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  /* The suggestion list is reference: closed unless asked for. What is
+     actionable — anything she has actually scheduled — surfaces in 回診提醒,
+     which is always visible, so collapsing this hides nothing she needs. */
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  /** Which suggestion's date field is open, or "custom" for a blank one. */
+  const [planDraft, setPlanDraft] = useState(null);
 
   const reminders = useMemo(() => dueReminders(visits, today), [visits, today]);
+  const dueExams = useMemo(() => duePlans(plans, today), [plans, today]);
+  const scheduled = useMemo(() => (plans || []).filter((p) => !p.done), [plans]);
   const suggestions = useMemo(
     () => screeningSuggestions({ report, profile, visits, today }),
     [report, profile, visits, today]
@@ -114,11 +199,35 @@ export default function ClinicVisits({
 
   return (
     <>
-      {reminders.length > 0 && (
+      {(reminders.length > 0 || dueExams.length > 0) && (
         <div className="card">
           <div className="section-title">
-            <CalendarClock size={17} /> 回診提醒
+            <CalendarClock size={17} /> 回診與檢查提醒
           </div>
+
+          {/* Exams she scheduled herself. Listed with the follow-ups because
+              from her side they are the same thing: something with a date on
+              it that has not happened yet. */}
+          {dueExams.map((e) => (
+            <div className={`remind-row ${e.overdue ? "is-overdue" : ""}`} key={`plan-${e.id}`}>
+              <div className="remind-main">
+                <div className="remind-when">
+                  {e.date}
+                  <span>
+                    {e.overdue ? `已過 ${Math.abs(e.days)} 天` : e.days === 0 ? "就是今天" : `還有 ${e.days} 天`}
+                  </span>
+                </div>
+                <div className="remind-what">
+                  {e.department ? `${e.department}・` : ""}
+                  {e.exam || "排定的檢查"}
+                </div>
+                {e.note && <div className="remind-advice">{e.note}</div>}
+              </div>
+              <button type="button" className="btn btn-secondary remind-done" onClick={() => onTogglePlanDone(e.id, true)}>
+                已完成
+              </button>
+            </div>
+          ))}
           {reminders.map((r) => (
             <div className={`remind-row ${r.overdue ? "is-overdue" : ""}`} key={r.id}>
               <div className="remind-main">
@@ -218,41 +327,120 @@ export default function ClinicVisits({
           </button>
         )}
       </div>
-      {(outstanding.length > 0 || covered.length > 0) && (
+      {(outstanding.length > 0 || covered.length > 0 || scheduled.length > 0) && (
         <div className="card">
-          <div className="section-title">
-            <Stethoscope size={17} /> 建議安排的檢查
-          </div>
-          <p className="fine-print">
-            依你報告上的數值和年齡列出來的，含檢查項目與掛哪一科。要不要做、什麼時候做請由醫師決定。
-          </p>
+          <button type="button" className="fold-head" onClick={() => setShowSuggestions((v) => !v)}>
+            <Stethoscope size={17} />
+            <span className="fold-title">建議安排的檢查</span>
+            {outstanding.length > 0 && <span className="fold-count">{outstanding.length} 項</span>}
+            {scheduled.length > 0 && <span className="fold-done">已排 {scheduled.length}</span>}
+            <span className="fold-caret">{showSuggestions ? "▲" : "▼"}</span>
+          </button>
 
-          {outstanding.map((s) => (
-            <div className="sug-row" key={s.id}>
-              <div className="sug-head">
-                <span className="sug-dept">{s.department}</span>
-                <span className="sug-exam">{s.exam}</span>
-              </div>
-              <div className="sug-why">{s.why}</div>
-              {s.note && <div className="sug-note">{s.note}</div>}
-              <div className="sug-source">{s.source}</div>
-            </div>
-          ))}
+          {showSuggestions && (
+            <>
+              <p className="fine-print" style={{ marginTop: "10px" }}>
+                依你報告上的數值和年齡列出來的，含檢查項目與掛哪一科。要不要做、什麼時候做請由醫師決定。
+                排好時間就填進去，到日期前這裡會提醒你。
+              </p>
 
-          {needsAgeForProgramme(profile) && (
-            <p className="fine-print">
-              個人資料裡填了年齡之後，這裡還會加上國健署依年齡提供的公費篩檢項目。
-            </p>
-          )}
+              {outstanding.map((s) => {
+                const booked = planFor(plans, s.id);
+                const editing = planDraft && planDraft.examId === s.id;
+                return (
+                  <div className="sug-row" key={s.id}>
+                    <div className="sug-head">
+                      <span className="sug-dept">{s.department}</span>
+                      <span className="sug-exam">{s.exam}</span>
+                    </div>
+                    <div className="sug-why">{s.why}</div>
+                    {s.note && <div className="sug-note">{s.note}</div>}
+                    <div className="sug-source">{s.source}</div>
 
-          {covered.length > 0 && (
-            <div className="sug-covered">
-              {covered.map((s) => (
-                <div key={s.id}>
-                  ✓ {s.department}・{s.exam}（{s.covered} 已看過）
+                    {booked && !editing && (
+                      <div className="sug-booked">
+                        已排定 {booked.date}
+                        {booked.note ? `・${booked.note}` : ""}
+                        <button type="button" className="inline-toggle" onClick={() => setPlanDraft({ ...booked })}>
+                          改時間
+                        </button>
+                        <button type="button" className="inline-toggle" onClick={() => onDeletePlan(booked.id)}>
+                          取消排定
+                        </button>
+                      </div>
+                    )}
+
+                    {!booked && !editing && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary sug-book-btn"
+                        onClick={() => setPlanDraft(emptyPlan(s))}
+                      >
+                        <CalendarPlus size={13} /> 排定時間
+                      </button>
+                    )}
+
+                    {editing && (
+                      <PlanForm
+                        draft={planDraft}
+                        setDraft={setPlanDraft}
+                        onSave={() => {
+                          onSavePlan(planDraft);
+                          setPlanDraft(null);
+                        }}
+                        onCancel={() => setPlanDraft(null)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Somewhere to put an exam the doctor asked for that is not on
+                  this list. Without it the only options are "one of ours" or
+                  "nowhere". */}
+              {planDraft && planDraft.examId === "" ? (
+                <div className="sug-row">
+                  <div className="sug-head">
+                    <span className="sug-exam">自己加一項檢查</span>
+                  </div>
+                  <PlanForm
+                    draft={planDraft}
+                    setDraft={setPlanDraft}
+                    withName
+                    onSave={() => {
+                      onSavePlan(planDraft);
+                      setPlanDraft(null);
+                    }}
+                    onCancel={() => setPlanDraft(null)}
+                  />
                 </div>
-              ))}
-            </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-block"
+                  style={{ marginTop: "4px" }}
+                  onClick={() => setPlanDraft(emptyPlan())}
+                >
+                  <Plus size={14} /> 自己加一項檢查（醫師交代的、清單上沒有的）
+                </button>
+              )}
+
+              {needsAgeForProgramme(profile) && (
+                <p className="fine-print" style={{ marginTop: "10px" }}>
+                  個人資料裡填了年齡之後，這裡還會加上國健署依年齡提供的公費篩檢項目。
+                </p>
+              )}
+
+              {covered.length > 0 && (
+                <div className="sug-covered">
+                  {covered.map((s) => (
+                    <div key={s.id}>
+                      ✓ {s.department}・{s.exam}（{s.covered} 已看過）
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

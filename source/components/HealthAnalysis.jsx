@@ -485,6 +485,10 @@ export default function HealthAnalysis({
   onSaveVisit,
   onDeleteVisit,
   onToggleVisitDone,
+  plans = [],
+  onSavePlan,
+  onDeletePlan,
+  onTogglePlanDone,
   today = todayStr(),
 }) {
   const [draft, setDraft] = useState(null);
@@ -811,6 +815,10 @@ export default function HealthAnalysis({
         onSaveVisit={onSaveVisit}
         onDeleteVisit={onDeleteVisit}
         onToggleDone={onToggleVisitDone}
+        plans={plans}
+        onSavePlan={onSavePlan}
+        onDeletePlan={onDeletePlan}
+        onTogglePlanDone={onTogglePlanDone}
         today={today}
       />
 

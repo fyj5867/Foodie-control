@@ -18,6 +18,7 @@ import { normalizeMemory } from "./foodMemory.js";
 import { normalizeReports } from "./reports.js";
 import { normalizeLinks } from "./workouts.js";
 import { normalizeVisits } from "./visits.js";
+import { normalizePlans } from "./examPlans.js";
 
 export const KEYS = {
   profile: "profile",
@@ -37,6 +38,8 @@ export const KEYS = {
   workoutLinks: "workout-links",
   /** 就醫紀錄: date, department, why she went, what she was told. */
   clinicVisits: "clinic-visits",
+  /** 排定的檢查: a suggestion she has put a date on. */
+  examPlans: "exam-plans",
   calorieOverride: "calorie-target-override",
   anthropicKey: "anthropic-api-key",
   geminiKey: "gemini-api-key",
@@ -244,6 +247,16 @@ export async function saveVisits(visits) {
   return clean;
 }
 
+export async function loadPlans() {
+  return normalizePlans(await readArray(KEYS.examPlans));
+}
+
+export async function savePlans(plans) {
+  const clean = normalizePlans(plans);
+  await writeJson(KEYS.examPlans, clean);
+  return clean;
+}
+
 export async function loadWorkoutLinks() {
   return normalizeLinks(await readJson(KEYS.workoutLinks, {}));
 }
@@ -289,6 +302,7 @@ export const BACKUP_FIELDS = [
   "healthReports",
   "workoutLinks",
   "clinicVisits",
+  "examPlans",
 ];
 
 /** Assemble a backup from values already in hand. Used by the export screen. */
@@ -311,6 +325,7 @@ export async function buildBackup() {
     healthReports: await loadReports(),
     workoutLinks: await loadWorkoutLinks(),
     clinicVisits: await loadVisits(),
+    examPlans: await loadPlans(),
   });
 }
 
@@ -369,6 +384,10 @@ export async function restoreBackup(data) {
   if (Array.isArray(data.clinicVisits)) {
     const saved = await saveVisits(data.clinicVisits);
     if (saved.length) restored.push(`就醫紀錄 ${saved.length} 筆`);
+  }
+  if (Array.isArray(data.examPlans)) {
+    const saved = await savePlans(data.examPlans);
+    if (saved.length) restored.push(`排定的檢查 ${saved.length} 筆`);
   }
 
   return restored;
