@@ -489,6 +489,7 @@ export default function HealthAnalysis({
   onSavePlan,
   onDeletePlan,
   onTogglePlanDone,
+  onAddToCalendar,
   today = todayStr(),
 }) {
   const [draft, setDraft] = useState(null);
@@ -819,6 +820,7 @@ export default function HealthAnalysis({
         onSavePlan={onSavePlan}
         onDeletePlan={onDeletePlan}
         onTogglePlanDone={onTogglePlanDone}
+        onAddToCalendar={onAddToCalendar}
         today={today}
       />
 

@@ -11,7 +11,13 @@
  *      and 醫師建議 is stored and shown exactly as she typed it. The app does
  *      not read either field to decide anything; it has no business
  *      paraphrasing a doctor.
- *   3. **建議安排的檢查** — what to book and which department, with the reason
+ *   3. **建議安排的檢查** — collapsed, because it is reference. What she has
+ *      actually scheduled is listed above the fold: an exam booked two months
+ *      out is too far off for the reminder card, and hiding it inside a closed
+ *      card would mean it appeared nowhere at all. Each one can be handed to
+ *      the phone's calendar.
+ *
+ *      The suggestions themselves: what to book and which department, with the reason
  *      taken from her own report. "Ask a doctor" is honest but not much help;
  *      for someone who has never had to navigate a hospital's twenty
  *      departments, naming the desk is most of the work. It sits after the log
@@ -175,6 +181,7 @@ export default function ClinicVisits({
   onSavePlan,
   onDeletePlan,
   onTogglePlanDone,
+  onAddToCalendar,
   today = todayStr(),
 }) {
   const [draft, setDraft] = useState(null);
@@ -185,6 +192,7 @@ export default function ClinicVisits({
   const [showSuggestions, setShowSuggestions] = useState(false);
   /** Which suggestion's date field is open, or "custom" for a blank one. */
   const [planDraft, setPlanDraft] = useState(null);
+  const [showAllPlans, setShowAllPlans] = useState(false);
 
   const reminders = useMemo(() => dueReminders(visits, today), [visits, today]);
   const dueExams = useMemo(() => duePlans(plans, today), [plans, today]);
@@ -336,6 +344,51 @@ export default function ClinicVisits({
             {scheduled.length > 0 && <span className="fold-done">已排 {scheduled.length}</span>}
             <span className="fold-caret">{showSuggestions ? "▲" : "▼"}</span>
           </button>
+
+          {scheduled.length > 0 && (
+            <div className="plan-list">
+              {(showAllPlans ? scheduled : scheduled.slice(0, 3)).map((plan) => (
+                <div className="plan-row" key={plan.id}>
+                  <div className="plan-main">
+                    <div className="plan-when">{plan.date}</div>
+                    <div className="plan-what">
+                      {plan.department ? `${plan.department}・` : ""}
+                      {plan.exam || "排定的檢查"}
+                    </div>
+                    {plan.note && <div className="plan-note">{plan.note}</div>}
+                    <div className="plan-acts">
+                      <button type="button" className="inline-toggle" onClick={() => setPlanDraft({ ...plan })}>
+                        改時間
+                      </button>
+                      <button type="button" className="inline-toggle" onClick={() => onTogglePlanDone(plan.id, true)}>
+                        已完成
+                      </button>
+                      <button type="button" className="inline-toggle" onClick={() => onDeletePlan(plan.id)}>
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary plan-cal"
+                    onClick={() => onAddToCalendar(plan)}
+                  >
+                    <CalendarPlus size={13} /> 加入行事曆
+                  </button>
+                </div>
+              ))}
+              {scheduled.length > 3 && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-block"
+                  style={{ marginTop: "4px" }}
+                  onClick={() => setShowAllPlans((v) => !v)}
+                >
+                  {showAllPlans ? "收起" : `展開全部 ${scheduled.length} 項排定`}
+                </button>
+              )}
+            </div>
+          )}
 
           {showSuggestions && (
             <>

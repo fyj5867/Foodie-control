@@ -17,7 +17,16 @@ import { summaryMet, CALORIE_CEILING } from "../lib/goals.js";
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
 /** How many days are shown before the "show more" button appears. */
-const INITIAL_DAYS = 5;
+/**
+ * How many days open by default.
+ *
+ * Three, not five: a day of meals with photos is most of a screen, so five
+ * pushed everything below the diary out of reach. Three covers 「最近」 for
+ * anything she would actually check without scrolling, and the rest is one
+ * tap away. The same number is used by every other record list in the app so
+ * they behave alike.
+ */
+const INITIAL_DAYS = 3;
 
 function dayLabel(date) {
   if (date === todayStr()) return "今天";

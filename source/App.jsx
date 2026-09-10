@@ -105,6 +105,7 @@ import {
 } from "./lib/storage.js";
 import { upsertVisit, removeVisit, markVisitDone } from "./lib/visits.js";
 import { upsertPlan, removePlan, markPlanDone } from "./lib/examPlans.js";
+import { buildIcs, icsFilename } from "./lib/calendar.js";
 import HealthAnalysis from "./components/HealthAnalysis.jsx";
 import WorkoutSuggestions from "./components/WorkoutSuggestions.jsx";
 import WeeklyPlanCard from "./components/WeeklyPlanCard.jsx";
@@ -1217,6 +1218,52 @@ export default function App() {
     } catch (e) {
       flashSaved("儲存失敗，請再試一次");
       return next;
+    }
+  }
+
+  /**
+   * Hand a scheduled exam to the phone's calendar.
+   *
+   * A web page cannot write to the calendar — there is no API for it. What it
+   * can do is produce the .ics every calendar app reads: on iOS, opening one
+   * brings up 「加入行事曆」 with the event already filled in.
+   *
+   * The share sheet is tried first because on a phone that is where it wants
+   * to go, and a plain download falls back for desktop. A cancelled share is
+   * not a failure and must not then force a download — that would leave a
+   * file she deliberately declined sitting in Downloads.
+   */
+  async function handleAddToCalendar(plan) {
+    const text = buildIcs(plan);
+    if (!text) return;
+    const filename = icsFilename(plan);
+    const blob = new Blob([text], { type: "text/calendar;charset=utf-8" });
+
+    try {
+      const file = new File([blob], filename, { type: "text/calendar" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "加入行事曆" });
+        flashSaved("已開啟行事曆選單");
+        return;
+      }
+    } catch (e) {
+      /* AbortError just means she closed the sheet. Falling through to a
+         download would save a file she just declined. */
+      if (e && e.name === "AbortError") return;
+    }
+
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      flashSaved("已下載行事曆檔案，點開即可加入");
+    } catch (e) {
+      flashSaved("加入行事曆失敗，請再試一次");
     }
   }
 
@@ -2988,6 +3035,24 @@ export default function App() {
           font-size:11px; font-weight:700; color:var(--green);
           background:var(--green-soft); border-radius:999px; padding:2px 9px;
         }
+        .plan-row{
+          display:flex; align-items:flex-start; gap:8px;
+          border-radius:10px; padding:9px 10px; margin-bottom:6px;
+          background:var(--brand-soft);
+          border-left:4px solid var(--brand);
+        }
+        .plan-row.is-done{ background:var(--surface-2); border-left-color:var(--line); opacity:0.7; }
+        .plan-main{ flex:1; min-width:0; }
+        .plan-when{ font-family:'JetBrains Mono', monospace; font-weight:700; font-size:13.5px; }
+        .plan-what{ font-size:13px; font-weight:700; margin-top:2px; overflow-wrap:anywhere; }
+        .plan-note{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; line-height:1.6; }
+        .plan-acts{ display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:5px; }
+        .plan-acts .inline-toggle{ margin-top:0; }
+        .plan-cal{
+          flex-shrink:0; padding:6px 9px; font-size:11.5px;
+          display:inline-flex; align-items:center; gap:4px;
+        }
+
         .sug-book-btn{ margin-top:8px; padding:6px 12px; font-size:12px; }
         .sug-booked{
           margin-top:8px; padding:7px 9px; border-radius:8px;
@@ -4004,6 +4069,7 @@ export default function App() {
               onSavePlan={handleSavePlan}
               onDeletePlan={handleDeletePlan}
               onTogglePlanDone={handleTogglePlanDone}
+              onAddToCalendar={handleAddToCalendar}
             />
           )}
 
@@ -4914,6 +4980,7 @@ function ExerciseTab({
   /** The 運動建議 card, rendered just above 日常小習慣. */
   suggestions,
 }) {
+  const [showAllExercise, setShowAllExercise] = useState(false);
   const pctForBar = Math.min(feedback.pct, 100);
 
   return (
@@ -5032,7 +5099,9 @@ function ExerciseTab({
           點分鐘數旁的 ✏️ 圖示可以直接修改時間。
         </p>
         {thisWeekEntries.length === 0 && <p className="food-log-empty">這週還沒有運動紀錄，記錄第一筆吧。</p>}
-        {thisWeekEntries.map((entry) => (
+        {/* Three open, the rest folded — the same rule every record list in
+            the app follows, so none of them surprises her. */}
+        {(showAllExercise ? thisWeekEntries : thisWeekEntries.slice(0, 3)).map((entry) => (
           <div className="record-row" key={entry.id}>
             <div>
               <div className="record-date">
@@ -5055,6 +5124,16 @@ function ExerciseTab({
             </button>
           </div>
         ))}
+        {thisWeekEntries.length > 3 && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-block"
+            style={{ marginTop: "10px" }}
+            onClick={() => setShowAllExercise((v) => !v)}
+          >
+            {showAllExercise ? "收起" : `展開全部 ${thisWeekEntries.length} 筆`}
+          </button>
+        )}
       </div>
 
       {suggestions}
