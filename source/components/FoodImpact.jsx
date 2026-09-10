@@ -14,8 +14,50 @@
  * general nutrition is what she can already read anywhere.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { foodImpact, personalHeadline } from "../lib/nutritionTags.js";
+
+/**
+ * The diary strip: chips, and the explanation behind whichever one is tapped.
+ *
+ * The chips alone were a summary of a summary — 「高鈉」 with nothing behind it
+ * is a label, not information. Opening every explanation instead would undo
+ * the point of a compact strip, so one opens at a time: tap a chip to see why
+ * it is there, tap it again to close.
+ */
+function CompactImpact({ impact }) {
+  const [openKey, setOpenKey] = useState(null);
+  const all = [...impact.burdens, ...impact.benefits];
+  const open = all.find((item) => item.key === openKey) || null;
+
+  return (
+    <div className="fi-compact">
+      <div className="fi-chips">
+        {all.map((item) => (
+          <button
+            type="button"
+            key={item.key}
+            className={`fi-chip ${item.kind} ${item.personal ? "is-personal" : ""} ${
+              openKey === item.key ? "is-open" : ""
+            }`}
+            aria-expanded={openKey === item.key}
+            onClick={() => setOpenKey(openKey === item.key ? null : item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {open && (
+        <div className={`fi-open ${open.kind}`}>
+          {open.personal && <div className="fi-personal">你的 {open.personal}</div>}
+          <div className="fi-text">{open.text}</div>
+          {open.risk && <div className="fi-risk">{open.risk}</div>}
+          {open.swap && <div className="fi-swap">→ {open.swap}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ImpactRow({ item }) {
   return (
@@ -35,22 +77,7 @@ export default function FoodImpact({ tags = [], report = null, gender = "female"
   const impact = foodImpact({ tags, report, gender });
   if (!impact.burdens.length && !impact.benefits.length) return null;
 
-  if (compact) {
-    return (
-      <div className="fi-chips">
-        {impact.burdens.map((item) => (
-          <span className={`fi-chip burden ${item.personal ? "is-personal" : ""}`} key={item.key}>
-            {item.label}
-          </span>
-        ))}
-        {impact.benefits.map((item) => (
-          <span className="fi-chip benefit" key={item.key}>
-            {item.label}
-          </span>
-        ))}
-      </div>
-    );
-  }
+  if (compact) return <CompactImpact impact={impact} />;
 
   const headline = personalHeadline(impact);
 

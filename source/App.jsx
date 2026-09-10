@@ -2733,6 +2733,17 @@ export default function App() {
         .fi-swap{ font-size:10.5px; color:var(--brand); line-height:1.6; margin-top:2px; }
         .fi-note{ font-size:10px; color:var(--ink-soft); line-height:1.6; margin-top:6px; }
         .fi-chips{ display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+        .fi-compact button.fi-chip{
+          border:none; font-family:inherit; cursor:pointer;
+        }
+        .fi-compact .fi-chip.is-open{ box-shadow:inset 0 0 0 2px currentColor; }
+        .fi-open{
+          margin-top:6px; padding:8px 10px; border-radius:10px;
+          background:var(--surface-2);
+        }
+        .fi-open.burden{ background:var(--amber-soft); }
+        .fi-open.benefit{ background:var(--green-soft); }
+        .fi-open .fi-personal{ display:block; margin-bottom:3px; }
 
         /* --- 每週運動目標 ------------------------------------------------
            Seven day rows, not a table. Every row is a grid so the day chip,
@@ -3496,6 +3507,12 @@ export default function App() {
           cursor:pointer;
           margin-bottom:10px;
         }
+        /* Two buttons side by side, the same size. A <label> wrapping a file
+           input and a <button> are not interchangeable by default: the label
+           carries .photo-input-label's bottom margin and the button does not,
+           which is why 匯入備份 and 匯出備份 came out different heights. */
+        .btn-row{ display:flex; gap:8px; align-items:stretch; }
+        .btn-row > .btn{ flex:1; margin:0; }
         .photo-input-label input{ display:none; }
 
         .spin{ animation:spin 1s linear infinite; }
@@ -3654,6 +3671,21 @@ export default function App() {
           cursor:pointer;
           font-family:inherit;
         }
+        /* A card that is closed until asked for: title, count, caret. */
+        .fold-head{
+          display:flex; align-items:center; gap:8px; width:100%;
+          background:none; border:none; padding:0; cursor:pointer;
+          font-family:inherit; text-align:left; color:var(--ink);
+        }
+        .fold-title{
+          font-family:'Noto Serif TC', serif; font-weight:700; font-size:16px;
+        }
+        .fold-count{
+          font-size:11px; font-weight:700; color:var(--brand);
+          background:var(--brand-soft); border-radius:999px; padding:2px 9px;
+        }
+        .fold-caret{ margin-left:auto; font-size:9px; color:var(--ink-soft); }
+
         .memory-row{
           display:flex;
           align-items:center;
@@ -4390,11 +4422,11 @@ function ProfileTab({
           任何原因造成資料不見時，都可以用備份檔案救回。點「匯出備份」會跳出分享選單，
           可以選擇存到 Google Drive、iCloud 雲端硬碟或其他雲端空間。
         </p>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={onExportBackup}>
+        <div className="btn-row">
+          <button type="button" className="btn btn-secondary" onClick={onExportBackup}>
             匯出備份
           </button>
-          <label className="btn btn-secondary photo-input-label" style={{ flex: 1 }}>
+          <label className="btn btn-secondary photo-input-label">
             匯入備份
             <input
               type="file"
@@ -4724,37 +4756,37 @@ function DietTab({
 
       {remembered.length > 0 && (
         <div className="card">
-          <div className="section-title" style={{ marginBottom: "4px" }}>
-            我的熱量標準值
-          </div>
-          <p style={{ fontSize: "11.5px", color: "var(--ink-soft)", margin: "0 0 8px", lineHeight: 1.6 }}>
-            你改過熱量的食物會記在這裡，下次拍到同一樣東西就直接用這個數字，不必再改一次。
-            數字記錯了就刪掉，下次會重新讓 AI 估。
-          </p>
-          {(showMemory ? remembered : remembered.slice(0, 3)).map((item) => (
-            <div className="memory-row" key={item.key}>
-              <span className="memory-name">{item.name}</span>
-              <span className="memory-cal">{item.calories}</span>
-              <span className="memory-times">大卡{item.times > 1 ? `・改過 ${item.times} 次` : ""}</span>
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label={`刪除 ${item.name} 的標準值`}
-                onClick={() => onForgetCalories(item.name)}
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-          {remembered.length > 3 && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-block"
-              style={{ marginTop: "10px" }}
-              onClick={() => setShowMemory((v) => !v)}
-            >
-              {showMemory ? "收起" : `展開全部 ${remembered.length} 項`}
-            </button>
+          {/* Closed by default. These figures do their work silently when a
+              photo is taken; the only reason to open this is to correct or
+              delete one, and that is rare. */}
+          <button type="button" className="fold-head" onClick={() => setShowMemory((v) => !v)}>
+            <span className="fold-title">我的熱量標準值</span>
+            <span className="fold-count">{remembered.length} 項</span>
+            <span className="fold-caret">{showMemory ? "▲" : "▼"}</span>
+          </button>
+
+          {showMemory && (
+            <>
+              <p style={{ fontSize: "11.5px", color: "var(--ink-soft)", margin: "8px 0", lineHeight: 1.6 }}>
+                你改過熱量的食物會記在這裡，下次拍到同一樣東西就直接用這個數字，不必再改一次。
+                數字記錯了就刪掉，下次會重新讓 AI 估。
+              </p>
+              {remembered.map((item) => (
+                <div className="memory-row" key={item.key}>
+                  <span className="memory-name">{item.name}</span>
+                  <span className="memory-cal">{item.calories}</span>
+                  <span className="memory-times">大卡{item.times > 1 ? `・改過 ${item.times} 次` : ""}</span>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`刪除 ${item.name} 的標準值`}
+                    onClick={() => onForgetCalories(item.name)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </>
           )}
         </div>
       )}

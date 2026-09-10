@@ -7,14 +7,16 @@
  *      ones are never aged out: a 回診 missed three months ago matters more
  *      than one due next week, and dropping it would be the app deciding for
  *      her that it stopped mattering.
- *   2. **建議安排的檢查** — what to book and which department, with the reason
- *      taken from her own report. "Ask a doctor" is honest but not much help;
- *      for someone who has never had to navigate a hospital's twenty
- *      departments, naming the desk is most of the work.
- *   3. **就醫紀錄** — the editable log. 病症 is her own words for why she went,
+ *   2. **就醫紀錄** — the editable log. 病症 is her own words for why she went,
  *      and 醫師建議 is stored and shown exactly as she typed it. The app does
  *      not read either field to decide anything; it has no business
  *      paraphrasing a doctor.
+ *   3. **建議安排的檢查** — what to book and which department, with the reason
+ *      taken from her own report. "Ask a doctor" is honest but not much help;
+ *      for someone who has never had to navigate a hospital's twenty
+ *      departments, naming the desk is most of the work. It sits after the log
+ *      because the log is what makes it accurate — a visit recorded here is
+ *      what tells the suggestions she has already been.
  */
 
 import React, { useMemo, useState } from "react";
@@ -140,45 +142,6 @@ export default function ClinicVisits({
         </div>
       )}
 
-      {(outstanding.length > 0 || covered.length > 0) && (
-        <div className="card">
-          <div className="section-title">
-            <Stethoscope size={17} /> 建議安排的檢查
-          </div>
-          <p className="fine-print">
-            依你報告上的數值和年齡列出來的，含檢查項目與掛哪一科。要不要做、什麼時候做請由醫師決定。
-          </p>
-
-          {outstanding.map((s) => (
-            <div className="sug-row" key={s.id}>
-              <div className="sug-head">
-                <span className="sug-dept">{s.department}</span>
-                <span className="sug-exam">{s.exam}</span>
-              </div>
-              <div className="sug-why">{s.why}</div>
-              {s.note && <div className="sug-note">{s.note}</div>}
-              <div className="sug-source">{s.source}</div>
-            </div>
-          ))}
-
-          {needsAgeForProgramme(profile) && (
-            <p className="fine-print">
-              個人資料裡填了年齡之後，這裡還會加上國健署依年齡提供的公費篩檢項目。
-            </p>
-          )}
-
-          {covered.length > 0 && (
-            <div className="sug-covered">
-              {covered.map((s) => (
-                <div key={s.id}>
-                  ✓ {s.department}・{s.exam}（{s.covered} 已看過）
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       <div className="card">
         <div className="section-title">就醫紀錄</div>
 
@@ -255,6 +218,45 @@ export default function ClinicVisits({
           </button>
         )}
       </div>
+      {(outstanding.length > 0 || covered.length > 0) && (
+        <div className="card">
+          <div className="section-title">
+            <Stethoscope size={17} /> 建議安排的檢查
+          </div>
+          <p className="fine-print">
+            依你報告上的數值和年齡列出來的，含檢查項目與掛哪一科。要不要做、什麼時候做請由醫師決定。
+          </p>
+
+          {outstanding.map((s) => (
+            <div className="sug-row" key={s.id}>
+              <div className="sug-head">
+                <span className="sug-dept">{s.department}</span>
+                <span className="sug-exam">{s.exam}</span>
+              </div>
+              <div className="sug-why">{s.why}</div>
+              {s.note && <div className="sug-note">{s.note}</div>}
+              <div className="sug-source">{s.source}</div>
+            </div>
+          ))}
+
+          {needsAgeForProgramme(profile) && (
+            <p className="fine-print">
+              個人資料裡填了年齡之後，這裡還會加上國健署依年齡提供的公費篩檢項目。
+            </p>
+          )}
+
+          {covered.length > 0 && (
+            <div className="sug-covered">
+              {covered.map((s) => (
+                <div key={s.id}>
+                  ✓ {s.department}・{s.exam}（{s.covered} 已看過）
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
     </>
   );
 }
