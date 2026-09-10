@@ -193,6 +193,44 @@ tags：請標出這一餐「實際看得到」的食材與烹調方式，只能�
 - light_cooking：清蒸、水煮、烤、涼拌、氣炸`;
 
 /**
+ * Reading the body-composition numbers off a scale.
+ *
+ * The daily 體態紀錄 was eight numbers typed in by hand after every weigh-in,
+ * which is the kind of chore that quietly ends a tracking habit. A web app
+ * cannot read Apple Health — there is no browser API for HealthKit, and that
+ * is not a gap this app can close. What it can do is read the numbers off a
+ * photograph of the scale's own display, or off a screenshot of the OMRON
+ * connect / Apple 健康 screen, which needs nothing from Apple at all.
+ *
+ * Same rule as the lab report: transcribe, do not interpret. Everything that
+ * decides what a number means lives in lib/health.js.
+ */
+export const BODY_PROMPT = `這是一張體重計顯示螢幕、體組成計印出的單子，或是健康 App
+的畫面截圖。請你「只做一件事」：把上面顯示的數字抄下來。不要解讀、不要評論、不要給建議。
+
+請「只」回傳純 JSON（不要任何前後文字、不要 markdown 符號），格式如下：
+{"date": "YYYY-MM-DD 或 null", "values": {"欄位代號": 數字}, "unreadable": ["看不清楚的項目"], "confidence": "low或medium或high"}
+
+values 只能使用下列欄位代號，畫面上沒有的就不要放進去：
+- weight：體重，kg
+- bmi：BMI／身體質量指數
+- bodyFat：體脂肪率，%
+- visceralFat：內臟脂肪等級（通常是 1-30 的整數）
+- skeletalMuscle：骨骼肌率，%
+- bodyAge：體年齡，歲
+- bmr：基礎代謝率，kcal
+- waist：腰圍，cm
+- sleepHours：睡眠時數，小時（例如 7 小時 30 分請填 7.5）
+
+規則：
+1. 只抄「這一次的量測結果」。如果畫面上同時有歷史紀錄或平均值，請抄最新的那一筆。
+2. 看不清楚、被反光遮住、或你不確定是哪一項，就不要放進 values，改把名稱放進
+   unreadable。**寧可漏掉也不要猜。**
+3. 單位不同請換算（體重若是台斤或磅請換算成公斤）。
+4. 如果畫面上有日期，請填進 date；沒有就填 null。
+5. 如果整張照片看不出是體重計或健康數據畫面，values 回傳空物件 {}，confidence 填 low。`;
+
+/**
  * The report prompt asks the model to TRANSCRIBE, not to interpret.
  *
  * Judging what a value means is done in lib/health.js against published

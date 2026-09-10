@@ -16,6 +16,7 @@ import {
   Loader2,
   Check,
   RefreshCw,
+  X,
 } from "lucide-react";
 import {
   LineChart,
@@ -88,7 +89,8 @@ import DailyCoach from "./components/DailyCoach.jsx";
 import { coachSlot, dailyMessage, eveningSummary } from "./lib/coach.js";
 import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM, KEYS, loadFoodMemory, saveFoodMemory } from "./lib/storage.js";
 import { remember, forget, lookup, suggestion, sortedMemory, isLearnable } from "./lib/foodMemory.js";
-import { askAboutImage, FOOD_PROMPT, LAB_PROMPT } from "./lib/vision.js";
+import { askAboutImage, FOOD_PROMPT, LAB_PROMPT, BODY_PROMPT } from "./lib/vision.js";
+import { applyReadingToForm } from "./lib/bodyScan.js";
 import { upsertReport, removeReport, latestReport } from "./lib/reports.js";
 import {
   loadReports,
@@ -169,6 +171,18 @@ function compressImageDataUrl(dataUrl, maxDim = 180, quality = 0.55) {
  */
 async function analyzeFoodPhoto(base64Data, mediaType, provider, apiKey, geminiModel) {
   return askAboutImage({ prompt: FOOD_PROMPT, base64Data, mediaType, provider, apiKey, geminiModel });
+}
+
+/**
+ * Read the numbers off a scale's display.
+ *
+ * A web page cannot read Apple 健康 — there is no browser API for HealthKit —
+ * so the daily 體態紀錄 was eight numbers typed in after every weigh-in. A
+ * photo of the scale (or of the OMRON connect / Apple 健康 screen) gets the
+ * same numbers in one tap and needs nothing from Apple.
+ */
+async function analyzeBodyPhoto(base64Data, mediaType, provider, apiKey, geminiModel) {
+  return askAboutImage({ prompt: BODY_PROMPT, base64Data, mediaType, provider, apiKey, geminiModel });
 }
 
 /**
@@ -780,6 +794,9 @@ export default function App() {
   const [workoutLinks, setWorkoutLinks] = useState({});
   /** 就醫紀錄 — the other half of every "go and ask a doctor". */
   const [visits, setVisits] = useState([]);
+  /** Reading 體態紀錄 off a photo of the scale. */
+  const [bodyScanning, setBodyScanning] = useState(false);
+  const [bodyScanNote, setBodyScanNote] = useState(null);
   /* Which diary rows had their calories actually typed in this session. A
      figure only counts as a correction if the person changed it — reading
      back an untouched row would teach the AI's own guess as a standard. */
@@ -1104,6 +1121,38 @@ export default function App() {
     const mediaType = file.type || "image/jpeg";
     const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
     return analyzeLabReport(base64, mediaType, aiProvider, activeKey, geminiModel);
+  }
+
+  /**
+   * Fill the 體態紀錄 form from a photo of the scale.
+   *
+   * The reading lands in the form rather than in storage: it is a draft until
+   * she presses 儲存紀錄, exactly as if she had typed it. Fields the photo did
+   * not contain are left alone — a scale that does not measure waist must not
+   * wipe the waist she typed a moment ago.
+   */
+  async function handleBodyPhoto(file) {
+    if (!file) return;
+    setBodyScanning(true);
+    setBodyScanNote(null);
+    try {
+      const base64 = await fileToBase64(file);
+      const mediaType = file.type || "image/jpeg";
+      const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
+      const reading = await analyzeBodyPhoto(base64, mediaType, aiProvider, activeKey, geminiModel);
+      const applied = applyReadingToForm(recordForm, reading);
+      setRecordForm(applied.form);
+      setBodyScanNote({
+        filled: applied.filled,
+        rejected: applied.rejected,
+        unreadable: applied.unreadable,
+        error: applied.filled.length ? "" : "這張照片讀不到數值，可以拍清楚一點，或直接手動輸入。",
+      });
+    } catch (e) {
+      setBodyScanNote({ filled: [], rejected: [], unreadable: [], error: e.message || "辨識失敗，請再試一次。" });
+    } finally {
+      setBodyScanning(false);
+    }
   }
 
   async function handleSaveReport(draft) {
@@ -2989,6 +3038,17 @@ export default function App() {
         }
         .trend-line strong{ color:var(--ink); font-family:'JetBrains Mono', monospace; }
 
+        .scan-row{ display:flex; gap:8px; }
+        .scan-btn{ flex:1; padding:9px 8px; font-size:12.5px; }
+        .scan-note{
+          display:flex; gap:6px; align-items:flex-start;
+          font-size:11.5px; line-height:1.65;
+          background:var(--brand-soft); border-radius:10px;
+          padding:9px 10px; margin-bottom:10px;
+        }
+        .scan-note.is-error{ background:var(--amber-soft); }
+        .scan-note .icon-btn{ margin-left:auto; flex-shrink:0; }
+
         .muted-line{ font-size:11.5px; color:var(--ink-soft); line-height:1.65; margin:0 0 10px; }
         .tone-green{ color:var(--green); }
         .tone-yellow{ color:var(--yellow); }
@@ -3863,6 +3923,10 @@ export default function App() {
               onDeleteRecord={handleDeleteRecord}
               onEditRecord={handleEditRecord}
               chartData={chartData}
+              onBodyPhoto={handleBodyPhoto}
+              bodyScanning={bodyScanning}
+              bodyScanNote={bodyScanNote}
+              onDismissBodyScan={() => setBodyScanNote(null)}
             />
           )}
         </main>
@@ -4916,7 +4980,20 @@ function ExerciseTab({
   );
 }
 
-function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord, onDeleteRecord, onEditRecord, chartData }) {
+function TrackingTab({
+  profile,
+  records,
+  recordForm,
+  setRecordForm,
+  onAddRecord,
+  onDeleteRecord,
+  onEditRecord,
+  chartData,
+  onBodyPhoto,
+  bodyScanning,
+  bodyScanNote,
+  onDismissBodyScan,
+}) {
   const [showFullHistory, setShowFullHistory] = useState(false);
   const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
   const isEditing = records.some((r) => r.date === recordForm.date);
@@ -4976,6 +5053,69 @@ function TrackingTab({ profile, records, recordForm, setRecordForm, onAddRecord,
         <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
           點下方「歷史紀錄」裡的任一筆，就會載入這裡讓你修改。
         </p>
+
+        {/* Reading the scale instead of typing it.
+            A web page cannot read Apple 健康 — there is no browser API for
+            HealthKit — so the practical way to stop typing eight numbers a day
+            is to photograph the display. Works on any scale, needs nothing from
+            Apple, and the numbers land in the form where they can be corrected
+            before saving. */}
+        <div className="scan-row">
+          <label className="btn btn-secondary photo-input-label scan-btn">
+            <Camera size={15} /> 拍體重計自動填入
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(e) => {
+                onBodyPhoto(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <label className="btn btn-secondary photo-input-label scan-btn">
+            <ImageIcon size={15} /> 相簿
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                onBodyPhoto(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+        <p style={{ fontSize: "10.5px", color: "var(--ink-soft)", margin: "6px 0 10px", lineHeight: 1.6 }}>
+          拍體重計的顯示螢幕，或 OMRON connect／Apple 健康的畫面截圖都可以。讀出來的數字會填進下面的欄位，
+          你核對後再按儲存。照片不會被留下來。
+        </p>
+
+        {bodyScanning && (
+          <div className="analyzing-row" style={{ justifyContent: "center", padding: "10px 0" }}>
+            <Loader2 size={16} className="spin" /> 正在讀取數值…
+          </div>
+        )}
+
+        {bodyScanNote && (
+          <div className={`scan-note ${bodyScanNote.error ? "is-error" : ""}`}>
+            <Info size={13} />
+            <span>
+              {bodyScanNote.error ? (
+                bodyScanNote.error
+              ) : (
+                <>
+                  已填入 {bodyScanNote.filled.join("、")}。請核對後再儲存。
+                  {bodyScanNote.rejected.length > 0 &&
+                    `　${bodyScanNote.rejected.map((r) => r.label).join("、")}讀到的數字不合理，沒有填入。`}
+                  {bodyScanNote.unreadable.length > 0 && `　看不清楚：${bodyScanNote.unreadable.join("、")}。`}
+                </>
+              )}
+            </span>
+            <button type="button" className="icon-btn" aria-label="關閉" onClick={onDismissBodyScan}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
         <form onSubmit={onAddRecord}>
           <div className="field">
             <label>日期</label>

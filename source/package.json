@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "build": "esbuild entry.jsx --bundle --minify --loader:.jsx=jsx --format=iife --define:process.env.NODE_ENV='\"production\"' --outfile=../app.bundle.js",
-    "test": "node tools/check-imports.mjs && node tools/test-health.mjs && node tools/test-goals.mjs && node tools/test-sprout.mjs && node tools/test-food-memory.mjs && node tools/test-labs.mjs && node tools/test-plan.mjs && node tools/test-workouts.mjs && node tools/test-backup.mjs && node tools/test-nutrition.mjs && node tools/test-visits.mjs && node tools/test-coach.mjs"
+    "test": "node tools/check-imports.mjs && node tools/test-health.mjs && node tools/test-goals.mjs && node tools/test-sprout.mjs && node tools/test-food-memory.mjs && node tools/test-labs.mjs && node tools/test-plan.mjs && node tools/test-workouts.mjs && node tools/test-backup.mjs && node tools/test-nutrition.mjs && node tools/test-visits.mjs && node tools/test-body-scan.mjs && node tools/test-coach.mjs"
   },
   "keywords": [],
   "author": "",

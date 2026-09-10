@@ -34,6 +34,7 @@ source/lib/workouts.js 運動建議的名單、排序與 YouTube 搜尋連結
 source/lib/nutritionTags.js 食材標籤 →「增加什麼負擔／幫助什麼」的文案與個人化比對
 source/lib/visits.js   就醫紀錄（日期／科別／病症／醫師建議／回診日）與回診提醒
 source/lib/screening.js 建議檢查項目與科別（依報告數值＋年齡的公費篩檢）
+source/lib/bodyScan.js 從體重計照片讀出體態數值填進表單（合理範圍把關）
 source/lib/useGarden.js 把達標判定與每日摘要包成 React hook 供 App.jsx 使用
 
 source/components/Sprout.jsx      植物（八階段 × 四活力）。**這個檔案是產生出來的**，
@@ -442,6 +443,17 @@ node source/tools/serve.mjs 4173
 - **Apple Watch／Apple 健康連動做不到，不要再評估。** HealthKit 只開放給原生 iOS
   App，網頁沒有這個 API。要做到必須整個改寫成原生 App（Mac＋Xcode＋開發者帳號年費），
   而且三項裡只有運動分鐘能自動，不值得
+- **但「每天手動輸入」這個真正的痛點是可以解的，而且不需要 Apple 配合：拍照。**
+  使用者問的其實不是「要不要接 HealthKit」，是「量完 OMRON 之後能不能不要打八個
+  數字」。所以體態紀錄多了「拍體重計自動填入」（`lib/bodyScan.js` ＋
+  `BODY_PROMPT`）：拍體重計的顯示螢幕，或 OMRON connect／Apple 健康的截圖都行。
+  **這條路任何體重計都適用、不綁 Apple、也不需要後端**，是這個架構下最好的解
+- 讀出來的數字**填進表單、不直接存檔**：它是草稿，直到她按儲存為止，跟自己打的
+  一樣可以改。照片同樣不留
+- **照片沒讀到的欄位絕對不能被清空。** 體重計不量腰圍，不該把她三十秒前打的腰圍
+  洗掉（`applyReadingToForm` 只寫有值的欄位，測試有擋）
+- 每個值一樣要過合理範圍（`BODY_FIELDS[].plausible`）：七段顯示器會被讀成
+  62.4 → 624，而 624% 體脂肪不是發現，是誤讀。被擋掉的會告訴她「這項請自己輸入」
 - **手機主動跳的推播提醒也做不到。** 純前端靜態網站沒有後端可以推送。提醒的實際做法
   是「傍晚打開 App 時，若還差一項就顯示」，搭配補登前一天（`canBackfill`）
 
