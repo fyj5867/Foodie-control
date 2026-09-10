@@ -93,14 +93,21 @@ function stamp(now) {
   );
 }
 
-/** What the calendar entry is called, and what it says. */
+/**
+ * What the calendar entry is called, where it is, and what it says.
+ *
+ * The hospital goes in LOCATION rather than into the title: that is the field
+ * a calendar app turns into a map link, and burying an address in the summary
+ * throws that away.
+ */
 export function describePlan(plan) {
   const parts = [plan.department, plan.exam].filter(Boolean);
   const title = parts.length ? parts.join("・") : "排定的檢查";
   const lines = [];
+  if (plan.doctor) lines.push(`醫師：${plan.doctor}`);
   if (plan.note) lines.push(plan.note);
   lines.push("由 Healthy Care 排定");
-  return { title, description: lines.join("\n") };
+  return { title, location: plan.hospital || "", description: lines.join("\n") };
 }
 
 /**
@@ -111,7 +118,7 @@ export function describePlan(plan) {
  */
 export function buildIcs(plan, now) {
   if (!plan || !plan.date) return null;
-  const { title, description } = describePlan(plan);
+  const { title, location, description } = describePlan(plan);
 
   const lines = [
     "BEGIN:VCALENDAR",
@@ -127,6 +134,7 @@ export function buildIcs(plan, now) {
     `DTSTART;VALUE=DATE:${toIcsDate(plan.date)}`,
     `DTEND;VALUE=DATE:${nextDay(plan.date)}`,
     `SUMMARY:${escapeText(title)}`,
+    ...(location ? [`LOCATION:${escapeText(location)}`] : []),
     `DESCRIPTION:${escapeText(description)}`,
     "BEGIN:VALARM",
     "TRIGGER:-P1D",

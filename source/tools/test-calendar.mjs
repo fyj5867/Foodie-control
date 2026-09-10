@@ -120,6 +120,63 @@ ok(
   describePlan(plan).description
 );
 
+
+/* --- 醫院與醫師 ---
+ * The hospital belongs in LOCATION rather than in the title: LOCATION is the
+ * field a calendar app turns into a map link, and a hospital name buried in
+ * SUMMARY is just text. The doctor has no field of its own in iCalendar, so
+ * the name goes at the top of the description, where it is the first thing
+ * read on the morning of the exam.
+ *
+ * CRLF is built from char codes here rather than written as an escape, because
+ * this file has been mangled once by a patch script that ate the backslashes
+ * and the test then failed to parse rather than failing an assertion. */
+const CRLF = String.fromCharCode(13, 10);
+const linesOf = (text) => text.split(CRLF);
+const unfold = (text) => text.split(CRLF + " ").join("");
+
+const withWhere = buildIcs({ ...plan, hospital: "台大醫院", doctor: "王大明醫師" }, NOW);
+check(
+  "the hospital becomes LOCATION",
+  linesOf(withWhere).find((l) => l.startsWith("LOCATION:")),
+  "LOCATION:台大醫院"
+);
+ok(
+  "the hospital is not smuggled into the title",
+  !linesOf(withWhere).some((l) => l.startsWith("SUMMARY:") && l.includes("台大醫院")),
+  linesOf(withWhere).find((l) => l.startsWith("SUMMARY:"))
+);
+ok(
+  "the doctor is named first in the description",
+  describePlan({ ...plan, doctor: "王大明醫師" }).description.startsWith("醫師：王大明醫師"),
+  describePlan({ ...plan, doctor: "王大明醫師" }).description
+);
+
+/* A suggestion she scheduled before knowing where is still a valid entry. An
+ * empty LOCATION line is not — some calendars show a blank location row. */
+ok("no hospital means no LOCATION line at all", !buildIcs(plan, NOW).includes("LOCATION"), buildIcs(plan, NOW));
+ok(
+  "no doctor means no empty 醫師 line",
+  !describePlan(plan).description.includes("醫師："),
+  describePlan(plan).description
+);
+
+/* Both together, with the note still there: the practical details of the day
+ * are the whole reason this ends up in the calendar and not just in the app. */
+const fullWhere = describePlan({ ...plan, hospital: "台大醫院", doctor: "王醫師", note: "早上空腹" });
+ok("the note survives alongside the doctor", fullWhere.description.includes("早上空腹"), fullWhere.description);
+ok("and so does where it came from", fullWhere.description.includes("Healthy Care"), fullWhere.description);
+
+/* Folding applies to LOCATION like any other line, and a long hospital name is
+ * Chinese — so this is the same byte-vs-character trap as the title. */
+const longWhere = buildIcs({ ...plan, hospital: "非常長的醫院名稱".repeat(6) }, NOW);
+for (const line of linesOf(longWhere)) ok("every line of a long location fits", bytes(line) <= 75, line);
+ok(
+  "unfolding restores the hospital intact",
+  unfold(longWhere).includes("非常長的醫院名稱".repeat(6)),
+  linesOf(unfold(longWhere)).find((l) => l.startsWith("LOCATION:"))
+);
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.log("\nFAILURES:\n" + failures.map((f) => "  " + f).join("\n"));

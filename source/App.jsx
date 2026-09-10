@@ -3057,6 +3057,7 @@ export default function App() {
         .plan-main{ flex:1; min-width:0; }
         .plan-when{ font-family:'JetBrains Mono', monospace; font-weight:700; font-size:13.5px; }
         .plan-what{ font-size:13px; font-weight:700; margin-top:2px; overflow-wrap:anywhere; }
+        .plan-where{ font-size:12px; color:var(--brand); font-weight:700; margin-top:2px; }
         .plan-note{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; line-height:1.6; }
         .plan-acts{ display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:5px; }
         .plan-acts .inline-toggle{ margin-top:0; }

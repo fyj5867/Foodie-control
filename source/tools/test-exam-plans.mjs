@@ -130,6 +130,53 @@ for (const rule of SCREENING_RULES) {
   ok(`${rule.id} can be scheduled`, Boolean(normalizePlan(draft)), rule.id);
 }
 
+
+/* --- 醫院與醫師 ---
+ * Both are optional on purpose: when the exam is still only a suggestion there
+ * is nothing to put there yet, and refusing to store the plan until she knows
+ * would push the date — the half that decides whether it happens — back out of
+ * reach. */
+check("a blank plan has room for both", [emptyPlan().hospital, emptyPlan().doctor], ["", ""]);
+
+const where = normalizePlan({
+  exam: "大腸鏡",
+  department: "肝膽腸胃科",
+  hospital: "  台大醫院  ",
+  doctor: "  王大明醫師 ",
+  date: "2026-10-05",
+});
+check("the hospital survives, trimmed", where.hospital, "台大醫院");
+check("and the doctor", where.doctor, "王大明醫師");
+
+const bare = normalizePlan({ exam: "大腸鏡", date: "2026-10-05" });
+ok("a plan with neither is still a plan", Boolean(bare), "scheduling must never require knowing where yet");
+check("missing ones are empty strings, not undefined", [bare.hospital, bare.doctor], ["", ""]);
+
+/* A backup file is plain text she can edit, so these are capped the same way
+ * every other free-text field is — cut, not rejected, because losing the whole
+ * plan over a long name would be the worse failure. */
+check(
+  "an absurd hospital name is cut",
+  normalizePlan({ exam: "x", date: "2026-10-05", hospital: "醫".repeat(200) }).hospital.length,
+  40
+);
+check(
+  "and an absurd doctor name",
+  normalizePlan({ exam: "x", date: "2026-10-05", doctor: "王".repeat(200) }).doctor.length,
+  20
+);
+
+/* The round trip the form actually does: fill both in, store it, read it back,
+ * and have the reminder card still know them. */
+const withWhere = upsertPlan([], {
+  ...emptyPlan({ id: "colonoscopy", exam: "大腸鏡", department: "肝膽腸胃科" }),
+  hospital: "馬偕醫院",
+  doctor: "李醫師",
+  date: "2026-11-02",
+});
+check("a stored plan keeps where and with whom", [withWhere[0].hospital, withWhere[0].doctor], ["馬偕醫院", "李醫師"]);
+check("and the reminder carries them too", duePlans(withWhere, "2026-10-26")[0].hospital, "馬偕醫院");
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.log("\nFAILURES:\n" + failures.map((f) => "  " + f).join("\n"));

@@ -141,6 +141,31 @@ function PlanForm({ draft, setDraft, onSave, onCancel, withName = false }) {
         </div>
       )}
 
+      {/* Hospital and doctor for both kinds of plan, not just the ones she
+          types in herself: on the day, the hospital is what gets her to the
+          right building and the doctor's name to the right desk. Both optional,
+          so scheduling a suggestion is still just a date. */}
+      <div className="field-row">
+        <div className="field">
+          <label>醫院／診所（選填）</label>
+          <input
+            type="text"
+            value={draft.hospital || ""}
+            placeholder="例：台大醫院"
+            onChange={(e) => set("hospital", e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label>醫師（選填）</label>
+          <input
+            type="text"
+            value={draft.doctor || ""}
+            placeholder="例：王醫師"
+            onChange={(e) => set("doctor", e.target.value)}
+          />
+        </div>
+      </div>
+
       <div className="field-row">
         <div className="field">
           <label>排定日期</label>
@@ -368,6 +393,11 @@ export default function ClinicVisits({
                       {plan.department ? `${plan.department}・` : ""}
                       {plan.exam || "排定的檢查"}
                     </div>
+                    {(plan.hospital || plan.doctor) && (
+                      <div className="plan-where">
+                        {[plan.hospital, plan.doctor].filter(Boolean).join("・")}
+                      </div>
+                    )}
                     {plan.note && <div className="plan-note">{plan.note}</div>}
                     <div className="plan-acts">
                       <button type="button" className="inline-toggle" onClick={() => setPlanDraft({ ...plan })}>

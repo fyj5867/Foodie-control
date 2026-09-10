@@ -48,6 +48,12 @@ export function emptyPlan(seed = {}) {
     examId: seed.examId || seed.id || "",
     exam: trim(seed.exam, 40),
     department: trim(seed.department, 20),
+    /* Where and with whom. Both optional: on the day itself, knowing the
+       hospital is what gets her to the right building, and the doctor's name
+       is what gets her to the right desk — but neither is knowable when the
+       exam is only a suggestion, so a plan is still valid without them. */
+    hospital: trim(seed.hospital, 40),
+    doctor: trim(seed.doctor, 20),
     date: "",
     note: "",
     done: false,
@@ -69,6 +75,8 @@ export function normalizePlan(raw, fallbackId) {
     examId: trim(raw.examId, 40),
     exam,
     department,
+    hospital: trim(raw.hospital, 40),
+    doctor: trim(raw.doctor, 20),
     date,
     note: trim(raw.note, 200),
     done: raw.done === true,
