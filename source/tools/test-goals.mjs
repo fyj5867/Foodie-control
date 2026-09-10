@@ -116,24 +116,35 @@ const otherDay = evaluateDay(D, {
 });
 check("yesterday's food does not count today", otherDay.calorie, false);
 
-/* --- stages --- */
-/* Eight stages, matching the Health Forest canvas artwork. Every key here
- * must have a drawing in components/Sprout.jsx. */
-check("0 days is seed", stageForDays(0).key, "seed");
-check("1 day is sprout", stageForDays(1).key, "sprout");
-check("3 days is shoot", stageForDays(3).key, "shoot");
-check("5 days still shoot", stageForDays(5).key, "shoot");
-check("6 days is seedling", stageForDays(6).key, "seedling");
-check("11 days is growing", stageForDays(11).key, "growing");
-check("17 days is mature", stageForDays(17).key, "mature");
-check("24 days is ready", stageForDays(24).key, "ready");
-check("29 days is still ready", stageForDays(29).key, "ready");
-check("30 days is the forest tree", stageForDays(30).key, "forest");
-check("next stage from 3 is seedling at 6", nextStageForDays(3).days, 6);
-check("no next stage at 30", nextStageForDays(30), null);
+/* --- stages ---
+ *
+ * Written against STAGES rather than against literal day numbers: the cycle
+ * length is a product decision that has changed once already, and a test that
+ * has to be rewritten every time it changes is a test that stops being read.
+ * What has to hold is the shape. */
 check("eight stages in all", STAGES.length, 8);
+check("day zero is the first stage", stageForDays(0).key, STAGES[0].key);
 check("the last stage lands exactly on a finished tree", STAGES[STAGES.length - 1].days, TREE_DAYS);
 ok("stage days only ever increase", STAGES.every((s, i) => i === 0 || s.days > STAGES[i - 1].days));
+
+/* Every stage is reached on its own day, and holds until the next one. */
+for (let i = 0; i < STAGES.length; i++) {
+  const stage = STAGES[i];
+  const next = STAGES[i + 1];
+  check(`${stage.days} days is ${stage.label}`, stageForDays(stage.days).key, stage.key);
+  if (next) {
+    check(`the day before ${next.label} is still ${stage.label}`, stageForDays(next.days - 1).key, stage.key);
+    check(`the next stage from ${stage.days} is ${next.label}`, nextStageForDays(stage.days).days, next.days);
+  }
+}
+check("no next stage once the tree is done", nextStageForDays(TREE_DAYS), null);
+
+/* The point of the spacing: something changes on screen often enough to be
+ * worth coming back for. This is what makes a shorter cycle motivating rather
+ * than just shorter. */
+const gaps = STAGES.slice(1).map((stage, i) => stage.days - STAGES[i].days);
+ok("no stage lasts more than a few days", Math.max(...gaps) <= Math.ceil(TREE_DAYS / 4), JSON.stringify(gaps));
+ok("the first change comes on day one", STAGES[1].days === 1, String(STAGES[1].days));
 
 /* Every stage must have a drawing. The artwork is transcribed from the
  * Health Forest canvas and keyed by these names, so adding a stage here
@@ -154,13 +165,14 @@ function metDays(n, startDaysAgo = 200) {
 }
 
 check("empty garden", gardenState([]).completedTrees, 0);
-check("29 met days finishes no tree", gardenState(metDays(29)).completedTrees, 0);
-check("29 met days is 29 into current", gardenState(metDays(29)).currentDays, 29);
-check("30 met days finishes one tree", gardenState(metDays(30)).completedTrees, 1);
-check("30 met days resets current to 0", gardenState(metDays(30)).currentDays, 0);
-check("96 met days is 3 trees", gardenState(metDays(96)).completedTrees, 3);
-check("96 met days leaves 6 growing", gardenState(metDays(96)).currentDays, 6);
-check("days to next tree from 6", gardenState(metDays(96)).daysToNextTree, TREE_DAYS - 6);
+/* Counted in cycles, so this still means the same thing if TREE_DAYS moves. */
+check("one day short finishes no tree", gardenState(metDays(TREE_DAYS - 1)).completedTrees, 0);
+check("and is that far into the current one", gardenState(metDays(TREE_DAYS - 1)).currentDays, TREE_DAYS - 1);
+check("a full cycle finishes one tree", gardenState(metDays(TREE_DAYS)).completedTrees, 1);
+check("and resets the current one", gardenState(metDays(TREE_DAYS)).currentDays, 0);
+check("three cycles and a bit is three trees", gardenState(metDays(TREE_DAYS * 3 + 6)).completedTrees, 3);
+check("with the remainder still growing", gardenState(metDays(TREE_DAYS * 3 + 6)).currentDays, 6);
+check("days to next tree from 6", gardenState(metDays(TREE_DAYS * 3 + 6)).daysToNextTree, TREE_DAYS - 6);
 
 /* --- unmet days never advance anything --- */
 const mixed = [...metDays(10, 100), { date: daysAgoStr(50), c: true, e: false, w: true }];

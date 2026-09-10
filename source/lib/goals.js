@@ -41,9 +41,21 @@ export const CALORIE_CEILING = 1500;
  */
 export const CALORIE_MIN_LOGGED = 500;
 
-/** One finished tree. 30 met days ≈ a month of full attendance; slipping a
- * few days just pushes the finish out, it never resets progress. */
-export const TREE_DAYS = 30;
+/**
+ * One finished tree.
+ *
+ * Fifteen met days, not thirty. A month of perfect attendance is a long way to
+ * go before anything visibly finishes, and the point of the garden is to be
+ * the reason to keep going — a reward that far out stops working as one.
+ * Slipping a day still never resets progress; it only pushes the finish out.
+ *
+ * **Changing this number re-reads the whole garden.** Trees are not stored;
+ * they are recomputed from the met-day history every time (see gardenState),
+ * so halving this doubles the number of finished trees she already has. That
+ * is the intended effect here — it is the same history, counted in shorter
+ * runs — but it means this constant can never be changed casually.
+ */
+export const TREE_DAYS = 15;
 
 /**
  * Growth stages within one plant, keyed on met days accumulated toward it.
@@ -53,15 +65,19 @@ export const TREE_DAYS = 30;
  * so the two lists have to stay in step. Days are spread over TREE_DAYS with
  * the early steps close together: the first few days are when a habit is
  * easiest to abandon, so that is where visible progress should come fastest.
+ *
+ * Over fifteen days that spacing means something changes on screen after
+ * almost every met day early on, and never more than three days pass without
+ * the plant looking different.
  */
 export const STAGES = [
   { key: "seed", label: "種子", days: 0, note: "開始養成" },
   { key: "sprout", label: "發芽", days: 1, note: "萌芽出土" },
-  { key: "shoot", label: "幼芽", days: 3, note: "兩葉成長" },
-  { key: "seedling", label: "小苗", days: 6, note: "葉片增加" },
-  { key: "growing", label: "成長", days: 11, note: "枝葉茂盛" },
-  { key: "mature", label: "成熟", days: 17, note: "花苞出現" },
-  { key: "ready", label: "破土", days: 24, note: "準備移植" },
+  { key: "shoot", label: "幼芽", days: 2, note: "兩葉成長" },
+  { key: "seedling", label: "小苗", days: 4, note: "葉片增加" },
+  { key: "growing", label: "成長", days: 6, note: "枝葉茂盛" },
+  { key: "mature", label: "成熟", days: 9, note: "花苞出現" },
+  { key: "ready", label: "破土", days: 12, note: "準備移植" },
   { key: "forest", label: "森林之樹", days: TREE_DAYS, note: "種入森林" },
 ];
 

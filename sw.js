@@ -2,7 +2,7 @@
 // update to app.bundle.js / index.html shows up immediately for anyone
 // online, instead of silently serving a stale cached copy forever.
 // Offline visitors still fall back to whatever was last cached.
-const CACHE_NAME = "healthy-care-v12";
+const CACHE_NAME = "healthy-care-v13";
 const APP_SHELL = ["./", "./index.html", "./app.bundle.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
