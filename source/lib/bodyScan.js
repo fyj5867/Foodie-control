@@ -19,6 +19,8 @@
  *     the thing that writes it. The photo itself is never stored.
  */
 
+import { splitSleep } from "./sleep.js";
+
 /** Field names exactly as 體態紀錄 stores them. Reading the wrong key returns
  * undefined and the value silently disappears, so they are listed once here. */
 export const BODY_FIELDS = [
@@ -30,7 +32,12 @@ export const BODY_FIELDS = [
   { key: "bodyAge", label: "體年齡", unit: "歲", decimals: 0, plausible: [10, 120] },
   { key: "bmr", label: "基礎代謝率", unit: "kcal", decimals: 0, plausible: [500, 4000] },
   { key: "waist", label: "腰圍", unit: "cm", decimals: 1, plausible: [40, 200] },
-  { key: "sleepHours", label: "睡眠時數", unit: "小時", decimals: 1, plausible: [0, 24] },
+  /* Sleep is stored as decimal hours but entered and read as hours and
+     minutes, so the value that has to survive is a whole number of minutes:
+     7:20 is 7.3333…, and one decimal place would file it as 7.3 — which is
+     7:18, a different night's sleep from the one she typed. `round` keeps it
+     on the minute; everything else keeps its own decimal place. */
+  { key: "sleepHours", label: "睡眠時數", unit: "小時", decimals: 2, plausible: [0, 24], round: (h) => Math.round(h * 60) / 60 },
 ];
 
 const BY_KEY = Object.fromEntries(BODY_FIELDS.map((f) => [f.key, f]));
@@ -73,7 +80,7 @@ export function cleanBodyValues(raw) {
       rejected.push({ key, label: field.label, value: n });
       continue;
     }
-    values[key] = Number(n.toFixed(field.decimals));
+    values[key] = field.round ? field.round(n) : Number(n.toFixed(field.decimals));
   }
   return { values, rejected };
 }
@@ -87,6 +94,11 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * so the numbers are converted here rather than at twenty call sites. Fields
  * the photo did not contain are left exactly as they were: a scale that does
  * not measure waist should not blank the waist she typed a moment ago.
+ *
+ * Sleep is the one field whose form shape differs from its stored shape: it is
+ * stored as decimal hours and typed into two boxes. The split happens here
+ * because this is the function that knows what the form holds — a reading of
+ * 7.25 filled straight into an hours box would show up as「7.25 小時」.
  */
 export function applyReadingToForm(form, reading) {
   const { values, rejected } = cleanBodyValues(reading && reading.values);
@@ -94,7 +106,13 @@ export function applyReadingToForm(form, reading) {
   const filled = [];
 
   for (const [key, value] of Object.entries(values)) {
-    next[key] = String(value);
+    if (key === "sleepHours") {
+      const { h, m } = splitSleep(value);
+      next.sleepH = h;
+      next.sleepM = m;
+    } else {
+      next[key] = String(value);
+    }
     filled.push(bodyField(key).label);
   }
 

@@ -88,7 +88,8 @@ const form = {
   skeletalMuscle: "",
   bodyAge: "",
   bmr: "",
-  sleepHours: "7",
+  sleepH: "7",
+  sleepM: "0",
 };
 
 const applied = applyReadingToForm(form, {
@@ -100,10 +101,24 @@ check("the form takes the values as strings", applied.form.weight, "62.4");
 check("and the rest of them", [applied.form.bmi, applied.form.bodyFat, applied.form.bmr], ["24.3", "31.2", "1290"]);
 /* A scale that does not measure waist must not wipe the waist she typed. */
 check("a field the photo did not contain is left alone", applied.form.waist, "78");
-check("and so is one she filled herself", applied.form.sleepHours, "7");
+check("and so is one she filled herself", [applied.form.sleepH, applied.form.sleepM], ["7", "0"]);
 check("the date on the photo is used", applied.form.date, "2026-09-09");
 check("what was filled is reported", applied.filled.length, 4);
 check("and what could not be read", applied.unreadable, ["骨骼肌率"]);
+
+/* --- sleep read off a screenshot ---
+ * 睡眠時數 is stored as decimal hours and typed as hours and minutes, so a
+ * reading of 7.25 has to land in the two boxes rather than putting「7.25」in
+ * the hours one. And it has to keep the minute: rounding to one decimal place
+ * would file 7:20 as 7:18, which is not the night she screenshotted. */
+const slept = applyReadingToForm(form, { values: { sleepHours: 7.25 } });
+check("a photo's sleep fills both boxes", [slept.form.sleepH, slept.form.sleepM], ["7", "15"]);
+check("and it is reported as filled", slept.filled, ["睡眠時數"]);
+const awkward = applyReadingToForm(form, { values: { sleepHours: 7 + 20 / 60 } });
+check("an awkward number keeps its minute", [awkward.form.sleepH, awkward.form.sleepM], ["7", "20"]);
+const tooMuch = applyReadingToForm(form, { values: { sleepHours: 30 } });
+check("more than a day is a misread, not a finding", tooMuch.rejected.map((r) => r.key), ["sleepHours"]);
+check("and the boxes she filled are left alone", [tooMuch.form.sleepH, tooMuch.form.sleepM], ["7", "0"]);
 
 const noDate = applyReadingToForm(form, { date: null, values: { weight: 62.4 } });
 check("no date on the photo keeps the form's own", noDate.form.date, "2026-09-10");

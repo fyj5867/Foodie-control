@@ -106,6 +106,7 @@ import {
 import { upsertVisit, removeVisit, markVisitDone } from "./lib/visits.js";
 import { upsertPlan, removePlan, markPlanDone } from "./lib/examPlans.js";
 import { buildIcs, icsFilename } from "./lib/calendar.js";
+import { joinSleep, splitSleep, formatSleep } from "./lib/sleep.js";
 import HealthAnalysis from "./components/HealthAnalysis.jsx";
 import WorkoutSuggestions from "./components/WorkoutSuggestions.jsx";
 import WeeklyPlanCard from "./components/WeeklyPlanCard.jsx";
@@ -350,7 +351,7 @@ function CalorieBar({ target, consumed, remaining, zone, breakdown, override, ov
   );
 }
 
-function MetricTrendChart({ title, dataKey, unit, color, chartData, zones, zoneExplain }) {
+function MetricTrendChart({ title, dataKey, unit, color, chartData, zones, zoneExplain, formatValue }) {
   const points = chartData.filter((d) => d[dataKey] != null);
   if (points.length < 2) return null;
   const domain = zones ? [zones[0].y1, zones[zones.length - 1].y2] : ["auto", "auto"];
@@ -379,7 +380,11 @@ function MetricTrendChart({ title, dataKey, unit, color, chartData, zones, zoneE
               ))}
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} domain={domain} unit={unit} />
-            <Tooltip />
+            {/* Sleep is the one metric whose number is not how it is read:
+                the axis has to stay decimal to draw the line, but a tooltip
+                saying 7.25 小時 makes her do the conversion the two input
+                boxes just removed. */}
+            <Tooltip formatter={formatValue ? (v) => formatValue(v) : undefined} />
             <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2.5} dot={{ r: 3 }} name={title} connectNulls />
           </LineChart>
         </ResponsiveContainer>
@@ -779,7 +784,8 @@ export default function App() {
     skeletalMuscle: "",
     bodyAge: "",
     bmr: "",
-    sleepHours: "",
+    sleepH: "",
+    sleepM: "",
   });
 
   const [foodLog, setFoodLog] = useState([]);
@@ -1038,8 +1044,13 @@ export default function App() {
       flashSaved("請至少輸入體重");
       return;
     }
+    /* sleepH/sleepM belong to the form, not to the record — the record has
+       kept a single decimal `sleepHours` since the first version and every
+       stored night is in that shape. Spreading the form wholesale would quietly
+       add two extra fields to every row from here on. */
+    const { sleepH, sleepM, ...formFields } = recordForm;
     const entry = {
-      ...recordForm,
+      ...formFields,
       weight: Number(recordForm.weight),
       bmi: recordForm.bmi === "" ? null : Number(recordForm.bmi),
       waist: recordForm.waist === "" ? null : Number(recordForm.waist),
@@ -1047,7 +1058,7 @@ export default function App() {
       visceralFat: recordForm.visceralFat === "" ? null : Number(recordForm.visceralFat),
       skeletalMuscle: recordForm.skeletalMuscle === "" ? null : Number(recordForm.skeletalMuscle),
       bodyAge: recordForm.bodyAge === "" ? null : Number(recordForm.bodyAge),
-      sleepHours: recordForm.sleepHours === "" ? null : Number(recordForm.sleepHours),
+      sleepHours: joinSleep(sleepH, sleepM),
       bmr: recordForm.bmr === "" ? null : Number(recordForm.bmr),
     };
     const others = records.filter((r) => r.date !== entry.date);
@@ -1067,7 +1078,8 @@ export default function App() {
           skeletalMuscle: "",
           bodyAge: "",
           bmr: "",
-          sleepHours: "",
+          sleepH: "",
+          sleepM: "",
         });
       }
     } catch (e) {
@@ -1086,6 +1098,8 @@ export default function App() {
   }
 
   function handleEditRecord(record) {
+    /* The record keeps one decimal; the form has two boxes. */
+    const sleep = splitSleep(record.sleepHours);
     setRecordForm({
       date: record.date,
       weight: record.weight ?? "",
@@ -1096,7 +1110,8 @@ export default function App() {
       skeletalMuscle: record.skeletalMuscle ?? "",
       bodyAge: record.bodyAge ?? "",
       bmr: record.bmr ?? "",
-      sleepHours: record.sleepHours ?? "",
+      sleepH: sleep.h,
+      sleepM: sleep.m,
     });
     flashSaved(`已載入 ${record.date} 的紀錄，修改後按「更新紀錄」`);
   }
@@ -5207,7 +5222,7 @@ function TrackingTab({
             {r.skeletalMuscle != null ? `骨骼肌 ${fmtNum(r.skeletalMuscle)}% ・ ` : ""}
             {r.bodyAge != null ? `體年齡 ${fmtNum(r.bodyAge, 0)} ・ ` : ""}
             {r.bmr != null ? `BMR ${fmtNum(r.bmr, 0)}kcal` : ""}
-            {r.sleepHours != null ? `${r.bmr != null ? " ・ " : ""}睡眠 ${fmtNum(r.sleepHours)} 小時` : ""}
+            {r.sleepHours != null ? `${r.bmr != null ? " ・ " : ""}睡眠 ${formatSleep(r.sleepHours)}` : ""}
           </div>
         </div>
         <button
@@ -5359,19 +5374,38 @@ function TrackingTab({
             </div>
           </div>
           <div className="field-row">
+            {/* Two boxes, because sleep does not happen in half hours. One
+                decimal field left her either rounding 7:15 up to 7.5 or doing
+                the division herself every morning. */}
             <div className="field">
               <label>昨晚睡眠（小時）</label>
               <input
                 type="number"
-                step="0.5"
+                step="1"
                 min="0"
                 max="24"
-                value={recordForm.sleepHours}
-                onChange={(e) => setRecordForm({ ...recordForm, sleepHours: e.target.value })}
-                placeholder="例：7.5"
+                inputMode="numeric"
+                value={recordForm.sleepH}
+                onChange={(e) => setRecordForm((f) => ({ ...f, sleepH: e.target.value }))}
+                placeholder="例：7"
               />
             </div>
-            <div className="field" />
+            <div className="field">
+              <label>又幾分（0-59）</label>
+              {/* step must stay 1: with step="5" the browser's own validation
+                  rejects 12 分 and blocks the submit without saying why — and
+                  being free of the half-hour grid is the entire point here. */}
+              <input
+                type="number"
+                step="1"
+                min="0"
+                max="59"
+                inputMode="numeric"
+                value={recordForm.sleepM}
+                onChange={(e) => setRecordForm((f) => ({ ...f, sleepM: e.target.value }))}
+                placeholder="例：15"
+              />
+            </div>
           </div>
           <button type="submit" className="btn btn-primary btn-block">
             <Plus size={15} /> {isEditing ? "更新紀錄" : "儲存紀錄"}
@@ -5422,6 +5456,7 @@ function TrackingTab({
         title="睡眠時數趨勢"
         dataKey="sleepHours"
         unit="小時"
+        formatValue={formatSleep}
         color="#5A6E8A"
         chartData={chartData}
         zones={sleepZones()}
