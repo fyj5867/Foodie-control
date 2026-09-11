@@ -2619,6 +2619,47 @@ export default function App() {
           background:#fff;
           color:var(--ink);
         }
+        /* One value that takes two numbers: a single bordered box split by a
+           hairline, so it reads as one answer rather than two questions. The
+           inputs lose their own border and inherit the box's. */
+        .split-input{
+          display:flex;
+          align-items:stretch;
+          border:1px solid var(--line);
+          border-radius:10px;
+          background:#fff;
+          overflow:hidden;
+        }
+        .split-input:focus-within{ border-color:var(--brand); }
+        .split-half{
+          display:flex;
+          align-items:center;
+          flex:1 1 0;
+          /* Flex children refuse to shrink below their content by default, and
+             a number input's content includes its spinner — without this the
+             two halves push the box past the card's edge at 320px. */
+          min-width:0;
+          padding-right:10px;
+        }
+        .split-half + .split-half{ border-left:1px solid var(--line); }
+        .field .split-half input{
+          flex:1 1 0;
+          min-width:0;
+          width:auto;
+          border:none;
+          border-radius:0;
+          background:transparent;
+          text-align:right;
+          padding-right:4px;
+        }
+        .field .split-half input:focus{ outline:none; }
+        .split-unit{
+          flex:none;
+          font-size:12.5px;
+          font-weight:700;
+          color:var(--ink-soft);
+        }
+
         .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
         /* Grid and flex children refuse to shrink below their content by
            default (min-width:auto), so one wide field pushes the whole row
@@ -5198,7 +5239,13 @@ function TrackingTab({
   const [showFullHistory, setShowFullHistory] = useState(false);
   const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
   const isEditing = records.some((r) => r.date === recordForm.date);
-  const recentThree = sorted.slice(0, 3);
+  /* Only today is left open. A body record is one row per day and three rows
+     tall, and the trends underneath already say what the last week looked
+     like — so the list's job is "check or fix what I just entered", and that
+     is one day. If nothing is recorded today the most recent stands in: an
+     empty history card reads as the app having lost everything. */
+  const todayRecord = sorted.find((r) => r.date === todayStr());
+  const openRows = todayRecord ? [todayRecord] : sorted.slice(0, 1);
 
   function monthLabel(key) {
     const [y, m] = key.split("-");
@@ -5373,44 +5420,81 @@ function TrackingTab({
               <input type="number" step="1" value={recordForm.bmr} onChange={(e) => setRecordForm({ ...recordForm, bmr: e.target.value })} />
             </div>
           </div>
-          <div className="field-row">
-            {/* Two boxes, because sleep does not happen in half hours. One
-                decimal field left her either rounding 7:15 up to 7.5 or doing
-                the division herself every morning. */}
-            <div className="field">
-              <label>昨晚睡眠（小時）</label>
-              <input
-                type="number"
-                step="1"
-                min="0"
-                max="24"
-                inputMode="numeric"
-                value={recordForm.sleepH}
-                onChange={(e) => setRecordForm((f) => ({ ...f, sleepH: e.target.value }))}
-                placeholder="例：7"
-              />
-            </div>
-            <div className="field">
-              <label>又幾分（0-59）</label>
+          {/* One night's sleep is one value, so it gets one label and one
+              box with a line down the middle — not two fields side by side,
+              which read as two unrelated things to fill in. The two halves
+              exist because sleep does not happen in half hours: a single
+              decimal field left her either rounding 7:15 up to 7.5 or doing
+              the division herself every morning. */}
+          <div className="field">
+            <label>昨晚睡眠（時/分）</label>
+            <div className="split-input">
+              <span className="split-half">
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="24"
+                  inputMode="numeric"
+                  aria-label="睡眠小時"
+                  value={recordForm.sleepH}
+                  onChange={(e) => setRecordForm((f) => ({ ...f, sleepH: e.target.value }))}
+                  placeholder="7"
+                />
+                <span className="split-unit">時</span>
+              </span>
               {/* step must stay 1: with step="5" the browser's own validation
                   rejects 12 分 and blocks the submit without saying why — and
                   being free of the half-hour grid is the entire point here. */}
-              <input
-                type="number"
-                step="1"
-                min="0"
-                max="59"
-                inputMode="numeric"
-                value={recordForm.sleepM}
-                onChange={(e) => setRecordForm((f) => ({ ...f, sleepM: e.target.value }))}
-                placeholder="例：15"
-              />
+              <span className="split-half">
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="59"
+                  inputMode="numeric"
+                  aria-label="睡眠分鐘"
+                  value={recordForm.sleepM}
+                  onChange={(e) => setRecordForm((f) => ({ ...f, sleepM: e.target.value }))}
+                  placeholder="15"
+                />
+                <span className="split-unit">分</span>
+              </span>
             </div>
           </div>
           <button type="submit" className="btn btn-primary btn-block">
             <Plus size={15} /> {isEditing ? "更新紀錄" : "儲存紀錄"}
           </button>
         </form>
+      </div>
+
+      {/* Above the trends on purpose: this is the card she acts on — check
+          today's numbers, tap to fix a typo — and the charts are what she
+          looks at afterwards. It used to sit under six of them. */}
+      <div className="card">
+        <div className="section-title">歷史紀錄</div>
+        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
+          點任一筆可載入上方表單編輯。{!showFullHistory && sorted.length > 0 && (todayRecord ? "目前只展開今天，其餘收在下方。" : "今天還沒記錄，先顯示最近的一筆。")}
+        </p>
+        {sorted.length === 0 && <p style={{ fontSize: "12.5px", color: "var(--ink-soft)" }}>尚無紀錄，新增第一筆體態資料吧。</p>}
+
+        {!showFullHistory && openRows.map(renderRecordRow)}
+
+        {showFullHistory &&
+          Object.keys(monthGroups).map((key) => (
+            <div key={key}>
+              <div className="history-month-header">
+                {monthLabel(key)}（{monthGroups[key].length}筆）
+              </div>
+              {monthGroups[key].map(renderRecordRow)}
+            </div>
+          ))}
+
+        {sorted.length > openRows.length && (
+          <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: "10px" }} onClick={() => setShowFullHistory((v) => !v)}>
+            {showFullHistory ? "收合紀錄" : `展開全部歷史紀錄（共 ${sorted.length} 筆，依月份歸納）`}
+          </button>
+        )}
       </div>
 
       <MetricTrendChart title="體重趨勢" dataKey="weight" unit="kg" color="#2F6F5E" chartData={chartData} />
@@ -5462,32 +5546,6 @@ function TrackingTab({
         zones={sleepZones()}
         zoneExplain="背景顏色為成人睡眠時數參考：黃色偏少（未達7小時）、綠色建議範圍（7-9小時）、藍色偏多（超過9小時）。輪班工作或有睡眠疾患者請依醫師建議。"
       />
-
-      <div className="card">
-        <div className="section-title">歷史紀錄</div>
-        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
-          點任一筆可載入上方表單編輯。{!showFullHistory && "預設只顯示最新3天，"}
-        </p>
-        {sorted.length === 0 && <p style={{ fontSize: "12.5px", color: "var(--ink-soft)" }}>尚無紀錄，新增第一筆體態資料吧。</p>}
-
-        {!showFullHistory && recentThree.map(renderRecordRow)}
-
-        {showFullHistory &&
-          Object.keys(monthGroups).map((key) => (
-            <div key={key}>
-              <div className="history-month-header">
-                {monthLabel(key)}（{monthGroups[key].length}筆）
-              </div>
-              {monthGroups[key].map(renderRecordRow)}
-            </div>
-          ))}
-
-        {sorted.length > 3 && (
-          <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: "10px" }} onClick={() => setShowFullHistory((v) => !v)}>
-            {showFullHistory ? "收合紀錄" : `展開全部歷史紀錄（共 ${sorted.length} 筆，依月份歸納）`}
-          </button>
-        )}
-      </div>
 
       <Disclaimer />
     </>
