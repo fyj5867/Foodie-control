@@ -5311,6 +5311,7 @@ function ExerciseTab({
   suggestions,
 }) {
   const [showAllExercise, setShowAllExercise] = useState(false);
+  const [showExerciseForm, setShowExerciseForm] = useState(false);
   const pctForBar = Math.min(feedback.pct, 100);
 
   return (
@@ -5323,6 +5324,122 @@ function ExerciseTab({
           weeklyTarget={plan.weeklyMinutesTarget}
         />
       ) : null}
+
+      {/* Straight under the three rings, because this is the card she comes
+          to this page to use: look at today, add what she did, see it land.
+          It used to sit below the weekly plan and the achievement bar — two
+          screens of reading before the one thing that needed a tap.
+
+          Entry and記錄 are one card rather than two: they are one action seen
+          from both ends, and a separate 「新增」 card with a date field and
+          twelve chips permanently open pushed everything else off the screen. */}
+      <div className="card">
+        <div className="section-title">運動紀錄</div>
+
+        {/* Collapsed by default. The form is only wanted for the few seconds
+            after she has actually exercised; the list is wanted every time. */}
+        {showExerciseForm ? (
+          <form onSubmit={onAddExerciseEntry}>
+            <div className="field">
+              <label>日期</label>
+              <input
+                type="date"
+                value={exerciseForm.date}
+                onChange={(e) => setExerciseForm((f) => ({ ...f, date: e.target.value }))}
+              />
+            </div>
+            <div className="field">
+              <label>運動內容</label>
+              <div className="chip-grid">
+                {ACTIVITY_LOG_OPTIONS.map((opt) => (
+                  <div
+                    key={opt.id}
+                    className={`chip ${exerciseForm.activityId === opt.id ? "active" : ""}`}
+                    onClick={() => setExerciseForm((f) => ({ ...f, activityId: opt.id }))}
+                  >
+                    {opt.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+            {exerciseForm.activityId === "other" && (
+              <div className="field">
+                <label>自訂運動名稱</label>
+                <input
+                  type="text"
+                  value={exerciseForm.customLabel}
+                  onChange={(e) => setExerciseForm((f) => ({ ...f, customLabel: e.target.value }))}
+                  placeholder="例：登山、跳繩"
+                />
+              </div>
+            )}
+            <div className="field">
+              <label>運動時間（分鐘）</label>
+              <input
+                type="number"
+                value={exerciseForm.durationMin}
+                onChange={(e) => setExerciseForm((f) => ({ ...f, durationMin: e.target.value }))}
+                placeholder="例：30"
+              />
+            </div>
+            <div className="btn-row">
+              <button type="button" className="btn btn-secondary" onClick={() => setShowExerciseForm(false)}>
+                收起
+              </button>
+              <button type="submit" className="btn btn-primary">
+                <Plus size={15} /> 加入紀錄
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button type="button" className="btn btn-primary btn-block" onClick={() => setShowExerciseForm(true)}>
+            <Plus size={15} /> 自行輸入一筆運動
+          </button>
+        )}
+
+        <div className="section-title" style={{ marginTop: "14px", fontSize: "13px" }}>
+          本週紀錄
+        </div>
+        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
+          點分鐘數旁的 ✏️ 圖示可以直接修改時間。
+        </p>
+        {thisWeekEntries.length === 0 && <p className="food-log-empty">這週還沒有運動紀錄，記錄第一筆吧。</p>}
+        {/* Three open, the rest folded — the same rule every record list in
+            the app follows, so none of them surprises her. */}
+        {(showAllExercise ? thisWeekEntries : thisWeekEntries.slice(0, 3)).map((entry) => (
+          <div className="record-row" key={entry.id}>
+            <div>
+              <div className="record-date">
+                {entry.date === todayStr() ? "今天" : entry.date.slice(5)}　{entry.activityLabel}
+              </div>
+              <div className="record-meta food-log-cal-row">
+                <Pencil size={11} className="food-log-edit-icon" />
+                <input
+                  type="number"
+                  className="cal-num-input-inline"
+                  value={entry.durationMin}
+                  onChange={(e) => onUpdateExerciseEntry(entry.id, e.target.value)}
+                  onBlur={() => onPersistExerciseEntry(entry.id)}
+                />
+                <span>分鐘</span>
+              </div>
+            </div>
+            <button className="icon-btn" onClick={() => onDeleteExerciseEntry(entry.id)}>
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+        {thisWeekEntries.length > 3 && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-block"
+            style={{ marginTop: "10px" }}
+            onClick={() => setShowAllExercise((v) => !v)}
+          >
+            {showAllExercise ? "收起" : `展開全部 ${thisWeekEntries.length} 筆`}
+          </button>
+        )}
+      </div>
 
       <WeeklyPlanCard plan={plan} exerciseLog={thisWeekEntries} today={todayStr()} />
 
@@ -5369,100 +5486,6 @@ function ExerciseTab({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="section-title">新增運動紀錄</div>
-        <form onSubmit={onAddExerciseEntry}>
-          <div className="field">
-            <label>日期</label>
-            <input
-              type="date"
-              value={exerciseForm.date}
-              onChange={(e) => setExerciseForm((f) => ({ ...f, date: e.target.value }))}
-            />
-          </div>
-          <div className="field">
-            <label>運動內容</label>
-            <div className="chip-grid">
-              {ACTIVITY_LOG_OPTIONS.map((opt) => (
-                <div
-                  key={opt.id}
-                  className={`chip ${exerciseForm.activityId === opt.id ? "active" : ""}`}
-                  onClick={() => setExerciseForm((f) => ({ ...f, activityId: opt.id }))}
-                >
-                  {opt.label}
-                </div>
-              ))}
-            </div>
-          </div>
-          {exerciseForm.activityId === "other" && (
-            <div className="field">
-              <label>自訂運動名稱</label>
-              <input
-                type="text"
-                value={exerciseForm.customLabel}
-                onChange={(e) => setExerciseForm((f) => ({ ...f, customLabel: e.target.value }))}
-                placeholder="例：登山、跳繩"
-              />
-            </div>
-          )}
-          <div className="field">
-            <label>運動時間（分鐘）</label>
-            <input
-              type="number"
-              value={exerciseForm.durationMin}
-              onChange={(e) => setExerciseForm((f) => ({ ...f, durationMin: e.target.value }))}
-              placeholder="例：30"
-            />
-          </div>
-          <button type="submit" className="btn btn-primary btn-block">
-            <Plus size={15} /> 加入紀錄
-          </button>
-        </form>
-      </div>
-
-      <div className="card">
-        <div className="section-title">本週運動紀錄</div>
-        <p style={{ fontSize: "11px", color: "var(--ink-soft)", margin: "-4px 0 10px" }}>
-          點分鐘數旁的 ✏️ 圖示可以直接修改時間。
-        </p>
-        {thisWeekEntries.length === 0 && <p className="food-log-empty">這週還沒有運動紀錄，記錄第一筆吧。</p>}
-        {/* Three open, the rest folded — the same rule every record list in
-            the app follows, so none of them surprises her. */}
-        {(showAllExercise ? thisWeekEntries : thisWeekEntries.slice(0, 3)).map((entry) => (
-          <div className="record-row" key={entry.id}>
-            <div>
-              <div className="record-date">
-                {entry.date === todayStr() ? "今天" : entry.date.slice(5)}　{entry.activityLabel}
-              </div>
-              <div className="record-meta food-log-cal-row">
-                <Pencil size={11} className="food-log-edit-icon" />
-                <input
-                  type="number"
-                  className="cal-num-input-inline"
-                  value={entry.durationMin}
-                  onChange={(e) => onUpdateExerciseEntry(entry.id, e.target.value)}
-                  onBlur={() => onPersistExerciseEntry(entry.id)}
-                />
-                <span>分鐘</span>
-              </div>
-            </div>
-            <button className="icon-btn" onClick={() => onDeleteExerciseEntry(entry.id)}>
-              <Trash2 size={16} />
-            </button>
-          </div>
-        ))}
-        {thisWeekEntries.length > 3 && (
-          <button
-            type="button"
-            className="btn btn-secondary btn-block"
-            style={{ marginTop: "10px" }}
-            onClick={() => setShowAllExercise((v) => !v)}
-          >
-            {showAllExercise ? "收起" : `展開全部 ${thisWeekEntries.length} 筆`}
-          </button>
         )}
       </div>
 
