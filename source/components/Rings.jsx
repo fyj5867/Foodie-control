@@ -159,8 +159,12 @@ export function RingMetrics({ day }) {
             <div className="rm-value" style={{ color: m.color }}>
               {m.value}
             </div>
+            {/* Two spans, each unbreakable: CJK wraps between any two
+                characters, so 「/ 1,500 大卡以下」 used to break as 「…大卡以」
+                / 「下」. If it has to go to two lines it now does it between
+                the number and the unit, where a reader would put it. */}
             <div className="rm-goal">
-              {m.goal} {m.unit}
+              <span>{m.goal}</span> <span>{m.unit}</span>
             </div>
           </div>
         );

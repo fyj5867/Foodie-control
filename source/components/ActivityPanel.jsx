@@ -39,7 +39,7 @@ function lastSevenDays(summaries, today) {
   return out;
 }
 
-function WeekGrid({ summaries, today }) {
+export function WeekGrid({ summaries, today }) {
   const days = lastSevenDays(summaries, today);
   const first = days[0].date.slice(5).replace("-", "/");
   const last = days[6].date.slice(5).replace("-", "/");
@@ -47,7 +47,7 @@ function WeekGrid({ summaries, today }) {
   return (
     <div className="week-block">
       <div className="week-head">
-        <span>本週</span>
+        <span>最近七天</span>
         <b>
           {first} – {last}
         </b>
@@ -93,43 +93,38 @@ function WeekGrid({ summaries, today }) {
 }
 
 /**
+ * 本週三項 —— its own card now.
+ *
+ * It used to sit inside 今天的三項, which put a week of history between the
+ * rings and the one button on this page that does anything. It is also not
+ * today: a card called 今天的三項 that ends with seven days of history was
+ * two cards wearing one title.
+ */
+export function WeekCard({ summaries, today }) {
+  return (
+    <div className="card activity-week-card">
+      <WeekGrid summaries={summaries} today={today} />
+    </div>
+  );
+}
+
+/**
  * @param day        today's evaluation from useGarden
  * @param summaries  the stored per-day verdicts
- * @param weeklyMinutes  exercise minutes so far this week
- * @param weeklyTarget   the weekly minutes goal (150 per WHO/ADA)
  */
-export default function ActivityPanel({ day, summaries, weeklyMinutes, weeklyTarget = 150 }) {
-  const weekPct = weeklyTarget ? Math.min(100, Math.round((weeklyMinutes / weeklyTarget) * 100)) : 0;
-
+export default function ActivityPanel({ day }) {
   return (
     <div className="card activity-card">
       <div className="section-title">今天的三項</div>
 
       <div className="rings-wrap">
-        <Rings day={day} size={178} />
+        <Rings day={day} size={146} />
       </div>
 
       <RingMetrics day={day} />
 
       <div className="activity-verdict">
         {day?.met ? "三項全達標，今天這一天算數。" : `達成 ${day?.metCount || 0} 項，三項全中才計入成長。`}
-      </div>
-
-      <WeekGrid summaries={summaries} today={day} />
-
-      <div className="week-block">
-        <div className="week-head">
-          <span>每週運動</span>
-          <b>
-            {Math.round(weeklyMinutes)} / {weeklyTarget} 分鐘
-          </b>
-        </div>
-        <div className="growth-bar">
-          <i style={{ width: `${weekPct}%`, background: "var(--move)" }} />
-        </div>
-        <div className="week-note">
-          每日 30 分鐘是達標門檻；每週 150 分鐘是 WHO 與 ADA 的活動量建議，兩者分開看。
-        </div>
       </div>
     </div>
   );

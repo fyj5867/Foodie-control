@@ -83,7 +83,7 @@ import Sprout from "./components/Sprout.jsx";
 import GardenScene from "./components/Garden.jsx";
 import Rings, { RingLegend } from "./components/Rings.jsx";
 import GrowthPanel from "./components/GrowthPanel.jsx";
-import ActivityPanel from "./components/ActivityPanel.jsx";
+import ActivityPanel, { WeekCard } from "./components/ActivityPanel.jsx";
 import DietDiary from "./components/DietDiary.jsx";
 import AvatarPicker from "./components/AvatarPicker.jsx";
 import DailyCoach from "./components/DailyCoach.jsx";
@@ -2547,10 +2547,10 @@ export default function App() {
         }
 
         .activity-card .section-title{ padding:0 0 4px; }
-        .rings-wrap{ display:flex; justify-content:center; padding:6px 0 2px; }
+        .rings-wrap{ display:flex; justify-content:center; padding:2px 0 0; }
         .activity-card .ring-legend{ padding:10px 0 0; }
         .activity-verdict{
-          margin-top:12px; padding:10px 12px; border-radius:10px;
+          margin-top:10px; padding:8px 12px; border-radius:10px;
           background:var(--brand-soft); color:var(--brand);
           font-size:13px; text-align:center;
         }
@@ -2560,27 +2560,37 @@ export default function App() {
            so the denominator is stated rather than implied by a ring's fill. */
         .ring-metrics{
           display:grid; grid-template-columns:repeat(3,1fr);
-          gap:8px; margin-top:16px;
+          gap:6px; margin-top:10px;
         }
         .ring-metric{
-          display:flex; flex-direction:column; align-items:center; gap:1px;
-          padding:9px 4px 10px; border-radius:12px; background:var(--surface-2);
+          display:flex; flex-direction:column; align-items:center; gap:0;
+          /* 「/ 1,500 大卡以下」 is far the longest of the three, so the blocks
+             take all the width the row has rather than sitting in comfortable
+             padding — at 320px the difference is whether it wraps. */
+          padding:7px 3px 8px; border-radius:12px; background:var(--surface-2);
         }
-        .rm-icon{ margin-bottom:2px; }
+        /* The character is what makes these read as a state rather than a
+           table, so it shrinks rather than going away. */
+        .rm-icon{ margin-bottom:0; transform:scale(.82); height:26px; }
         .ring-metric.met{ background:var(--brand-soft); }
         .rm-label{
           display:inline-flex; align-items:center; gap:3px;
           font-size:11px; font-weight:700; letter-spacing:.03em;
         }
         .rm-value{
-          font-size:24px; font-weight:700; line-height:1.15;
+          font-size:21px; font-weight:700; line-height:1.15;
           font-variant-numeric:tabular-nums; letter-spacing:-.02em;
         }
         .rm-goal{
-          font-size:11px; color:var(--ink-soft); font-variant-numeric:tabular-nums;
+          font-size:10px; color:var(--ink-soft); font-variant-numeric:tabular-nums;
+          text-align:center; line-height:1.35;
         }
+        .rm-goal span{ white-space:nowrap; }
 
         .week-block{ margin-top:18px; }
+        /* On its own now, so it brings its own top spacing rather than
+           inheriting a gap meant for sitting under something. */
+        .activity-week-card .week-block{ margin-top:0; }
         .week-head{
           display:flex; justify-content:space-between; align-items:baseline;
           font-size:12.5px; color:var(--ink-soft); margin-bottom:8px;
@@ -5316,14 +5326,7 @@ function ExerciseTab({
 
   return (
     <>
-      {todayGoals ? (
-        <ActivityPanel
-          day={todayGoals}
-          summaries={summaries}
-          weeklyMinutes={feedback.totalMinutes}
-          weeklyTarget={plan.weeklyMinutesTarget}
-        />
-      ) : null}
+      {todayGoals ? <ActivityPanel day={todayGoals} /> : null}
 
       {/* Straight under the three rings, because this is the card she comes
           to this page to use: look at today, add what she did, see it land.
@@ -5440,6 +5443,8 @@ function ExerciseTab({
           </button>
         )}
       </div>
+
+      <WeekCard summaries={summaries} today={todayGoals} />
 
       <WeeklyPlanCard plan={plan} exerciseLog={thisWeekEntries} today={todayStr()} />
 
