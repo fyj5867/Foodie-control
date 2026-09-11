@@ -17,6 +17,7 @@ import {
   Check,
   RefreshCw,
   AlertTriangle,
+  ChevronDown,
   X,
 } from "lucide-react";
 import {
@@ -2384,7 +2385,10 @@ export default function App() {
         /* The sprout is capped so the illustration stays a modest header; at
            full width it dominated the card and every rough edge scaled with it. */
         .growth-scene.is-sprout{
-          height:160px; display:flex; align-items:center; justify-content:center;
+          /* 118 rather than 160: it is a header, not the content. The plant is
+             drawn to fill its own canvas, so it simply renders smaller —
+             nothing is cropped. */
+          height:118px; display:flex; align-items:center; justify-content:center;
           background:#FBF8EE;
         }
         .growth-scene.is-sprout svg{ height:100%; width:auto; max-width:100%; }
@@ -2719,13 +2723,33 @@ export default function App() {
         .disclaimer svg{ flex-shrink:0; margin-top:2px; color:var(--brand); }
         .disclaimer-compact{ margin-top:10px; margin-bottom:0; }
 
+        /* One row: the word, the number, and a chevron. Everything that
+           explains them is behind the tap. */
+        .risk-summary{
+          display:flex; align-items:center; gap:8px; width:100%;
+          padding:2px 0; border:none; background:none; cursor:pointer;
+          font-family:'Noto Sans TC', sans-serif; text-align:left;
+        }
+        .risk-k{ font-size:13px; font-weight:700; color:var(--ink); }
+        .risk-v{ font-size:13px; font-weight:700; }
+        .risk-v.tone-green{ color:var(--green); }
+        .risk-v.tone-yellow{ color:var(--yellow); }
+        .risk-v.tone-red{ color:var(--red); }
+        /* Pushed to the right so the chevron lands where a chevron belongs. */
+        .risk-n{
+          margin-left:auto; font-size:13px; font-weight:700; color:var(--ink-soft);
+          font-variant-numeric:tabular-nums;
+        }
+        .risk-chev{ flex:none; color:var(--ink-soft); transition:transform .15s; }
+        .risk-chev.open{ transform:rotate(180deg); }
+
         .gauge-wrap{
           display:flex;
           flex-direction:column;
           align-items:center;
           padding:4px 0 0;
         }
-        .gauge-svg{ width:100%; max-width:260px; }
+        .gauge-svg{ width:100%; max-width:200px; }
         .gauge-arc{ fill:none; stroke-width:18; stroke-linecap:round; }
         .gauge-arc-green{ stroke:var(--green); }
         .gauge-arc-yellow{ stroke:var(--yellow); }
@@ -4574,6 +4598,8 @@ function OverviewTab({
   coachEvening,
   onDismissCoach,
 }) {
+  const [showRisk, setShowRisk] = useState(false);
+
   if (!profile) {
     return (
       <div className="card empty-cta">
@@ -4597,6 +4623,22 @@ function OverviewTab({
         />
       ) : null}
 
+      {/* 喝水在最上面，因為它是這一頁唯一一個一天要碰好幾次的東西。
+          原本它排在樹苗、風險評分和今日熱量後面，每次補記一杯都要先捲過
+          一千四百像素 —— 一個常用的動作被擺在不常看的東西後面。 */}
+      <WaterCard
+        target={waterTarget}
+        breakdown={waterBreakdown}
+        consumedToday={consumedWaterToday}
+        todayWaterEntries={todayWaterEntries}
+        recentWaterEntries={recentWaterEntries}
+        weeklyWaterChartData={weeklyWaterChartData}
+        onAddWater={onAddWater}
+        onDeleteWaterEntry={onDeleteWaterEntry}
+        onUpdateWaterEntry={onUpdateWaterEntry}
+        onPersistWaterEntry={onPersistWaterEntry}
+      />
+
       {todayGoals && garden ? (
         <GrowthPanel day={todayGoals} garden={garden} onGoActivity={goExercise} />
       ) : null}
@@ -4611,18 +4653,37 @@ function OverviewTab({
         />
       ) : null}
 
-      <div className="card">
-        <div className="gauge-wrap">
-          <Gauge score={riskScore} />
-          <div className={`gauge-label tone-${zone.tone}`}>{zone.label}</div>
-          <div className="gauge-advice">{zone.advice}</div>
-          {!profile.age ? (
-            <div className="gauge-caveat">
-              沒有填年齡，這個估算沒有計入年齡因素，實際關注程度可能更高。
+      {/* 收合成一行。這個分數是慢慢變的東西 —— 今天看和下個月看多半一樣 ——
+          但它本來用了 335px 的半圓儀表來講一個詞，把一天要記好幾次的喝水
+          推到畫面外。結論（那個詞和分數）永遠看得到，儀表和說明點開才有。 */}
+      <div className="card risk-card">
+        <button
+          type="button"
+          className="risk-summary"
+          aria-expanded={showRisk}
+          onClick={() => setShowRisk((v) => !v)}
+        >
+          <span className="risk-k">健康關注度</span>
+          <span className={`risk-v tone-${zone.tone}`}>{zone.label}</span>
+          <span className="risk-n">{Math.round(riskScore)}</span>
+          <ChevronDown size={15} className={`risk-chev ${showRisk ? "open" : ""}`} />
+        </button>
+
+        {showRisk && (
+          <>
+            <div className="gauge-wrap">
+              <Gauge score={riskScore} />
+              <div className={`gauge-label tone-${zone.tone}`}>{zone.label}</div>
+              <div className="gauge-advice">{zone.advice}</div>
+              {!profile.age ? (
+                <div className="gauge-caveat">
+                  沒有填年齡，這個估算沒有計入年齡因素，實際關注程度可能更高。
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
-        <Disclaimer compact />
+            <Disclaimer compact />
+          </>
+        )}
       </div>
 
       <div className="card">
@@ -4640,19 +4701,6 @@ function OverviewTab({
           onClearOverride={onClearCalorieOverride}
         />
       </div>
-
-      <WaterCard
-        target={waterTarget}
-        breakdown={waterBreakdown}
-        consumedToday={consumedWaterToday}
-        todayWaterEntries={todayWaterEntries}
-        recentWaterEntries={recentWaterEntries}
-        weeklyWaterChartData={weeklyWaterChartData}
-        onAddWater={onAddWater}
-        onDeleteWaterEntry={onDeleteWaterEntry}
-        onUpdateWaterEntry={onUpdateWaterEntry}
-        onPersistWaterEntry={onPersistWaterEntry}
-      />
 
       <div className="stat-grid">
         <div className="stat-box">
@@ -5094,47 +5142,9 @@ function DietTab({
 
   return (
     <>
-      <div className="card">
-        <div className="section-title">今日熱量</div>
-        <CalorieBar
-          target={dailyCalorieTarget}
-          consumed={consumedToday}
-          remaining={remainingToday}
-          zone={calZone}
-          breakdown={calorieBreakdown}
-          override={calorieOverride}
-          overrideInput={calorieOverrideInput}
-          setOverrideInput={setCalorieOverrideInput}
-          onSaveOverride={onSaveCalorieOverride}
-          onClearOverride={onClearCalorieOverride}
-        />
-      </div>
-
-      {weeklyCalorieData.some((d) => d.total > 0) && (
-        <div className="card">
-          <div className="section-title">本週熱量趨勢</div>
-          <div style={{ width: "100%", height: 200 }}>
-            <ResponsiveContainer>
-              <BarChart data={weeklyCalorieData} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke="#DCE3DC" strokeDasharray="3 3" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                {dailyCalorieTarget != null && (
-                  <ReferenceLine
-                    y={dailyCalorieTarget}
-                    stroke="#C63C34"
-                    strokeDasharray="4 4"
-                    label={{ value: "建議攝取", fontSize: 10, fill: "#C63C34", position: "insideTopRight" }}
-                  />
-                )}
-                <Bar dataKey="total" fill="#2F6F5E" radius={[4, 4, 0, 0]} name="攝取熱量" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
+      {/* 記錄擺在讀數前面。這一頁真正要做的事是「把剛吃的東西記下來」，
+          而它本來排在今日熱量和本週趨勢後面 —— 兩張只是給人看的卡片擋在
+          一個每天要用三次的動作前面。 */}
       <div className="card">
         <div className="section-title">拍照分析熱量</div>
 
@@ -5221,6 +5231,47 @@ function DietTab({
           </span>
         </div>
       </div>
+
+      <div className="card">
+        <div className="section-title">今日熱量</div>
+        <CalorieBar
+          target={dailyCalorieTarget}
+          consumed={consumedToday}
+          remaining={remainingToday}
+          zone={calZone}
+          breakdown={calorieBreakdown}
+          override={calorieOverride}
+          overrideInput={calorieOverrideInput}
+          setOverrideInput={setCalorieOverrideInput}
+          onSaveOverride={onSaveCalorieOverride}
+          onClearOverride={onClearCalorieOverride}
+        />
+      </div>
+
+      {weeklyCalorieData.some((d) => d.total > 0) && (
+        <div className="card">
+          <div className="section-title">本週熱量趨勢</div>
+          <div style={{ width: "100%", height: 200 }}>
+            <ResponsiveContainer>
+              <BarChart data={weeklyCalorieData} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke="#DCE3DC" strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                {dailyCalorieTarget != null && (
+                  <ReferenceLine
+                    y={dailyCalorieTarget}
+                    stroke="#C63C34"
+                    strokeDasharray="4 4"
+                    label={{ value: "建議攝取", fontSize: 10, fill: "#C63C34", position: "insideTopRight" }}
+                  />
+                )}
+                <Bar dataKey="total" fill="#2F6F5E" radius={[4, 4, 0, 0]} name="攝取熱量" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {remembered.length > 0 && (
         <div className="card">

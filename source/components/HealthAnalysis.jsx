@@ -502,6 +502,10 @@ export default function HealthAnalysis({
   const [error, setError] = useState("");
   const [month, setMonth] = useState(monthOf(today));
   const [showHistory, setShowHistory] = useState(false);
+  /* The uploader sits at the top of the page but folded: the entry point has to
+     be findable, the space does not have to be permanently given up for
+     something used once or twice a year. */
+  const [showUpload, setShowUpload] = useState(false);
   /* The in-range values start collapsed. They are the majority of a report and
      the least useful part of it: a page that opens on thirty 「正常」 rows buries
      the three that are not. */
@@ -633,6 +637,120 @@ export default function HealthAnalysis({
 
   return (
     <div className="health-page">
+      {/* 上傳擺在最前面，但預設收起來。它本來是這一頁的最後一張卡，在 4600px
+          的位置 —— 手上拿著剛拿到的健檢報告時，要從頭捲到底才找得到。
+          收起來是因為它一年才用一兩次：入口要找得到，版面不用一直讓給它。 */}
+      <div className="card">
+        {showUpload ? (
+          <>
+            <div className="section-title">上傳健檢報告</div>
+        <p className="fine-print">
+          拍下有數值的頁面，會自動把數字讀出來讓你核對。好幾頁的話，從相簿一次選最多
+          {" "}
+          {MAX_PAGES} 張，會合併成同一份。<strong>照片不會被儲存</strong>，只留你確認過的數值。
+        </p>
+
+        {!draft && (
+          <>
+            <div className="photo-input-row">
+              <label className="btn btn-primary photo-input-label">
+                <Camera size={16} /> 拍照
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => {
+                    handlePhotos(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <label className="btn btn-secondary photo-input-label">
+                <ImageIcon size={16} /> 相簿（可多選）
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => {
+                    handlePhotos(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-block"
+              style={{ marginTop: "8px" }}
+              onClick={() => {
+                setError("");
+                setRejected([]);
+                setNotes(null);
+                setDraft(emptyDraft(today));
+              }}
+            >
+              <Plus size={14} /> 手動輸入數值
+            </button>
+          </>
+        )}
+
+        {analyzing && (
+          <div className="analyzing-row" style={{ justifyContent: "center", padding: "16px 0" }}>
+            <Loader2 size={18} className="spin" />
+            {progress && progress.total > 1
+              ? `正在讀取第 ${progress.done + 1} / ${progress.total} 張…`
+              : "正在讀取報告上的數值…"}
+          </div>
+        )}
+
+        {error && (
+          <div className="analysis-error" style={{ marginTop: "8px" }}>
+            {error}
+            <button
+              type="button"
+              className="btn btn-secondary btn-block"
+              style={{ marginTop: "8px" }}
+              onClick={() => {
+                setError("");
+                setDraft(emptyDraft(today));
+              }}
+            >
+              <RefreshCw size={13} /> 改用手動輸入
+            </button>
+          </div>
+        )}
+
+        {draft && (
+          <DraftEditor
+            draft={draft}
+            setDraft={setDraft}
+            rejected={rejected}
+            notes={notes}
+            gender={gender}
+            onSave={saveDraft}
+            onCancel={() => {
+              setDraft(null);
+              setRejected([]);
+              setNotes(null);
+            }}
+          />
+        )}
+            <button
+              type="button"
+              className="btn btn-secondary btn-block"
+              style={{ marginTop: "10px" }}
+              onClick={() => setShowUpload(false)}
+            >
+              收起
+            </button>
+          </>
+        ) : (
+          <button type="button" className="btn btn-primary btn-block" onClick={() => setShowUpload(true)}>
+            <Plus size={15} /> 上傳健檢報告
+          </button>
+        )}
+      </div>
+
       {/* --- this week --- */}
       <div className="card">
         <div className="section-title">
@@ -823,102 +941,6 @@ export default function HealthAnalysis({
         onAddToCalendar={onAddToCalendar}
         today={today}
       />
-
-      {/* --- adding one --- */}
-      <div className="card">
-        <div className="section-title">上傳健檢報告</div>
-        <p className="fine-print">
-          拍下有數值的頁面，會自動把數字讀出來讓你核對。好幾頁的話，從相簿一次選最多
-          {" "}
-          {MAX_PAGES} 張，會合併成同一份。<strong>照片不會被儲存</strong>，只留你確認過的數值。
-        </p>
-
-        {!draft && (
-          <>
-            <div className="photo-input-row">
-              <label className="btn btn-primary photo-input-label">
-                <Camera size={16} /> 拍照
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => {
-                    handlePhotos(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              <label className="btn btn-secondary photo-input-label">
-                <ImageIcon size={16} /> 相簿（可多選）
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => {
-                    handlePhotos(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary btn-block"
-              style={{ marginTop: "8px" }}
-              onClick={() => {
-                setError("");
-                setRejected([]);
-                setNotes(null);
-                setDraft(emptyDraft(today));
-              }}
-            >
-              <Plus size={14} /> 手動輸入數值
-            </button>
-          </>
-        )}
-
-        {analyzing && (
-          <div className="analyzing-row" style={{ justifyContent: "center", padding: "16px 0" }}>
-            <Loader2 size={18} className="spin" />
-            {progress && progress.total > 1
-              ? `正在讀取第 ${progress.done + 1} / ${progress.total} 張…`
-              : "正在讀取報告上的數值…"}
-          </div>
-        )}
-
-        {error && (
-          <div className="analysis-error" style={{ marginTop: "8px" }}>
-            {error}
-            <button
-              type="button"
-              className="btn btn-secondary btn-block"
-              style={{ marginTop: "8px" }}
-              onClick={() => {
-                setError("");
-                setDraft(emptyDraft(today));
-              }}
-            >
-              <RefreshCw size={13} /> 改用手動輸入
-            </button>
-          </div>
-        )}
-
-        {draft && (
-          <DraftEditor
-            draft={draft}
-            setDraft={setDraft}
-            rejected={rejected}
-            notes={notes}
-            gender={gender}
-            onSave={saveDraft}
-            onCancel={() => {
-              setDraft(null);
-              setRejected([]);
-              setNotes(null);
-            }}
-          />
-        )}
-      </div>
 
       {/* --- history --- */}
       {reports.length > 1 && (
