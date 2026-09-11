@@ -16,6 +16,7 @@ import {
   Loader2,
   Check,
   RefreshCw,
+  AlertTriangle,
   X,
 } from "lucide-react";
 import {
@@ -107,6 +108,7 @@ import { upsertVisit, removeVisit, markVisitDone } from "./lib/visits.js";
 import { upsertPlan, removePlan, markPlanDone } from "./lib/examPlans.js";
 import { buildIcs, icsFilename } from "./lib/calendar.js";
 import { joinSleep, splitSleep, formatSleep } from "./lib/sleep.js";
+import { normalizeFoodReading, applyPortion, sourceNote, PORTIONS } from "./lib/foodEstimate.js";
 import HealthAnalysis from "./components/HealthAnalysis.jsx";
 import WorkoutSuggestions from "./components/WorkoutSuggestions.jsx";
 import WeeklyPlanCard from "./components/WeeklyPlanCard.jsx";
@@ -668,7 +670,7 @@ function WaterCard({
   );
 }
 
-export function AnalysisModal({ analyzing, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onUseEstimate, report, gender }) {
+export function AnalysisModal({ analyzing, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onUseEstimate, onSetPortion, report, gender }) {
   if (!analyzing && !analysisError && !analysisPreview) return null;
   const r = analysisPreview?.result;
 
@@ -721,6 +723,57 @@ export function AnalysisModal({ analyzing, analysisError, analysisPreview, onCon
                   </span>
                 </div>
               )}
+              {/* Where the number came from. The prompt asks the model to say
+                  when it read a printed label and to be honest about how sure
+                  it is; both were being thrown away, so a transcription and a
+                  guess looked exactly alike on this card. */}
+              {(() => {
+                const note = sourceNote(r);
+                return note ? <div className={`analysis-source is-${note.tone}`}>{note.text}</div> : null;
+              })()}
+
+              {/* Usually empty. When it is not, it is because two numbers on
+                  this card disagree in a way the model cannot see in itself. */}
+              {(r.warnings || []).map((w) => (
+                <div className="analysis-warn" key={w.code}>
+                  <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: "1px" }} />
+                  <span>{w.text}</span>
+                </div>
+              ))}
+
+              {/* Half a photographed bento is the commonest correction there
+                  is, and doing it by hand means arithmetic at the table. */}
+              <div className="portion-row">
+                <span className="portion-label">實際吃了</span>
+                {PORTIONS.map((p) => {
+                  const current = r.portionFactor == null ? 1 : r.portionFactor;
+                  return (
+                    <button
+                      type="button"
+                      key={p.key}
+                      className={`portion-chip ${current === p.factor ? "is-on" : ""}`}
+                      onClick={() => onSetPortion(p.factor)}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* The breakdown is what makes the total auditable: without it a
+                  wrong number is a number she cannot see into, and the only
+                  repair available is to overwrite the whole thing. */}
+              {r.items && r.items.length > 1 && (
+                <div className="analysis-items">
+                  {r.items.map((it, i) => (
+                    <div className="analysis-item" key={`${it.name}-${i}`}>
+                      <span>{it.name}</span>
+                      <span>{it.kcal != null ? `${it.kcal} 大卡` : "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {(r.carbsG != null || r.proteinG != null || r.fatG != null) && (
                 <div className="analysis-macro">
                   醣 {fmtNum(r.carbsG, 0)}g・蛋白質 {fmtNum(r.proteinG, 0)}g・脂肪 {fmtNum(r.fatG, 0)}g
@@ -1455,7 +1508,15 @@ export default function App() {
       const mediaType = file.type || "image/jpeg";
       const imageDataUrl = `data:${mediaType};base64,${base64}`;
       const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
-      const result = await analyzeFoodPhoto(base64, mediaType, aiProvider, activeKey, geminiModel);
+      /* Everything a vision model reads off a photo goes through a bounds
+         check before it is shown — lab markers and scale readings always did,
+         and the meal's calorie figure was the one that did not, even though
+         the day's total is what decides whether the garden grows. Nothing is
+         thrown away here: the checks produce notes beside a figure she can
+         still edit, because a blanked-out meal is worse than a suspect one. */
+      const result = normalizeFoodReading(
+        await analyzeFoodPhoto(base64, mediaType, aiProvider, activeKey, geminiModel)
+      );
       // A figure this person already corrected for this exact food beats a
       // fresh guess from a photo — a packaged item's label does not change.
       // It is applied rather than merely offered because the correction was
@@ -1506,7 +1567,13 @@ export default function App() {
       await persistFoodLog([...foodLog, entry]);
       // Learn only what the person changed. Accepting a remembered figure
       // counts too — it confirms the standard rather than setting a new one.
-      if (entry.estimatedCalories !== analysisPreview.aiCalories) {
+      //
+      // But never learn from a part-portion. 「吃一半」 on a 251 大卡 rice ball
+      // is 126 for today, not a new standard of 126 for every rice ball after
+      // it — and the standard is applied automatically next time, so getting
+      // this wrong would quietly halve that food for good.
+      const wholePortion = !(r.portionFactor != null && r.portionFactor !== 1);
+      if (wholePortion && entry.estimatedCalories !== analysisPreview.aiCalories) {
         await rememberCalories(entry.foodName, entry.estimatedCalories);
       }
       setAnalysisPreview(null);
@@ -1527,6 +1594,17 @@ export default function App() {
     setAnalysisPreview((prev) => {
       if (!prev) return prev;
       return { ...prev, memoryHint: null, result: { ...prev.result, estimatedCalories: prev.aiCalories } };
+    });
+  }
+
+  /** 吃了多少：倍數一律乘在最初那份估算上（見 lib/foodEstimate.js）。 */
+  function setAnalysisPortion(factor) {
+    setAnalysisPreview((prev) => {
+      if (!prev) return prev;
+      /* A remembered figure is a whole portion of that food, so scaling it is
+         still meaningful — but the note explaining it no longer matches what
+         is on screen, so it goes. */
+      return { ...prev, memoryHint: null, result: applyPortion(prev.result, factor) };
     });
   }
 
@@ -3757,6 +3835,61 @@ export default function App() {
         /* Pinned to the bottom of the scroll area. Before this, a long reading
            pushed the buttons past the bottom of the screen and the entry could
            not be saved at all. */
+        .analysis-source{
+          font-size:11.5px;
+          line-height:1.5;
+          margin-top:6px;
+          color:var(--ink-soft);
+        }
+        .analysis-source.is-good{ color:var(--brand); font-weight:700; }
+        .analysis-source.is-warn{ color:#8A5A3B; font-weight:700; }
+        .analysis-warn{
+          display:flex;
+          gap:6px;
+          align-items:flex-start;
+          margin-top:8px;
+          padding:8px 10px;
+          border-radius:10px;
+          background:var(--amber-soft);
+          color:#8A5A3B;
+          font-size:11.5px;
+          line-height:1.6;
+        }
+        .portion-row{
+          display:flex;
+          flex-wrap:wrap;
+          align-items:center;
+          gap:6px;
+          margin-top:10px;
+        }
+        .portion-label{ font-size:11.5px; font-weight:700; color:var(--ink-soft); }
+        .portion-chip{
+          border:1px solid var(--line);
+          background:#fff;
+          color:var(--ink-soft);
+          border-radius:999px;
+          padding:4px 10px;
+          font-family:'Noto Sans TC', sans-serif;
+          font-size:11.5px;
+          font-weight:700;
+          cursor:pointer;
+        }
+        .portion-chip.is-on{ background:var(--brand); border-color:var(--brand); color:#fff; }
+        .analysis-items{
+          margin-top:10px;
+          border-top:1px solid var(--line);
+        }
+        .analysis-item{
+          display:flex;
+          justify-content:space-between;
+          gap:10px;
+          padding:5px 0;
+          font-size:12px;
+          color:var(--ink-soft);
+          border-bottom:1px solid var(--line);
+        }
+        .analysis-item span:last-child{ flex:none; font-weight:700; }
+
         .analysis-modal-card .analysis-actions{
           position:sticky;
           bottom:0;
@@ -4231,6 +4364,7 @@ export default function App() {
         onDiscard={discardAnalysis}
         onEditCalories={updateAnalysisCalories}
         onUseEstimate={useAnalysisEstimate}
+        onSetPortion={setAnalysisPortion}
         report={latestReport(reports)}
         gender={profile && profile.gender === "male" ? "male" : "female"}
       />

@@ -1,12 +1,11 @@
 /**
- * Throwaway harness: the photo-analysis card, with and without a remembered
- * calorie figure.
+ * Throwaway harness: the photo-analysis card, in every state it can reach.
  *
  * The card only appears after a real AI call, which needs an API key, so this
- * is the only way to look at the wording of the "we used your corrected
- * figure" note without spending a request — and the wording is the whole
- * feature. A number that changes itself has to say so in a sentence a person
- * reads in one go.
+ * is the only way to look at its wording without spending a request — and the
+ * wording is the whole feature. Two things on this card change a number, or
+ * cast doubt on one, and both have to say so in a sentence a person reads in
+ * one go: the remembered figure, and the misread warnings.
  *
  * Build (from source/):
  *   ./node_modules/.bin/esbuild tools/preview-analysis.jsx --bundle \
@@ -14,9 +13,10 @@
  * then serve the project (node source/tools/serve.mjs 4173) and open
  * http://localhost:4173/source/tools/preview-analysis.html
  */
-import React from "react";
+import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AnalysisModal } from "../App.jsx";
+import { normalizeFoodReading, applyPortion } from "../lib/foodEstimate.js";
 
 const RESULT = {
   foodName: "御選肉鬆飯糰",
@@ -28,6 +28,7 @@ const RESULT = {
   reason: "白飯為主，配料含加工肉鬆",
   portionNote: "一個超商飯糰",
   confidence: "medium",
+  sourceType: "estimate",
   tags: ["refined_carb", "high_sodium", "processed_meat"],
 };
 
@@ -46,34 +47,83 @@ const PIXEL =
 const CASES = [
   {
     title: "沒記過這個食物 —— 就是 AI 估的數字",
-    preview: { imageDataUrl: PIXEL, result: RESULT, memoryHint: null, aiCalories: 320 },
+    preview: { imageDataUrl: PIXEL, result: normalizeFoodReading(RESULT), memoryHint: null, aiCalories: 320 },
   },
   {
-    title: "還沒上傳健檢報告 —— 只有一般營養學的說明",
-    report: null,
-    preview: { imageDataUrl: PIXEL, result: RESULT, memoryHint: null, aiCalories: 320 },
-  },
-  {
-    title: "一頓對健康有幫助的餐",
+    title: "讀到包裝上的營養標示 —— 這種數字最準，要講出來",
     preview: {
       imageDataUrl: PIXEL,
-      result: {
+      result: normalizeFoodReading({ ...RESULT, estimatedCalories: 251, sourceType: "label", confidence: "high", portionNote: "讀自包裝標示" }),
+      memoryHint: null,
+      aiCalories: 251,
+    },
+  },
+  {
+    title: "模型自己說沒把握 —— 不要讓它看起來像精確的數字",
+    preview: {
+      imageDataUrl: PIXEL,
+      result: normalizeFoodReading({ ...RESULT, confidence: "low" }),
+      memoryHint: null,
+      aiCalories: 320,
+    },
+  },
+  {
+    title: "一頓對健康有幫助的餐（含分項）",
+    preview: {
+      imageDataUrl: PIXEL,
+      result: normalizeFoodReading({
         ...RESULT,
         foodName: "鯖魚定食（糙米飯、燙青菜）",
         estimatedCalories: 620,
+        carbsG: 72,
+        proteinG: 34,
+        fatG: 21,
         light: "green",
         reason: "原型食材、清淡烹調",
+        items: [
+          { name: "糙米飯", kcal: 280 },
+          { name: "烤鯖魚", kcal: 260 },
+          { name: "燙青菜", kcal: 45 },
+          { name: "味噌湯", kcal: 35 },
+        ],
         tags: ["omega3", "whole_grain", "vegetable", "light_cooking", "high_fiber"],
-      },
+      }),
       memoryHint: null,
       aiCalories: 620,
+    },
+  },
+  {
+    title: "每 100 公克當成整包 —— 最常見的誤讀，數字本身看起來很正常",
+    preview: {
+      imageDataUrl: PIXEL,
+      result: normalizeFoodReading({ ...RESULT, estimatedCalories: 2400, sourceType: "label", confidence: "high" }),
+      memoryHint: null,
+      aiCalories: 2400,
+    },
+  },
+  {
+    title: "熱量跟三大營養素互相矛盾 —— 模型自己看不出來的那種錯",
+    preview: {
+      imageDataUrl: PIXEL,
+      result: normalizeFoodReading({ ...RESULT, estimatedCalories: 320, carbsG: 150, proteinG: 40, fatG: 30 }),
+      memoryHint: null,
+      aiCalories: 320,
+    },
+  },
+  {
+    title: "完全估不出熱量 —— 說出來，而不是填 0 大卡",
+    preview: {
+      imageDataUrl: PIXEL,
+      result: normalizeFoodReading({ ...RESULT, foodName: "無法辨識", estimatedCalories: null, carbsG: null, proteinG: null, fatG: null, tags: [] }),
+      memoryHint: null,
+      aiCalories: 0,
     },
   },
   {
     title: "記過一次 —— 直接用她改過的 251",
     preview: {
       imageDataUrl: PIXEL,
-      result: { ...RESULT, estimatedCalories: 251 },
+      result: normalizeFoodReading({ ...RESULT, estimatedCalories: 251 }),
       memoryHint: { name: "御選肉鬆飯糰", calories: 251, estimate: 320, times: 1 },
       aiCalories: 320,
     },
@@ -82,34 +132,44 @@ const CASES = [
     title: "改過好幾次 —— 順便講出來，這個數字是穩的",
     preview: {
       imageDataUrl: PIXEL,
-      result: { ...RESULT, estimatedCalories: 251 },
+      result: normalizeFoodReading({ ...RESULT, estimatedCalories: 251 }),
       memoryHint: { name: "御選肉鬆飯糰", calories: 251, estimate: 298, times: 4 },
       aiCalories: 298,
     },
   },
 ];
 
+/** Each card holds its own state so the 份量 chips can actually be pressed —
+ * 「吃一半」 twice still being a half is the thing worth checking by hand. */
+function Case({ title, preview, report }) {
+  const [state, setState] = useState(preview);
+  return (
+    <div>
+      <h3 style={{ font: "700 13px/1.4 sans-serif", margin: "0 0 8px" }}>{title}</h3>
+      {/* Rendered inline rather than as a modal so they all read at once. */}
+      <div style={{ maxWidth: "340px", border: "1px solid #ddd", borderRadius: "12px", overflow: "hidden" }}>
+        <AnalysisModal
+          analyzing={false}
+          analysisError=""
+          analysisPreview={state}
+          onConfirm={() => {}}
+          onDiscard={() => {}}
+          onEditCalories={(v) => setState((s) => ({ ...s, result: { ...s.result, estimatedCalories: v } }))}
+          onUseEstimate={() => setState((s) => ({ ...s, memoryHint: null, result: { ...s.result, estimatedCalories: s.aiCalories } }))}
+          onSetPortion={(f) => setState((s) => ({ ...s, memoryHint: null, result: applyPortion(s.result, f) }))}
+          report={report}
+          gender="female"
+        />
+      </div>
+    </div>
+  );
+}
+
 function Grid() {
   return (
     <div className="diabetes-app" style={{ padding: "16px", display: "grid", gap: "20px" }}>
       {CASES.map((c) => (
-        <div key={c.title}>
-          <h3 style={{ font: "700 13px/1.4 sans-serif", margin: "0 0 8px" }}>{c.title}</h3>
-          {/* Rendered inline rather than as a modal so all three read at once. */}
-          <div style={{ maxWidth: "340px", border: "1px solid #ddd", borderRadius: "12px", overflow: "hidden" }}>
-            <AnalysisModal
-              analyzing={false}
-              analysisError=""
-              analysisPreview={c.preview}
-              onConfirm={() => {}}
-              onDiscard={() => {}}
-              onEditCalories={() => {}}
-              onUseEstimate={() => {}}
-              report={"report" in c ? c.report : REPORT}
-              gender="female"
-            />
-          </div>
-        </div>
+        <Case key={c.title} title={c.title} preview={c.preview} report={"report" in c ? c.report : REPORT} />
       ))}
     </div>
   );

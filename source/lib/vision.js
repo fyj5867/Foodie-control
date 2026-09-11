@@ -140,7 +140,15 @@ export async function askAboutImage({
  * lib/nutritionTags.js and checked by tools/test-nutrition.mjs.
  */
 export const FOOD_PROMPT = `請你以營養師角度分析這張食物照片，並「只」回傳純 JSON（不要任何前後文字、不要 markdown 符號），格式如下：
-{"foodName": "食物名稱（繁體中文，多項用、分隔）", "estimatedCalories": 數字, "carbsG": 數字, "proteinG": 數字, "fatG": 數字, "portionNote": "份量估計簡短說明", "light": "green或yellow或red", "reason": "20字以內的燈號原因", "confidence": "low或medium或high", "sourceType": "label或estimate", "tags": ["標籤代號"]}
+{"foodName": "食物名稱（繁體中文，多項用、分隔）", "items": [{"name": "單一品項名稱", "kcal": 數字}], "estimatedCalories": 數字, "carbsG": 數字, "proteinG": 數字, "fatG": 數字, "portionNote": "份量估計簡短說明", "light": "green或yellow或red", "reason": "20字以內的燈號原因", "confidence": "low或medium或high", "sourceType": "label或estimate", "tags": ["標籤代號"]}
+
+items：把照片裡看得到的每一道菜／每一個品項分開列出來，各自估自己的熱量，最多 8 項。
+只有一樣食物時就只放一項。estimatedCalories 必須等於 items 各項 kcal 的加總。
+（分項的用途是讓使用者看得出是哪一項估錯了，所以寧可分細一點，例如
+「白飯」「炸雞腿」「燙青菜」分成三項，不要合併成「雞腿便當」一項。）
+
+數字之間必須互相吻合：carbsG×4 ＋ proteinG×4 ＋ fatG×9 應該接近 estimatedCalories。
+填完請自己驗算一次，對不起來就回頭修正，不要送出互相矛盾的數字。
 
 重要：如果照片中拍到包裝食品的「營養標示」欄位（例如熱量、每份含量等印刷文字），請優先
 「讀取」標示上實際印的數字作為 estimatedCalories 等數值，不要用外觀去估算份量；並將
@@ -156,7 +164,7 @@ sourceType 填 "label"，confidence 填 "high"，portionNote 註明是讀取自�
 - yellow：白飯白麵等精緻澱粉適量、水果、全脂乳品，份量需留意
 - red：油炸、含糖飲料或甜點、加工肉品、高油勾芡，建議避免或大幅減量
 
-若照片中有多種食物，estimatedCalories 等數值請加總為整餐估計。若無法辨識出食物，foodName 請填"無法辨識"，estimatedCalories 填 0，confidence 填 low，tags 填空陣列。
+若照片中有多種食物，estimatedCalories 等數值請加總為整餐估計。若無法辨識出食物，foodName 請填"無法辨識"，estimatedCalories 填 0，items 填空陣列，confidence 填 low，tags 填空陣列。
 
 tags：請標出這一餐「實際看得到」的食材與烹調方式，只能使用下列代號，看不到的不要猜、不要
 為了湊數而多填。**不要自己寫任何健康建議或疾病說明**，那部分由 App 依標籤產生；你只要
