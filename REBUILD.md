@@ -61,7 +61,7 @@ git add -A && git commit -m "說明改了什麼" && git push
 網站載入的是 `app.bundle.js`，那是打包產物。
 
 **手機上看不到更新**：改動後要把 `sw.js` 裡的 `CACHE_NAME` 換一個新版本號
-（例如 `healthy-care-v13` → `v14`），否則舊的離線快取會一直給舊畫面。
+（例如 `healthy-care-v21` → `v22`），否則舊的離線快取會一直給舊畫面。
 換完之後手機上把 App 完全關掉再重開。
 
 ---
@@ -77,8 +77,13 @@ git add -A && git commit -m "說明改了什麼" && git push
 > **絕對不要改 localStorage 的鍵名。**
 > `profile`、`body-records`、`food-log`、`water-log`、`exercise-log`、
 > `daily-summary`、`food-calories`、`health-reports`、`workout-links`、
-> `clinic-visits` —— 這些是找到手機上既有資料的唯一途徑。
+> `clinic-visits`、`exam-plans` —— 這些是找到手機上既有資料的唯一途徑。
 > 改了不是換個名字，是把所有紀錄變成孤兒。
+
+同一條規則也適用於**一筆紀錄裡的欄位名**。實際的例子：睡眠的輸入欄位在 2026-09
+改成「時／分」兩格，但存進 `body-records` 的仍然是原本那個小數 `sleepHours` ——
+換掉它會讓每一夜已經記過的資料讀不出來。**換輸入方式可以，換儲存格式不行**，
+兩者之間的換算集中在 `source/lib/sleep.js`。
 
 其他幾條同等級的：
 
@@ -103,7 +108,8 @@ sw.js             離線快取；改版時記得換 CACHE_NAME
 icon-*.png        App 圖示
 
 source/App.jsx    主畫面與狀態
-source/lib/       規則與資料處理（健康數值、達標、健檢報告、飲食標籤…）
+source/lib/       規則與資料處理（健康數值、達標、健檢報告、飲食標籤、
+                  就醫與排定的檢查、行事曆 .ics、睡眠時分換算…）
 source/components/ 畫面元件
 source/tools/     測試與工具（見下）
 
