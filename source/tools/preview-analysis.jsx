@@ -16,7 +16,7 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AnalysisModal } from "../App.jsx";
-import { normalizeFoodReading, applyPortion } from "../lib/foodEstimate.js";
+import { normalizeFoodReading, mergeFoodReadings, applyPortion } from "../lib/foodEstimate.js";
 
 const RESULT = {
   foodName: "御選肉鬆飯糰",
@@ -139,6 +139,26 @@ const CASES = [
   },
 ];
 
+/* --- 一餐拍好幾張 ---
+ * Several photos ADD UP, unlike the report's pages which fill each other's
+ * gaps. That is what makes the same dish shot twice dangerous: on screen it is
+ * only a slightly larger number. */
+const RICE = { foodName: "白飯", estimatedCalories: 280, carbsG: 60, proteinG: 5, fatG: 1, light: "yellow", confidence: "high", sourceType: "estimate", tags: ["refined_carb"] };
+const FISH = { foodName: "烤鯖魚", estimatedCalories: 260, carbsG: 0, proteinG: 24, fatG: 18, light: "green", confidence: "medium", sourceType: "estimate", tags: ["omega3", "lean_protein"] };
+const GREENS = { foodName: "燙青菜", estimatedCalories: 45, carbsG: 6, proteinG: 3, fatG: 1, light: "green", confidence: "high", sourceType: "estimate", tags: ["vegetable", "high_fiber", "light_cooking"] };
+
+function multi(readings) {
+  const shots = readings.map((r) => ({ imageDataUrl: r ? PIXEL : null, reading: r }));
+  const result = mergeFoodReadings(readings);
+  return { shots, imageDataUrl: PIXEL, result, memoryHint: null, aiCalories: result.estimatedCalories };
+}
+
+CASES.push(
+  { title: "一餐三盤 —— 加起來算成同一筆", preview: multi([RICE, FISH, GREENS]) },
+  { title: "同一盤拍了兩次 —— 不講的話就會被算成兩份", preview: multi([RICE, FISH, RICE]) },
+  { title: "其中一張讀不出來 —— 其餘的照樣合併", preview: multi([RICE, null, FISH]) }
+);
+
 /** Each card holds its own state so the 份量 chips can actually be pressed —
  * 「吃一半」 twice still being a half is the thing worth checking by hand. */
 function Case({ title, preview, report }) {
@@ -157,6 +177,13 @@ function Case({ title, preview, report }) {
           onEditCalories={(v) => setState((s) => ({ ...s, result: { ...s.result, estimatedCalories: v } }))}
           onUseEstimate={() => setState((s) => ({ ...s, memoryHint: null, result: { ...s.result, estimatedCalories: s.aiCalories } }))}
           onSetPortion={(f) => setState((s) => ({ ...s, memoryHint: null, result: applyPortion(s.result, f) }))}
+          onRemovePhoto={(i) =>
+            setState((s) => {
+              const shots = s.shots.filter((_, n) => n !== i);
+              return { ...s, shots, result: mergeFoodReadings(shots.map((sh) => sh.reading)) };
+            })
+          }
+          analysisProgress={null}
           report={report}
           gender="female"
         />

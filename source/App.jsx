@@ -108,7 +108,7 @@ import { upsertVisit, removeVisit, markVisitDone } from "./lib/visits.js";
 import { upsertPlan, removePlan, markPlanDone } from "./lib/examPlans.js";
 import { buildIcs, icsFilename } from "./lib/calendar.js";
 import { joinSleep, splitSleep, formatSleep } from "./lib/sleep.js";
-import { normalizeFoodReading, applyPortion, sourceNote, PORTIONS } from "./lib/foodEstimate.js";
+import { normalizeFoodReading, mergeFoodReadings, applyPortion, sourceNote, PORTIONS, MAX_FOOD_PHOTOS } from "./lib/foodEstimate.js";
 import HealthAnalysis from "./components/HealthAnalysis.jsx";
 import WorkoutSuggestions from "./components/WorkoutSuggestions.jsx";
 import WeeklyPlanCard from "./components/WeeklyPlanCard.jsx";
@@ -670,7 +670,7 @@ function WaterCard({
   );
 }
 
-export function AnalysisModal({ analyzing, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onUseEstimate, onSetPortion, report, gender }) {
+export function AnalysisModal({ analyzing, analysisProgress, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onUseEstimate, onSetPortion, onRemovePhoto, report, gender }) {
   if (!analyzing && !analysisError && !analysisPreview) return null;
   const r = analysisPreview?.result;
 
@@ -679,7 +679,10 @@ export function AnalysisModal({ analyzing, analysisError, analysisPreview, onCon
       <div className="modal-card analysis-modal-card" onClick={(e) => e.stopPropagation()}>
         {analyzing && (
           <div className="analyzing-row" style={{ justifyContent: "center", padding: "24px 0" }}>
-            <Loader2 size={20} className="spin" /> 正在分析照片中的食物與熱量…
+            <Loader2 size={20} className="spin" />{" "}
+            {analysisProgress
+              ? `正在分析第 ${analysisProgress.done + 1} / ${analysisProgress.total} 張…`
+              : "正在分析照片中的食物與熱量…"}
           </div>
         )}
 
@@ -695,7 +698,7 @@ export function AnalysisModal({ analyzing, analysisError, analysisPreview, onCon
 
         {!analyzing && analysisPreview && r && (
           <div className="analysis-card" style={{ border: "none", padding: 0, marginBottom: 0 }}>
-            <img src={analysisPreview.imageDataUrl} alt="食物相片" />
+            {analysisPreview.imageDataUrl && <img src={analysisPreview.imageDataUrl} alt="食物相片" />}
             <div className="analysis-card-body">
               <div className="analysis-food-name">{r.foodName}</div>
               <div className="analysis-cal-row">
@@ -723,6 +726,34 @@ export function AnalysisModal({ analyzing, analysisError, analysisPreview, onCon
                   </span>
                 </div>
               )}
+              {/* One row per photo, each removable. Adding the plates up is
+                  what makes several photos worth taking, and it is also the
+                  one way this can go wrong that she would never spot: the same
+                  dish shot twice becomes two portions, and on screen that is
+                  just a slightly larger number. */}
+              {analysisPreview.shots && analysisPreview.shots.length > 1 && (
+                <div className="shot-list">
+                  {analysisPreview.shots.map((sh, i) => (
+                    <div className={`shot-row ${sh.reading ? "" : "is-dead"}`} key={i}>
+                      {sh.imageDataUrl ? (
+                        <img src={sh.imageDataUrl} alt="" className="shot-thumb" />
+                      ) : (
+                        <span className="shot-thumb is-blank" />
+                      )}
+                      <span className="shot-name">
+                        {sh.reading ? sh.reading.foodName : `第 ${i + 1} 張讀不出來`}
+                      </span>
+                      <span className="shot-kcal">
+                        {sh.reading ? `${Math.round(Number(sh.reading.estimatedCalories) || 0)} 大卡` : "—"}
+                      </span>
+                      <button type="button" className="icon-btn" aria-label="移除這張" onClick={() => onRemovePhoto(i)}>
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Where the number came from. The prompt asks the model to say
                   when it read a printed label and to be honest about how sure
                   it is; both were being thrown away, so a transcription and a
@@ -763,7 +794,16 @@ export function AnalysisModal({ analyzing, analysisError, analysisPreview, onCon
               {/* The breakdown is what makes the total auditable: without it a
                   wrong number is a number she cannot see into, and the only
                   repair available is to overwrite the whole thing. */}
-              {r.items && r.items.length > 1 && (
+              {(() => {
+                /* With several photos the strip above IS the breakdown, one
+                   line per plate. Repeating it as an item list would be the
+                   same three rows twice, in a card that has run past the
+                   bottom of the screen before — so it only appears when a
+                   photo broke down into more than itself. */
+                const shots = analysisPreview.shots || [];
+                const alive = shots.filter((sh) => sh.reading).length;
+                return r.items && r.items.length > 1 && (shots.length <= 1 || r.items.length > alive);
+              })() && (
                 <div className="analysis-items">
                   {r.items.map((it, i) => (
                     <div className="analysis-item" key={`${it.name}-${i}`}>
@@ -847,7 +887,8 @@ export default function App() {
   const [exerciseForm, setExerciseForm] = useState({ date: todayStr(), activityId: "walk", customLabel: "", durationMin: "" });
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
-  const [analysisPreview, setAnalysisPreview] = useState(null); // { imageDataUrl, result }
+  const [analysisPreview, setAnalysisPreview] = useState(null); // { photos, result }
+  const [analysisProgress, setAnalysisProgress] = useState(null); // { done, total }
   const [manualForm, setManualForm] = useState({ name: "", calories: "" });
   /** Calorie figures corrected by hand, per food. See lib/foodMemory.js. */
   const [foodMemory, setFoodMemory] = useState([]);
@@ -1498,42 +1539,109 @@ export default function App() {
     }
   }
 
-  async function handlePhotoFile(file) {
-    if (!file) return;
+  /**
+   * Analyse one to five photos of the same meal.
+   *
+   * Several photos are read one at a time rather than in parallel, for the
+   * same reason the report pages are: the free Gemini tier is rate limited,
+   * and five requests at once fail as a batch where five in a row succeed.
+   *
+   * Only the first photo is kept as the diary's thumbnail. Five compressed
+   * images per meal would be roughly a hundred kilobytes a day into a
+   * localStorage shared with every health record there is, and the photos
+   * have already done their job by this point.
+   */
+  async function handlePhotoFile(fileList) {
+    const files = [...(fileList instanceof FileList || Array.isArray(fileList) ? fileList : [fileList])]
+      .filter(Boolean)
+      .slice(0, MAX_FOOD_PHOTOS);
+    if (!files.length) return;
+
     setAnalysisError("");
     setAnalyzing(true);
     setAnalysisPreview(null);
-    try {
-      const base64 = await fileToBase64(file);
+    setAnalysisProgress(files.length > 1 ? { done: 0, total: files.length } : null);
+
+    const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
+    const shots = [];
+    let lastError = null;
+
+    for (let i = 0; i < files.length; i++) {
+      if (files.length > 1) setAnalysisProgress({ done: i, total: files.length });
+      const file = files[i];
       const mediaType = file.type || "image/jpeg";
-      const imageDataUrl = `data:${mediaType};base64,${base64}`;
-      const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
-      /* Everything a vision model reads off a photo goes through a bounds
-         check before it is shown — lab markers and scale readings always did,
-         and the meal's calorie figure was the one that did not, even though
-         the day's total is what decides whether the garden grows. Nothing is
-         thrown away here: the checks produce notes beside a figure she can
-         still edit, because a blanked-out meal is worse than a suspect one. */
-      const result = normalizeFoodReading(
-        await analyzeFoodPhoto(base64, mediaType, aiProvider, activeKey, geminiModel)
-      );
-      // A figure this person already corrected for this exact food beats a
-      // fresh guess from a photo — a packaged item's label does not change.
-      // It is applied rather than merely offered because the correction was
-      // deliberate, but the card says so and offers the estimate back in one
-      // tap. aiCalories is kept so a value nobody touched is never learned.
-      const memoryHint = suggestion(foodMemory, result.foodName, result.estimatedCalories);
-      setAnalysisPreview({
-        imageDataUrl,
-        result: memoryHint ? { ...result, estimatedCalories: memoryHint.calories } : result,
-        memoryHint,
-        aiCalories: Number(result.estimatedCalories) || 0,
-      });
-    } catch (e) {
-      setAnalysisError(e.message || "照片分析失敗，請重新拍攝或改用手動輸入。");
-    } finally {
-      setAnalyzing(false);
+      try {
+        const base64 = await fileToBase64(file);
+        shots.push({
+          imageDataUrl: `data:${mediaType};base64,${base64}`,
+          reading: await analyzeFoodPhoto(base64, mediaType, aiProvider, activeKey, geminiModel),
+        });
+      } catch (e) {
+        lastError = e;
+        /* A photo that failed keeps its place in the list: 「第 2 張讀不出來」
+           only means something if the numbering matches what she picked. */
+        shots.push({ imageDataUrl: null, reading: null });
+      }
     }
+
+    setAnalysisProgress(null);
+    setAnalyzing(false);
+
+    if (shots.every((sh) => !sh.reading)) {
+      setAnalysisError(lastError?.message || "照片分析失敗，請重新拍攝或改用手動輸入。");
+      return;
+    }
+
+    setAnalysisPreview(buildAnalysisPreview(shots));
+  }
+
+  /**
+   * Turn the photos in hand into what the card shows.
+   *
+   * Kept separate because removing a photo has to redo all of it — the total,
+   * the checks, and whether a remembered figure still applies.
+   */
+  function buildAnalysisPreview(shots) {
+    const alive = shots.filter((sh) => sh.reading);
+    /* Everything a vision model reads off a photo goes through a bounds check
+       before it is shown — lab markers and scale readings always did, and the
+       meal's calorie figure was the one that did not, even though the day's
+       total is what decides whether the garden grows. Nothing is thrown away:
+       the checks produce notes beside a figure she can still edit, because a
+       blanked-out meal is worse than a suspect one. */
+    const result =
+      alive.length === 1 && shots.length === 1
+        ? normalizeFoodReading(shots[0].reading)
+        : mergeFoodReadings(shots.map((sh) => sh.reading));
+
+    // A figure this person already corrected for this exact food beats a fresh
+    // guess from a photo — a packaged item's label does not change. It is
+    // applied rather than merely offered because the correction was deliberate,
+    // but the card says so and offers the estimate back in one tap. aiCalories
+    // is kept so a value nobody touched is never learned.
+    //
+    // Only ever for a single photo: a remembered 御選肉鬆飯糰 is a figure for
+    // that one thing, and 「白飯、烤鯖魚、燙青菜」 is not a food anyone corrected.
+    const memoryHint =
+      shots.length === 1 ? suggestion(foodMemory, result.foodName, result.estimatedCalories) : null;
+
+    return {
+      shots,
+      imageDataUrl: shots.find((sh) => sh.imageDataUrl)?.imageDataUrl || null,
+      result: memoryHint ? { ...result, estimatedCalories: memoryHint.calories } : result,
+      memoryHint,
+      aiCalories: Number(result.estimatedCalories) || 0,
+    };
+  }
+
+  /** Drop one photo and redo the sum — the only cure for a dish shot twice. */
+  function removeAnalysisPhoto(index) {
+    setAnalysisPreview((prev) => {
+      if (!prev || !prev.shots) return prev;
+      const shots = prev.shots.filter((_, i) => i !== index);
+      if (!shots.some((sh) => sh.reading)) return prev;
+      return buildAnalysisPreview(shots);
+    });
   }
 
   async function confirmAnalysisEntry() {
@@ -3835,6 +3943,30 @@ export default function App() {
         /* Pinned to the bottom of the scroll area. Before this, a long reading
            pushed the buttons past the bottom of the screen and the entry could
            not be saved at all. */
+        .shot-list{ margin-top:10px; }
+        .shot-row{
+          display:flex;
+          align-items:center;
+          gap:8px;
+          padding:5px 0;
+          border-bottom:1px solid var(--line);
+          font-size:12px;
+        }
+        .shot-row.is-dead{ color:var(--ink-soft); opacity:.75; }
+        .shot-thumb{
+          width:32px;
+          height:32px;
+          flex:none;
+          border-radius:8px;
+          object-fit:cover;
+          background:var(--line);
+        }
+        .shot-thumb.is-blank{ display:inline-block; }
+        /* Flex children do not shrink below their content, so a long dish name
+           would push the calories and the remove button off the card. */
+        .shot-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .shot-kcal{ flex:none; font-weight:700; color:var(--ink-soft); }
+
         .analysis-source{
           font-size:11.5px;
           line-height:1.5;
@@ -4323,22 +4455,21 @@ export default function App() {
                 accept="image/*"
                 capture="environment"
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
                   setShowCaptureMenu(false);
-                  handlePhotoFile(file);
+                  handlePhotoFile(e.target.files);
                   e.target.value = "";
                 }}
               />
             </label>
             <label className="fab-menu-item photo-input-label">
-              <ImageIcon size={17} /> 從相簿選擇
+              <ImageIcon size={17} /> 相簿（可多選）
               <input
                 type="file"
                 accept="image/*"
+                multiple
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
                   setShowCaptureMenu(false);
-                  handlePhotoFile(file);
+                  handlePhotoFile(e.target.files);
                   e.target.value = "";
                 }}
               />
@@ -4365,6 +4496,8 @@ export default function App() {
         onEditCalories={updateAnalysisCalories}
         onUseEstimate={useAnalysisEstimate}
         onSetPortion={setAnalysisPortion}
+        onRemovePhoto={removeAnalysisPhoto}
+        analysisProgress={analysisProgress}
         report={latestReport(reports)}
         gender={profile && profile.gender === "male" ? "male" : "female"}
       />
@@ -5003,20 +5136,19 @@ function DietTab({
               accept="image/*"
               capture="environment"
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                onPhotoFile(file);
+                onPhotoFile(e.target.files);
                 e.target.value = "";
               }}
             />
           </label>
           <label className="btn btn-secondary photo-input-label">
-            <ImageIcon size={16} /> 從相簿選擇
+            <ImageIcon size={16} /> 相簿（可多選）
             <input
               type="file"
               accept="image/*"
+              multiple
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                onPhotoFile(file);
+                onPhotoFile(e.target.files);
                 e.target.value = "";
               }}
             />
@@ -5024,6 +5156,7 @@ function DietTab({
         </div>
         <p style={{ fontSize: "11.5px", color: "var(--ink-soft)", margin: "0 0 4px" }}>
           拍照後會自動分析，結果會以彈出視窗顯示，確認無誤後即可加入今日紀錄。
+          一餐有好幾盤時，可以從相簿一次選最多 {MAX_FOOD_PHOTOS} 張，熱量會加起來算成同一筆。
         </p>
 
         <div className="section-title" style={{ marginTop: "14px", fontSize: "13px" }}>

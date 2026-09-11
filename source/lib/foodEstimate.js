@@ -199,6 +199,128 @@ export function normalizeFoodReading(raw) {
   };
 }
 
+/**
+ * 一餐最多幾張照片。
+ *
+ * 比健檢報告的 10 張少，因為這是完全不同的一件事：報告的十頁是同一份文件，
+ * 而一餐的每一張都是另一道菜、另一次 API 請求。桌上三四盤已經算多，
+ * 而每多一張就多一次免費額度的消耗和一次讀錯的機會。
+ */
+export const MAX_FOOD_PHOTOS = 5;
+
+const LIGHT_ORDER = { green: 0, yellow: 1, red: 2 };
+const CONFIDENCE_ORDER = { high: 0, medium: 1, low: 2 };
+
+/** 名稱正規化到「能不能算是同一樣東西」的程度，只去空白和標點。 */
+function nameKey(name) {
+  return String(name || "")
+    .replace(/[\s、，,。．.・:：（）()「」【】]/g, "")
+    .toLowerCase();
+}
+
+/**
+ * 把好幾張照片合成同一餐。
+ *
+ * **合併方式跟健檢報告完全相反，這點是關鍵。** 報告的多頁是同一份文件，
+ * 所以規則是「先讀到的優先，後面的只補空缺」—— 同一個項目出現兩次代表其中
+ * 一次讀錯了。一餐的多張照片是**不同的菜**，所以規則是相加：桌上的三盤加起來
+ * 才是這一餐。用報告那套規則會只算到第一盤。
+ *
+ * 而相加帶來一個報告沒有的風險，也是這個函式真正在防的事：
+ * **同一盤從兩個角度拍兩次，會被算成吃了兩份。** 她不會發現 —— 畫面上只是
+ * 一個比較大的數字。所以同名的照片會被標出來，而且每一張都可以單獨移除，
+ * 合計跟著重算。
+ */
+export function mergeFoodReadings(readings) {
+  const list = (readings || []).map((raw, index) => ({
+    index,
+    ok: Boolean(raw && typeof raw === "object"),
+    reading: raw && typeof raw === "object" ? normalizeFoodReading(raw) : null,
+  }));
+
+  const good = list.filter((p) => p.ok && p.reading);
+  const failedPhotos = list.filter((p) => !p.ok).map((p) => p.index + 1);
+
+  const warnings = [];
+
+  /* 同一盤拍兩次 —— 相加之後看起來只是「今天吃比較多」，沒有任何地方會說出來。 */
+  const seen = new Map();
+  const duplicates = [];
+  for (const p of good) {
+    const key = nameKey(p.reading.foodName);
+    if (!key) continue;
+    if (seen.has(key)) duplicates.push({ first: seen.get(key) + 1, again: p.index + 1, name: p.reading.foodName });
+    else seen.set(key, p.index);
+  }
+  for (const d of duplicates) {
+    warnings.push({
+      code: "duplicate",
+      text: `第 ${d.first} 張和第 ${d.again} 張都是「${d.name}」。如果是同一盤拍了兩次，請移除一張，不然會被算成兩份。`,
+    });
+  }
+
+  if (failedPhotos.length && good.length) {
+    warnings.push({
+      code: "photo-failed",
+      text: `第 ${failedPhotos.join("、")} 張讀不出來，下面是其餘 ${good.length} 張合起來的結果。`,
+    });
+  }
+
+  /* 相加。三大營養素只有在每一張都有的時候才加 —— 加一半的總和比沒有更誤導，
+     而且下面的「營養素對不對得起來」會拿它去比對。 */
+  const total = good.reduce((sum, p) => sum + (p.reading.estimatedCalories || 0), 0);
+  const macros = {};
+  for (const key of Object.keys(MACRO_LIMITS)) {
+    macros[key] = good.length && good.every((p) => p.reading[key] != null)
+      ? good.reduce((sum, p) => sum + p.reading[key], 0)
+      : null;
+  }
+
+  /* 燈號取最重的那一張：一餐的負擔不會因為旁邊有一盤燙青菜就變輕。 */
+  const worst = good.reduce(
+    (acc, p) => (acc == null || LIGHT_ORDER[p.reading.light] > LIGHT_ORDER[acc.reading.light] ? p : acc),
+    null
+  );
+  /* 把握度取最低的：整餐的數字只能跟它最不確定的那一部分一樣可靠。 */
+  const confidence = good.reduce(
+    (acc, p) => (CONFIDENCE_ORDER[p.reading.confidence] > CONFIDENCE_ORDER[acc] ? p.reading.confidence : acc),
+    "high"
+  );
+
+  const items = [];
+  for (const p of good) {
+    if (p.reading.items && p.reading.items.length) items.push(...p.reading.items);
+    else items.push({ name: p.reading.foodName, kcal: p.reading.estimatedCalories || null });
+  }
+
+  const tags = [];
+  for (const p of good) for (const t of p.reading.tags || []) if (!tags.includes(t)) tags.push(t);
+
+  /* 合完之後再過一次同一道把關 —— 相加出來的總數一樣可能大得不合理。 */
+  const merged = normalizeFoodReading({
+    foodName: good.map((p) => p.reading.foodName).join("、"),
+    estimatedCalories: total,
+    carbsG: macros.carbsG,
+    proteinG: macros.proteinG,
+    fatG: macros.fatG,
+    items: items.slice(0, MAX_ITEMS),
+    light: worst ? worst.reading.light : "yellow",
+    reason: worst ? worst.reason || worst.reading.reason : "",
+    confidence: good.length ? confidence : "low",
+    sourceType: good.length && good.every((p) => p.reading.sourceType === "label") ? "label" : "estimate",
+    tags,
+  });
+
+  return {
+    ...merged,
+    /* 分項的比對在這裡沒有意義：每一張自己已經比對過，而合併後的 items 是
+       各張的分項接起來的，本來就等於總和。 */
+    warnings: [...warnings, ...merged.warnings.filter((w) => w.code !== "items-mismatch")],
+    photos: list,
+    failedPhotos,
+  };
+}
+
 /** 吃了幾份。整份、一半、一份半、兩份 —— 蓋掉大部分「跟照片不一樣多」的情況。 */
 export const PORTIONS = [
   { key: "half", label: "吃一半", factor: 0.5 },

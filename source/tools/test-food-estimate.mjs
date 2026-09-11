@@ -24,6 +24,8 @@ import {
   MEAL_CALORIE_LIMIT,
   MACRO_TOLERANCE,
   KCAL_PER_G,
+  mergeFoodReadings,
+  MAX_FOOD_PHOTOS,
 } from "../lib/foodEstimate.js";
 
 let passed = 0;
@@ -205,6 +207,84 @@ check("a missing macro stays missing", applyPortion(normalizeFoodReading({ estim
 check("a nonsense factor changes nothing", applyPortion(base, 0).estimatedCalories, 430);
 ok("there is a plain 整份 to come back to", PORTIONS.some((p) => p.factor === 1), JSON.stringify(PORTIONS.map((p) => p.factor)));
 ok("every portion has a label and a positive factor", PORTIONS.every((p) => p.label && p.factor > 0));
+
+
+/* --- 一餐拍好幾張 ---
+ * The merge rule here is the opposite of the health report's, and getting it
+ * backwards would be silent: a report's pages are one document, so a value
+ * seen twice means one reading was wrong and the first page wins. A meal's
+ * photos are different dishes, so they add up — using the report's rule would
+ * quietly log only the first plate. */
+const rice = { foodName: "白飯", estimatedCalories: 280, carbsG: 60, proteinG: 5, fatG: 1, light: "yellow", confidence: "high", sourceType: "estimate", tags: ["refined_carb"] };
+const fish = { foodName: "烤鯖魚", estimatedCalories: 260, carbsG: 0, proteinG: 24, fatG: 18, light: "green", confidence: "medium", sourceType: "estimate", tags: ["omega3", "lean_protein"] };
+const fried = { foodName: "炸雞腿", estimatedCalories: 420, carbsG: 12, proteinG: 26, fatG: 30, light: "red", confidence: "medium", sourceType: "estimate", tags: ["fried"] };
+
+const meal = mergeFoodReadings([rice, fish]);
+check("two plates add up", meal.estimatedCalories, 540);
+check("and so do the macros", [meal.carbsG, meal.proteinG, meal.fatG], [60, 29, 19]);
+check("both names are kept", meal.foodName, "白飯、烤鯖魚");
+check("every plate's tags come along", meal.tags, ["refined_carb", "omega3", "lean_protein"]);
+
+/* The meal is as heavy as its heaviest part — a plate of greens beside the
+ * fried chicken does not make the fried chicken lighter. */
+check("the light is the worst one, not an average", mergeFoodReadings([fish, fried]).light, "red");
+check("and greens alone stay green", mergeFoodReadings([fish]).light, "green");
+/* A total can only be as trustworthy as its least certain part. */
+check("confidence is the lowest of them", mergeFoodReadings([rice, fish]).confidence, "medium");
+check("only all-label counts as label", mergeFoodReadings([{ ...rice, sourceType: "label" }, fish]).sourceType, "estimate");
+check("but all of them does", mergeFoodReadings([{ ...rice, sourceType: "label" }, { ...fish, sourceType: "label" }]).sourceType, "label");
+
+/* --- the hazard adding creates, which the report merge never had ---
+ * The same plate shot twice becomes two portions, and on screen that is just
+ * a larger number — nothing about it looks wrong. */
+const doubled = mergeFoodReadings([rice, fish, { ...rice }]);
+ok("the same dish twice is called out", codes(doubled).includes("duplicate"), JSON.stringify(codes(doubled)));
+const dupText = doubled.warnings.find((w) => w.code === "duplicate").text;
+ok("and it says which two photos", /第 1 張/.test(dupText) && /第 3 張/.test(dupText), dupText);
+ok("and what happens if she leaves it", dupText.includes("兩份"), dupText);
+/* Punctuation and spacing must not hide a duplicate. */
+ok("near-identical names still count as the same dish", codes(mergeFoodReadings([rice, { ...rice, foodName: "白飯 " }])).includes("duplicate"));
+check("different dishes raise nothing", codes(mergeFoodReadings([rice, fish, fried])), []);
+
+/* --- when one photo fails --- */
+const partial = mergeFoodReadings([rice, null, fish]);
+check("the rest still merge", partial.estimatedCalories, 540);
+check("and the failure is named", partial.failedPhotos, [2]);
+ok("and explained", codes(partial).includes("photo-failed"), JSON.stringify(codes(partial)));
+check("every photo keeps its slot so the UI can line them up", partial.photos.length, 3);
+check("including the one that failed", partial.photos[1].ok, false);
+check("all photos failing is an empty meal", mergeFoodReadings([null, null]).estimatedCalories, 0);
+
+/* --- a macro that only some photos have ---
+ * Half a sum reads as a whole one, and the macro-vs-calorie check would then
+ * compare a full calorie total against a partial macro total and cry wolf. */
+const missingMacro = mergeFoodReadings([rice, { ...fish, fatG: null }]);
+check("a macro missing from one photo is not half-summed", missingMacro.fatG, null);
+/* Per macro, not all-or-nothing: carbs and protein were on every photo, so
+ * their sums are whole and worth showing. */
+check("the complete ones are still summed", [missingMacro.carbsG, missingMacro.proteinG], [60, 29]);
+check("so no mismatch is claimed", codes(missingMacro), []);
+
+/* --- the breakdown is per dish, across all photos --- */
+const withItems = mergeFoodReadings([
+  { ...rice, items: [{ name: "白飯", kcal: 280 }] },
+  { ...fried, items: [{ name: "炸雞腿", kcal: 380 }, { name: "醃蘿蔔", kcal: 40 }] },
+]);
+check("items from every photo are listed", withItems.items.map((i) => i.name), ["白飯", "炸雞腿", "醃蘿蔔"]);
+/* A photo with no breakdown of its own still earns a line, or it would vanish
+ * from a list that is supposed to account for the total. */
+check("a photo without items becomes one line", mergeFoodReadings([rice, fish]).items.map((i) => i.name), ["白飯", "烤鯖魚"]);
+/* Each photo already checked its own items against its own total; the merged
+ * list is those lists joined, so it agrees with the sum by construction. */
+check("no items-mismatch is invented by merging", codes(withItems), []);
+
+/* --- the merged total goes through the same gate as a single photo --- */
+const huge = mergeFoodReadings([{ ...rice, estimatedCalories: 1200 }, { ...fried, estimatedCalories: 1400 }]);
+ok("an implausible total is still flagged", codes(huge).includes("high"), JSON.stringify(codes(huge)));
+
+ok("the cap is smaller than the report's ten pages", MAX_FOOD_PHOTOS >= 2 && MAX_FOOD_PHOTOS <= 10, String(MAX_FOOD_PHOTOS));
+check("nothing at all is an empty meal, not a crash", mergeFoodReadings([]).estimatedCalories, 0);
+check("and neither is rubbish", mergeFoodReadings(null).estimatedCalories, 0);
 
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
