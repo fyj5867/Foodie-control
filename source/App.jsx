@@ -2631,34 +2631,28 @@ export default function App() {
           overflow:hidden;
         }
         .split-input:focus-within{ border-color:var(--brand); }
-        .split-half{
-          display:flex;
-          align-items:center;
+        .field .split-input input{
           flex:1 1 0;
           /* Flex children refuse to shrink below their content by default, and
              a number input's content includes its spinner — without this the
-             two halves push the box past the card's edge at 320px. */
-          min-width:0;
-          padding-right:10px;
-        }
-        .split-half + .split-half{ border-left:1px solid var(--line); }
-        .field .split-half input{
-          flex:1 1 0;
+             two cells push the box past the card's edge at 320px. */
           min-width:0;
           width:auto;
           border:none;
           border-radius:0;
           background:transparent;
-          text-align:right;
+          text-align:center;
+          padding-left:4px;
           padding-right:4px;
         }
-        .field .split-half input:focus{ outline:none; }
-        .split-unit{
-          flex:none;
-          font-size:12.5px;
-          font-weight:700;
-          color:var(--ink-soft);
-        }
+        /* The hairline between the two cells is the whole visual idea, so the
+           spinners have to go: at half a row's width they would eat the space
+           the numbers need, and they are useless for a value typed once a day. */
+        .field .split-input input::-webkit-outer-spin-button,
+        .field .split-input input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+        .field .split-input input[type="number"]{ -moz-appearance:textfield; }
+        .field .split-input input + input{ border-left:1px solid var(--line); }
+        .field .split-input input:focus{ outline:none; }
 
         .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
         /* Grid and flex children refuse to shrink below their content by
@@ -5420,16 +5414,24 @@ function TrackingTab({
               <input type="number" step="1" value={recordForm.bmr} onChange={(e) => setRecordForm({ ...recordForm, bmr: e.target.value })} />
             </div>
           </div>
-          {/* One night's sleep is one value, so it gets one label and one
-              box with a line down the middle — not two fields side by side,
-              which read as two unrelated things to fill in. The two halves
-              exist because sleep does not happen in half hours: a single
-              decimal field left her either rounding 7:15 up to 7.5 or doing
-              the division herself every morning. */}
-          <div className="field">
-            <label>昨晚睡眠（時/分）</label>
-            <div className="split-input">
-              <span className="split-half">
+          {/* One night's sleep is one value, so it gets one label and one box
+              with a line down the middle — not two fields side by side, which
+              read as two unrelated things to fill in. The two halves exist
+              because sleep does not happen in half hours: a single decimal
+              field left her either rounding 7:15 up to 7.5 or doing the
+              division herself every morning.
+
+              The box stays in the left column, exactly where the old single
+              「昨晚睡眠（小時）」 field sat — it holds two two-digit numbers,
+              and stretched across the whole card it read as a large empty
+              container rather than a field. */}
+          <div className="field-row">
+            <div className="field">
+              <label>昨晚睡眠（時/分）</label>
+              {/* No 時/分 suffixes inside the cells: the label already says
+                  which order they come in, and two-digit numbers in a
+                  half-width box have no room to spare. */}
+              <div className="split-input">
                 <input
                   type="number"
                   step="1"
@@ -5441,12 +5443,9 @@ function TrackingTab({
                   onChange={(e) => setRecordForm((f) => ({ ...f, sleepH: e.target.value }))}
                   placeholder="7"
                 />
-                <span className="split-unit">時</span>
-              </span>
-              {/* step must stay 1: with step="5" the browser's own validation
-                  rejects 12 分 and blocks the submit without saying why — and
-                  being free of the half-hour grid is the entire point here. */}
-              <span className="split-half">
+                {/* step must stay 1: with step="5" the browser's own validation
+                    rejects 12 分 and blocks the submit without saying why — and
+                    being free of the half-hour grid is the entire point here. */}
                 <input
                   type="number"
                   step="1"
@@ -5458,9 +5457,9 @@ function TrackingTab({
                   onChange={(e) => setRecordForm((f) => ({ ...f, sleepM: e.target.value }))}
                   placeholder="15"
                 />
-                <span className="split-unit">分</span>
-              </span>
+              </div>
             </div>
+            <div className="field" />
           </div>
           <button type="submit" className="btn btn-primary btn-block">
             <Plus size={15} /> {isEditing ? "更新紀錄" : "儲存紀錄"}
