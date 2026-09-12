@@ -2695,8 +2695,35 @@ export default function App() {
         }
         @keyframes pulse{ 0%,100%{opacity:.3;} 50%{opacity:1;} }
 
+        /* A solid strip behind the status bar.
+           The header scrolls away with the page, and under a translucent status
+           bar that would leave whatever is scrolling past sliding beneath the
+           clock and the battery. Fixed rather than part of the layout, so it
+           keeps that strip opaque without costing a pixel of height. Below the
+           modal backdrop (z-index 100) on purpose: a dialog is allowed to cover
+           the whole screen. */
+        .app-shell::before{
+          content:"";
+          position:fixed;
+          top:0;
+          left:0;
+          right:0;
+          height:env(safe-area-inset-top);
+          background:var(--card);
+          z-index:60;
+          pointer-events:none;
+        }
+
         .app-header{
-          padding:18px 20px 14px;
+          /* index.html asks for viewport-fit=cover and a translucent status
+             bar. That is what lets the header colour run right to the top edge
+             of an iPhone — but it also means the web view starts UNDERNEATH the
+             clock and the battery, and nothing here accounted for it, so the
+             title sat behind them. env() adds exactly the strip the phone
+             reserves, and resolves to 0 where there is nothing to avoid, so
+             desktop and Android are unaffected. */
+          padding:calc(18px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) 14px
+            calc(20px + env(safe-area-inset-left));
           border-bottom:1px solid var(--line);
           background:var(--card);
         }
@@ -3689,7 +3716,10 @@ export default function App() {
           grid-template-columns:repeat(6,1fr);
           background:var(--card);
           border-top:1px solid var(--line);
-          padding:6px 4px 10px;
+          /* The same at the other end: the home indicator sits over the last
+             few millimetres of the screen, and the nav labels were ending up
+             underneath it. */
+          padding:6px 4px calc(10px + env(safe-area-inset-bottom));
         }
         .nav-btn{
           display:flex;
@@ -4277,7 +4307,8 @@ export default function App() {
         .fab{
           position:absolute;
           right:16px;
-          bottom:82px;
+          /* Clears the nav bar, which is now taller by the home indicator. */
+          bottom:calc(82px + env(safe-area-inset-bottom));
           width:54px;
           height:54px;
           border-radius:50%;
@@ -4305,7 +4336,8 @@ export default function App() {
         .fab-menu{
           position:absolute;
           right:16px;
-          bottom:144px;
+          /* Sits above the fab, so it moves by the same amount. */
+          bottom:calc(144px + env(safe-area-inset-bottom));
           z-index:46;
           display:flex;
           flex-direction:column;

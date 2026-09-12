@@ -661,6 +661,23 @@ git 記錄裡就有 —— 留著它們只是讓 tools/ 看起來比實際上複
 - 欄位平常長得跟原本的標題一樣（透明外框），碰到才浮出邊框 —— 一個一直畫著框的
   輸入格看起來像「還沒填」，而它其實是「可以改」
 
+## iPhone 的瀏海與安全區（2026-09-12 修）
+- **標題被 iPhone 的時鐘、訊號、電量壓住了。** 原因是 index.html 同時要求
+  viewport-fit=cover 和 apple-mobile-web-app-status-bar-style: black-translucent
+  —— 這兩個加起來的意思是「網頁自己負責整個螢幕，包含狀態列底下那一條」，
+  而 CSS 裡**沒有任何一個地方用到 env(safe-area-inset-*)**，所以內容就從最頂端
+  開始畫，正好畫在時鐘後面
+- 修法不是把 status bar 改回不透明（那會讓頂端多一條跟 App 無關的白邊），
+  而是把手機保留的那一條**加進 padding**：
+  `.app-header` 的上／左／右、`.bottom-nav` 的下、`.fab` 與 `.fab-menu` 的 bottom
+- **`env()` 在沒有瀏海的裝置上是 0**，所以桌機和 Android 一個像素都不會變。
+  實測：沒有 inset 時標題仍在 18px，模擬 iPhone 14 Pro（上 59／下 34）時
+  標題落在 77px，剛好讓開狀態列
+- **另外加了一條固定在最上面的白色細條**（`.app-shell::before`，高度就是
+  safe-area-inset-top）。標頭會跟著頁面捲走，而狀態列是半透明的，
+  沒有這條的話捲動中的卡片會從時鐘底下經過。它是 fixed，所以不佔任何版面高度；
+  z-index 60 壓在彈出視窗（100）之下 —— 對話框本來就該蓋住整個螢幕
+
 ## 重要架構決策（改的時候要注意）
 - **App 名稱是 Healthy Care（2026-09 從「糖前哨」改名）。改名只動顯示字串，
   絕對不要動 localStorage 的鍵名** —— `profile`、`body-records`、`food-log`、
