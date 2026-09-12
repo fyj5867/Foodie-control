@@ -868,7 +868,7 @@ export default function HealthAnalysis({
 
         {!draft && (
           <>
-            <div className="photo-input-row">
+            <div className="photo-input-row two-btn-row">
               <label className="btn btn-primary photo-input-label">
                 <Camera size={16} /> 拍照
                 <input
@@ -882,7 +882,7 @@ export default function HealthAnalysis({
                 />
               </label>
               <label className="btn btn-secondary photo-input-label">
-                <ImageIcon size={16} /> 相簿（可多選）
+                <ImageIcon size={16} /> 相簿
                 <input
                   type="file"
                   accept="image/*"

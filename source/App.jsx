@@ -4365,7 +4365,11 @@ export default function App() {
           gap:8px;
           margin-bottom:10px;
         }
-        .two-btn-row .btn{ flex:1; }
+        /* Smaller than a normal button: this pair sits at the very top of the
+           page and gets pressed without being read, so it does not need the
+           weight of a primary action. The smaller text also keeps 「相簿」 on
+           one line — wrapping made both buttons twice as tall. */
+        .two-btn-row .btn{ flex:1; min-width:0; padding:8px 10px; font-size:13px; }
       `}</style>
 
       <div className="diabetes-app app-shell">
@@ -4593,7 +4597,7 @@ export default function App() {
               />
             </label>
             <label className="fab-menu-item photo-input-label">
-              <ImageIcon size={17} /> 相簿（可多選）
+              <ImageIcon size={17} /> 相簿
               <input
                 type="file"
                 accept="image/*"
@@ -5260,7 +5264,7 @@ function DietTab({
             />
           </label>
           <label className="btn btn-secondary photo-input-label">
-            <ImageIcon size={16} /> 相簿（可多選）
+            <ImageIcon size={16} /> 相簿
             <input
               type="file"
               accept="image/*"
