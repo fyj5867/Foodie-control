@@ -61,7 +61,7 @@ git add -A && git commit -m "說明改了什麼" && git push
 網站載入的是 `app.bundle.js`，那是打包產物。
 
 **手機上看不到更新**：改動後要把 `sw.js` 裡的 `CACHE_NAME` 換一個新版本號
-（例如 `healthy-care-v26` → `v27`），否則舊的離線快取會一直給舊畫面。
+（例如 `healthy-care-v27` → `v28`），否則舊的離線快取會一直給舊畫面。
 換完之後手機上把 App 完全關掉再重開。
 
 ---

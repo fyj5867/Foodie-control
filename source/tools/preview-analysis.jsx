@@ -175,6 +175,7 @@ function Case({ title, preview, report }) {
           onConfirm={() => {}}
           onDiscard={() => {}}
           onEditCalories={(v) => setState((s) => ({ ...s, result: { ...s.result, estimatedCalories: v } }))}
+          onEditName={(v) => setState((s) => ({ ...s, result: { ...s.result, foodName: v } }))}
           onUseEstimate={() => setState((s) => ({ ...s, memoryHint: null, result: { ...s.result, estimatedCalories: s.aiCalories } }))}
           onSetPortion={(f) => setState((s) => ({ ...s, memoryHint: null, result: applyPortion(s.result, f) }))}
           onRemovePhoto={(i) =>

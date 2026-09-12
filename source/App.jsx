@@ -671,7 +671,7 @@ function WaterCard({
   );
 }
 
-export function AnalysisModal({ analyzing, analysisProgress, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onUseEstimate, onSetPortion, onRemovePhoto, report, gender }) {
+export function AnalysisModal({ analyzing, analysisProgress, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onEditName, onUseEstimate, onSetPortion, onRemovePhoto, report, gender }) {
   if (!analyzing && !analysisError && !analysisPreview) return null;
   const r = analysisPreview?.result;
 
@@ -701,7 +701,19 @@ export function AnalysisModal({ analyzing, analysisProgress, analysisError, anal
           <div className="analysis-card" style={{ border: "none", padding: 0, marginBottom: 0 }}>
             {analysisPreview.imageDataUrl && <img src={analysisPreview.imageDataUrl} alt="食物相片" />}
             <div className="analysis-card-body">
-              <div className="analysis-food-name">{r.foodName}</div>
+              {/* Editable, because the name is the thing the model gets wrong
+                  most often and everything downstream hangs off it: the diary
+                  entry, and the 熱量標準值 that is looked up and stored under
+                  exactly this text. A wrong name that cannot be fixed teaches
+                  the wrong standard. */}
+              <input
+                type="text"
+                className="analysis-food-name"
+                value={r.foodName}
+                onChange={(e) => onEditName(e.target.value)}
+                placeholder="這是什麼食物？"
+                aria-label="食物名稱"
+              />
               <div className="analysis-cal-row">
                 <input
                   type="number"
@@ -1714,6 +1726,28 @@ export default function App() {
          still meaningful — but the note explaining it no longer matches what
          is on screen, so it goes. */
       return { ...prev, memoryHint: null, result: applyPortion(prev.result, factor) };
+    });
+  }
+
+  /**
+   * Correct what the photo was read as.
+   *
+   * The name is not decoration: 熱量標準值 is looked up and stored under exactly
+   * this text, so renaming「肉鬆飯糰」to「御選肉鬆飯糰」is also the moment her own
+   * corrected figure for that food becomes findable. It is offered rather than
+   * applied — she may have already typed the calories for this particular one.
+   */
+  function updateAnalysisName(value) {
+    setAnalysisPreview((prev) => {
+      if (!prev) return prev;
+      const result = { ...prev.result, foodName: value };
+      /* Only while the figure is still the model own guess. Once she has typed
+         a number for this particular plate, a remembered standard must not
+         come along and overwrite it just because the name now matches. */
+      const untouched = Number(prev.result.estimatedCalories) === Number(prev.aiCalories);
+      const hint = untouched ? suggestion(foodMemory, value, prev.aiCalories) : null;
+      if (!hint) return { ...prev, result, memoryHint: null };
+      return { ...prev, result: { ...result, estimatedCalories: hint.calories }, memoryHint: hint };
     });
   }
 
@@ -4072,7 +4106,17 @@ export default function App() {
           flex-shrink:0;
         }
         .analysis-card-body{ flex:1; min-width:0; }
-        .analysis-food-name{ font-weight:700; font-size:13.5px; margin-bottom:2px; }
+        /* Looks like the heading it replaced until it is tapped — a box with
+           a visible border here would read as an empty field to fill in rather
+           than a name to correct. */
+        .analysis-food-name{
+          font-weight:700; font-size:13.5px; margin-bottom:2px;
+          width:100%; border:1px solid transparent; border-radius:8px;
+          padding:3px 6px; margin-left:-6px; background:transparent;
+          color:var(--ink); font-family:'Noto Sans TC', sans-serif;
+        }
+        .analysis-food-name:hover{ border-color:var(--line); }
+        .analysis-food-name:focus{ border-color:var(--brand); outline:none; background:#fff; }
         .analysis-cal-row{
           display:flex;
           align-items:center;
@@ -4170,6 +4214,17 @@ export default function App() {
           background:var(--brand-soft); border-radius:999px; padding:2px 9px;
         }
         .fold-caret{ margin-left:auto; font-size:9px; color:var(--ink-soft); }
+
+        /* 其他資訊: four folds in one card, one open at a time. A hairline
+           between them so the closed ones read as a list rather than four
+           headings floating in space. */
+        .fold-section + .fold-section{ border-top:1px solid var(--line); }
+        .fold-section .fold-head{ padding:11px 0; }
+        .fold-section .fold-title{ font-size:14px; }
+        /* The cards inside a fold already have their own padding and border;
+           nested in here they would be a box inside a box. */
+        .fold-body > .card{ padding:0; border:none; box-shadow:none; margin:0 0 10px; background:none; }
+        .fold-body > .card:last-child{ margin-bottom:4px; }
 
         .memory-row{
           display:flex;
@@ -4528,6 +4583,7 @@ export default function App() {
         onConfirm={confirmAnalysisEntry}
         onDiscard={discardAnalysis}
         onEditCalories={updateAnalysisCalories}
+        onEditName={updateAnalysisName}
         onUseEstimate={useAnalysisEstimate}
         onSetPortion={setAnalysisPortion}
         onRemovePhoto={removeAnalysisPhoto}

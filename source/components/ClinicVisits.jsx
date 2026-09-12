@@ -207,10 +207,25 @@ export default function ClinicVisits({
   onDeletePlan,
   onTogglePlanDone,
   onAddToCalendar,
+  /**
+   * Which of the four cards to render: "plans" | "visits" | "reminders" |
+   * "suggestions". Omitted renders all four, as before.
+   *
+   * They are separable because the page around them wanted them in different
+   * places — what she schedules herself at the very top, the reference lists
+   * folded away at the bottom — and because each part only reads its own
+   * slice of this component's state, so three instances do not fight.
+   */
+  part = null,
   today = todayStr(),
 }) {
   const [draft, setDraft] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  /* Which visit is opened out. Collapsed rows are just the date and the
+     department: a log is scanned by date, and 病症 plus 醫師建議 is three or
+     four lines each — five visits filled a screen with text she was not
+     looking for. One at a time, so the list stays a list. */
+  const [openVisit, setOpenVisit] = useState(null);
   /* The suggestion list is reference: closed unless asked for. What is
      actionable — anything she has actually scheduled — surfaces in 回診提醒,
      which is always visible, so collapsing this hides nothing she needs. */
@@ -239,9 +254,16 @@ export default function ClinicVisits({
   const covered = suggestions.filter((s) => s.covered);
   const shown = showAll ? visits : visits.slice(0, 3);
 
+  const show = (name) => !part || part === name;
+  /* When the page is already folding this section (its own accordion header
+     says 建議安排的檢查), a second identical header inside would be one fold
+     opening onto another fold with the same name. */
+  const ownFold = part !== "suggestions";
+  const suggestionsOpen = ownFold ? showSuggestions : true;
+
   return (
     <>
-      {(reminders.length > 0 || dueExams.length > 0) && (
+      {show("reminders") && (reminders.length > 0 || dueExams.length > 0) && (
         <div className="card">
           <div className="section-title">
             <CalendarClock size={17} /> 回診與檢查提醒
@@ -293,6 +315,7 @@ export default function ClinicVisits({
         </div>
       )}
 
+      {show("visits") && (
       <div className="card">
         <div className="section-title">就醫紀錄</div>
 
@@ -322,14 +345,29 @@ export default function ClinicVisits({
 
         {shown.map((v) => (
           <div className={`visit-row ${v.done ? "is-done" : ""}`} key={v.id}>
-            <div className="visit-head">
+            <div
+              className="visit-head"
+              role="button"
+              tabIndex={0}
+              aria-expanded={openVisit === v.id}
+              onClick={() => setOpenVisit((id) => (id === v.id ? null : v.id))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setOpenVisit((id) => (id === v.id ? null : v.id));
+                }
+              }}
+            >
               <span className="visit-date">{v.date}</span>
               {v.department && <span className="visit-dept">{v.department}</span>}
               <button
                 type="button"
                 className="icon-btn"
                 aria-label={`編輯 ${v.date} 的紀錄`}
-                onClick={() => setDraft({ ...v })}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDraft({ ...v });
+                }}
               >
                 <Pencil size={14} />
               </button>
@@ -337,13 +375,19 @@ export default function ClinicVisits({
                 type="button"
                 className="icon-btn"
                 aria-label={`刪除 ${v.date} 的紀錄`}
-                onClick={() => onDeleteVisit(v.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteVisit(v.id);
+                }}
               >
                 <Trash2 size={14} />
               </button>
             </div>
-            {v.symptom && <div className="visit-symptom">{v.symptom}</div>}
-            {v.advice && <div className="visit-advice">{v.advice}</div>}
+            {openVisit === v.id && v.symptom && <div className="visit-symptom">{v.symptom}</div>}
+            {openVisit === v.id && v.advice && <div className="visit-advice">{v.advice}</div>}
+            {/* The next follow-up stays visible even when folded: it is the one
+                field the app itself acts on, and hiding a date that drives a
+                reminder would make the reminder look like it came from nowhere. */}
             {v.nextDate && (
               <div className="visit-next">
                 下次回診 {v.nextDate}
@@ -369,19 +413,10 @@ export default function ClinicVisits({
           </button>
         )}
       </div>
-      {(outstanding.length > 0 || covered.length > 0 || scheduled.length > 0) && (
+      )}
+      {show("plans") && (
         <div className="card">
-          <button type="button" className="fold-head" onClick={() => setShowSuggestions((v) => !v)}>
-            <Stethoscope size={17} />
-            <span className="fold-title">建議安排的檢查</span>
-            {outstanding.length > 0 && <span className="fold-count">{outstanding.length} 項</span>}
-            {scheduled.length > 0 && <span className="fold-done">已排 {scheduled.length}</span>}
-            <span className="fold-caret">{showSuggestions ? "▲" : "▼"}</span>
-          </button>
-
-          {/* Above the fold on purpose: what she has committed to, and the way
-              to commit to something new. Both were reachable only by opening
-              the card, which made scheduling feel like a hidden feature. */}
+          <div className="section-title">自行排定的檢查</div>
           <div className="plan-list">
             {scheduled.length > 0 && <div className="plan-list-title">已排定</div>}
               {(showAllPlans ? scheduled : scheduled.slice(0, 3)).map((plan) => (
@@ -459,8 +494,25 @@ export default function ClinicVisits({
               </button>
             )}
           </div>
+        </div>
+      )}
 
-          {showSuggestions && (
+      {show("suggestions") && (outstanding.length > 0 || covered.length > 0) && (
+        <div className="card">
+          {ownFold && (
+            <button type="button" className="fold-head" onClick={() => setShowSuggestions((v) => !v)}>
+              <Stethoscope size={17} />
+              <span className="fold-title">建議安排的檢查</span>
+              {outstanding.length > 0 && <span className="fold-count">{outstanding.length} 項</span>}
+              {scheduled.length > 0 && <span className="fold-done">已排 {scheduled.length}</span>}
+              <span className="fold-caret">{showSuggestions ? "▲" : "▼"}</span>
+            </button>
+          )}
+
+          {/* Above the fold on purpose: what she has committed to, and the way
+              to commit to something new. Both were reachable only by opening
+              the card, which made scheduling feel like a hidden feature. */}
+          {suggestionsOpen && (
             <>
               <p className="fine-print" style={{ marginTop: "10px" }}>
                 依你報告上的數值和年齡列出來的，含檢查項目與掛哪一科。要不要做、什麼時候做請由醫師決定。

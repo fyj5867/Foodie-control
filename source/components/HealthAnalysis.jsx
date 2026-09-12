@@ -469,6 +469,24 @@ function DraftEditor({ draft, setDraft, rejected, notes, onSave, onCancel, gende
   );
 }
 
+/**
+ * 其他資訊 —— the four reference lists, one open at a time.
+ *
+ * They were four full cards stacked below the page: the report's values, the
+ * follow-up reminders, the screening suggestions and the report history, well
+ * over four thousand pixels of it, and on any given visit she wants one of
+ * them. An accordion keeps every one findable at a fixed, small cost.
+ *
+ * 回診與檢查提醒 is the default because it is the only one of the four that can
+ * be overdue — the rest are things she goes looking for.
+ */
+const OTHER_SECTIONS = [
+  { key: "reminders", label: "回診與檢查提醒", render: (c) => c.reminders },
+  { key: "report", label: "健檢報告數值", render: (c) => c.report },
+  { key: "suggestions", label: "建議安排的檢查", render: (c) => c.suggestions },
+  { key: "history", label: "報告紀錄", badge: (c) => c.historyCount, render: (c) => c.history },
+];
+
 export default function HealthAnalysis({
   profile,
   latestRecord,
@@ -506,6 +524,9 @@ export default function HealthAnalysis({
      be findable, the space does not have to be permanently given up for
      something used once or twice a year. */
   const [showUpload, setShowUpload] = useState(false);
+  /* Which of the four reference lists is open. Reminders to start with: it is
+     the only one of them that can be overdue. */
+  const [otherOpen, setOtherOpen] = useState("reminders");
   /* The in-range values start collapsed. They are the majority of a report and
      the least useful part of it: a page that opens on thirty 「正常」 rows buries
      the three that are not. */
@@ -635,8 +656,180 @@ export default function HealthAnalysis({
 
   const monthEnd = isMonthEnd(today);
 
+  /* What the four folds render. Built here rather than inline so the list of
+     sections above stays a list of sections. */
+  const ctx = {
+    reminders: (
+      <ClinicVisits part="reminders"      
+        visits={visits}
+        report={report}
+        profile={profile}
+        onSaveVisit={onSaveVisit}
+        onDeleteVisit={onDeleteVisit}
+        onToggleDone={onToggleVisitDone}
+        plans={plans}
+        onSavePlan={onSavePlan}
+        onDeletePlan={onDeletePlan}
+        onTogglePlanDone={onTogglePlanDone}
+        onAddToCalendar={onAddToCalendar}
+        today={today}
+      />
+    ),
+    suggestions: (
+      <ClinicVisits part="suggestions"      
+        visits={visits}
+        report={report}
+        profile={profile}
+        onSaveVisit={onSaveVisit}
+        onDeleteVisit={onDeleteVisit}
+        onToggleDone={onToggleVisitDone}
+        plans={plans}
+        onSavePlan={onSavePlan}
+        onDeletePlan={onDeletePlan}
+        onTogglePlanDone={onTogglePlanDone}
+        onAddToCalendar={onAddToCalendar}
+        today={today}
+      />
+    ),
+    report: <>      {/* --- the report ---
+          Ordered by what she needs to see: three counts, then everything out
+          of range, then the metabolic syndrome check, and the in-range values
+          folded away. A report is mostly normal results, and showing thirty of
+          them first buries the three that are not. */}
+      {report && (
+        <div className="card">
+          <div className="section-title">
+            健檢報告
+            <span className="cycle-badge">
+              {report.date}
+              {report.title ? `・${report.title}` : ""}
+            </span>
+          </div>
+
+          <ReportSummary counts={counts} />
+
+          {rows.attention.length + flagRows.positive.length > 0 ? (
+            <div className="v-block">
+              <div className="v-block-title watch">需要注意的項目</div>
+              {flagRows.positive.map((f) => (
+                <FlagRow key={f.key} flag={f} value={report.flags[f.key]} />
+              ))}
+              {rows.attention.map(({ marker, value }) => (
+                <ValueRow
+                  key={marker.key}
+                  marker={marker}
+                  value={value}
+                  gender={gender}
+                  change={markerChange(reports, marker.key)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="v-allclear">這份報告量到的項目都在參考範圍內。</div>
+          )}
+
+          <MetabolicCard result={ms} />
+
+          {(rows.normal.length > 0 || flagRows.negative.length > 0) && (
+            <>
+              <button type="button" className="btn btn-secondary btn-block" onClick={() => setShowNormal((v) => !v)}>
+                {showNormal
+                  ? "收起在範圍內的項目"
+                  : `看在範圍內的 ${rows.normal.length + flagRows.negative.length} 項`}
+              </button>
+              {showNormal && (
+                <div className="v-block">
+                  {GROUP_ORDER.map((group) => {
+                    const inGroup = rows.normal.filter((r) => r.marker.group === group);
+                    if (!inGroup.length) return null;
+                    return (
+                      <div key={group} className="v-group">
+                        <div className="v-group-title">{GROUP_LABEL[group]}</div>
+                        {inGroup.map(({ marker, value }) => (
+                          <ValueRow
+                            key={marker.key}
+                            marker={marker}
+                            value={value}
+                            gender={gender}
+                            change={markerChange(reports, marker.key)}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {flagRows.negative.length > 0 && (
+                    <div className="v-group">
+                      <div className="v-group-title">其他檢查</div>
+                      {flagRows.negative.map((f) => (
+                        <FlagRow key={f.key} flag={f} value={report.flags[f.key]} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          <p className="fine-print">
+            分區依據衛福部國民健康署與相關臨床指引的一般成人參考值。各實驗室印在報告上的參考範圍可能不同，
+            判讀請以你的報告與醫師的說明為準。
+          </p>
+        </div>
+      )}</>,
+    history: <>      {/* --- history --- */}
+      {reports.length > 1 && (
+        <div className="card">
+          <div className="section-title">報告紀錄（{reports.length} 份）</div>
+          {(showHistory ? [...reports].reverse() : [...reports].reverse().slice(0, 3)).map((r) => (
+            <div className="memory-row" key={r.id}>
+              <span className="memory-name">
+                {r.date}
+                {r.title ? `　${r.title}` : ""}
+              </span>
+              <span className="memory-times">{Object.keys(r.values).length} 項數值</span>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`刪除 ${r.date} 的報告`}
+                onClick={() => onDeleteReport(r.id)}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+          {reports.length > 3 && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-block"
+              style={{ marginTop: "10px" }}
+              onClick={() => setShowHistory((v) => !v)}
+            >
+              {showHistory ? "收起" : `展開全部 ${reports.length} 份`}
+            </button>
+          )}
+        </div>
+      )}</>,
+    historyCount: reports.length,
+  };
+
   return (
     <div className="health-page">
+      {/* 1. 自行排定的檢查 —— 她自己決定要去做的事，放在最前面。 */}
+      <ClinicVisits part="plans"      
+        visits={visits}
+        report={report}
+        profile={profile}
+        onSaveVisit={onSaveVisit}
+        onDeleteVisit={onDeleteVisit}
+        onToggleDone={onToggleVisitDone}
+        plans={plans}
+        onSavePlan={onSavePlan}
+        onDeletePlan={onDeletePlan}
+        onTogglePlanDone={onTogglePlanDone}
+        onAddToCalendar={onAddToCalendar}
+        today={today}
+      />
+
       {/* 上傳擺在最前面，但預設收起來。它本來是這一頁的最後一張卡，在 4600px
           的位置 —— 手上拿著剛拿到的健檢報告時，要從頭捲到底才找得到。
           收起來是因為它一年才用一兩次：入口要找得到，版面不用一直讓給它。 */}
@@ -751,6 +944,22 @@ export default function HealthAnalysis({
         )}
       </div>
 
+      {/* 3. 就醫紀錄 —— 收成一行行的日期，點開才有病症與醫師建議。 */}
+      <ClinicVisits part="visits"      
+        visits={visits}
+        report={report}
+        profile={profile}
+        onSaveVisit={onSaveVisit}
+        onDeleteVisit={onDeleteVisit}
+        onToggleDone={onToggleVisitDone}
+        plans={plans}
+        onSavePlan={onSavePlan}
+        onDeletePlan={onDeletePlan}
+        onTogglePlanDone={onTogglePlanDone}
+        onAddToCalendar={onAddToCalendar}
+        today={today}
+      />
+
       {/* --- this week --- */}
       <div className="card">
         <div className="section-title">
@@ -841,140 +1050,30 @@ export default function HealthAnalysis({
         )}
       </div>
 
-      {/* --- the report ---
-          Ordered by what she needs to see: three counts, then everything out
-          of range, then the metabolic syndrome check, and the in-range values
-          folded away. A report is mostly normal results, and showing thirty of
-          them first buries the three that are not. */}
-      {report && (
-        <div className="card">
-          <div className="section-title">
-            健檢報告
-            <span className="cycle-badge">
-              {report.date}
-              {report.title ? `・${report.title}` : ""}
-            </span>
-          </div>
-
-          <ReportSummary counts={counts} />
-
-          {rows.attention.length + flagRows.positive.length > 0 ? (
-            <div className="v-block">
-              <div className="v-block-title watch">需要注意的項目</div>
-              {flagRows.positive.map((f) => (
-                <FlagRow key={f.key} flag={f} value={report.flags[f.key]} />
-              ))}
-              {rows.attention.map(({ marker, value }) => (
-                <ValueRow
-                  key={marker.key}
-                  marker={marker}
-                  value={value}
-                  gender={gender}
-                  change={markerChange(reports, marker.key)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="v-allclear">這份報告量到的項目都在參考範圍內。</div>
-          )}
-
-          <MetabolicCard result={ms} />
-
-          {(rows.normal.length > 0 || flagRows.negative.length > 0) && (
-            <>
-              <button type="button" className="btn btn-secondary btn-block" onClick={() => setShowNormal((v) => !v)}>
-                {showNormal
-                  ? "收起在範圍內的項目"
-                  : `看在範圍內的 ${rows.normal.length + flagRows.negative.length} 項`}
-              </button>
-              {showNormal && (
-                <div className="v-block">
-                  {GROUP_ORDER.map((group) => {
-                    const inGroup = rows.normal.filter((r) => r.marker.group === group);
-                    if (!inGroup.length) return null;
-                    return (
-                      <div key={group} className="v-group">
-                        <div className="v-group-title">{GROUP_LABEL[group]}</div>
-                        {inGroup.map(({ marker, value }) => (
-                          <ValueRow
-                            key={marker.key}
-                            marker={marker}
-                            value={value}
-                            gender={gender}
-                            change={markerChange(reports, marker.key)}
-                          />
-                        ))}
-                      </div>
-                    );
-                  })}
-                  {flagRows.negative.length > 0 && (
-                    <div className="v-group">
-                      <div className="v-group-title">其他檢查</div>
-                      {flagRows.negative.map((f) => (
-                        <FlagRow key={f.key} flag={f} value={report.flags[f.key]} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          <p className="fine-print">
-            分區依據衛福部國民健康署與相關臨床指引的一般成人參考值。各實驗室印在報告上的參考範圍可能不同，
-            判讀請以你的報告與醫師的說明為準。
-          </p>
-        </div>
-      )}
-
-      <ClinicVisits
-        visits={visits}
-        report={report}
-        profile={profile}
-        onSaveVisit={onSaveVisit}
-        onDeleteVisit={onDeleteVisit}
-        onToggleDone={onToggleVisitDone}
-        plans={plans}
-        onSavePlan={onSavePlan}
-        onDeletePlan={onDeletePlan}
-        onTogglePlanDone={onTogglePlanDone}
-        onAddToCalendar={onAddToCalendar}
-        today={today}
-      />
-
-      {/* --- history --- */}
-      {reports.length > 1 && (
-        <div className="card">
-          <div className="section-title">報告紀錄（{reports.length} 份）</div>
-          {(showHistory ? [...reports].reverse() : [...reports].reverse().slice(0, 3)).map((r) => (
-            <div className="memory-row" key={r.id}>
-              <span className="memory-name">
-                {r.date}
-                {r.title ? `　${r.title}` : ""}
-              </span>
-              <span className="memory-times">{Object.keys(r.values).length} 項數值</span>
+      {/* 6. 其他資訊 —— 全部是「查得到就好」的東西。一次只開一項：四張攤開的
+             卡片加起來有四千多像素，而她多半只想看其中一件。
+             回診提醒預設是開的那一項，因為它是唯一會逾期的東西。 */}
+      <div className="card">
+        <div className="section-title">其他資訊</div>
+        {OTHER_SECTIONS.map((sec) => {
+          const open = otherOpen === sec.key;
+          return (
+            <div className="fold-section" key={sec.key}>
               <button
                 type="button"
-                className="icon-btn"
-                aria-label={`刪除 ${r.date} 的報告`}
-                onClick={() => onDeleteReport(r.id)}
+                className="fold-head"
+                aria-expanded={open}
+                onClick={() => setOtherOpen(open ? null : sec.key)}
               >
-                <Trash2 size={14} />
+                <span className="fold-title">{sec.label}</span>
+                {sec.badge && sec.badge(ctx) > 0 && <span className="fold-count">{sec.badge(ctx)}</span>}
+                <span className="fold-caret">{open ? "▲" : "▼"}</span>
               </button>
+              {open && <div className="fold-body">{sec.render(ctx)}</div>}
             </div>
-          ))}
-          {reports.length > 3 && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-block"
-              style={{ marginTop: "10px" }}
-              onClick={() => setShowHistory((v) => !v)}
-            >
-              {showHistory ? "收起" : `展開全部 ${reports.length} 份`}
-            </button>
-          )}
-        </div>
-      )}
+          );
+        })}
+      </div>
 
       <div className="disclaimer">
         <Info size={14} />
