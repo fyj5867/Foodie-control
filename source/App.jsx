@@ -4221,6 +4221,16 @@ export default function App() {
         .fold-section + .fold-section{ border-top:1px solid var(--line); }
         .fold-section .fold-head{ padding:11px 0; }
         .fold-section .fold-title{ font-size:14px; }
+        /* The one fold whose contents need a doctor. Folded away with a plain
+           header it would look like the three reference lists next to it. */
+        .fold-head.is-alert .fold-title{ color:var(--red); }
+        .fold-head.is-alert .fold-count{ background:var(--red-soft); color:var(--red); }
+        .fold-head.is-alert .fold-caret{ color:var(--red); }
+        .refer-pointer{
+          margin:10px 0 0; padding:8px 10px; border-radius:10px;
+          background:var(--red-soft); color:var(--red);
+          font-size:12px; font-weight:700; line-height:1.6;
+        }
         /* The cards inside a fold already have their own padding and border;
            nested in here they would be a box inside a box. */
         .fold-body > .card{ padding:0; border:none; box-shadow:none; margin:0 0 10px; background:none; }

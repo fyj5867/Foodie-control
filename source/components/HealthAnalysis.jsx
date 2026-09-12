@@ -481,10 +481,24 @@ function DraftEditor({ draft, setDraft, rejected, notes, onSave, onCancel, gende
  * be overdue — the rest are things she goes looking for.
  */
 const OTHER_SECTIONS = [
+  /* Red, and carrying the number of items, because this is the one fold whose
+     contents are markers a doctor has to read. Folded away with a plain header
+     it would be indistinguishable from the reference lists; folded away with a
+     red one it is still the thing that catches the eye on this card. */
+  {
+    key: "refer",
+    label: "這幾項請帶報告去問醫師",
+    tone: "alert",
+    only: (c) => Boolean(c.refer),
+    badge: (c) => (c.refer ? c.refer.items.length : 0),
+    render: (c) => c.referCard,
+  },
   { key: "reminders", label: "回診與檢查提醒", render: (c) => c.reminders },
   { key: "report", label: "健檢報告數值", render: (c) => c.report },
   { key: "suggestions", label: "建議安排的檢查", render: (c) => c.suggestions },
-  { key: "history", label: "報告紀錄", badge: (c) => c.historyCount, render: (c) => c.history },
+  /* The card inside only renders with more than one report, so the fold must
+     appear on the same condition — otherwise it opens onto nothing. */
+  { key: "history", label: "報告紀錄", only: (c) => c.historyCount > 1, badge: (c) => c.historyCount, render: (c) => c.history },
 ];
 
 export default function HealthAnalysis({
@@ -656,6 +670,13 @@ export default function HealthAnalysis({
 
   const monthEnd = isMonthEnd(today);
 
+  /* 本週重點 is what she can do this week; 「請帶報告去問醫師」 is not that —
+     it is a list of markers only a doctor can read, and it sat at the top of
+     the card pushing the actual week down. It moves into the folds below,
+     where its header is red so folding it does not mean hiding it. */
+  const referFocus = plan.focuses.find((f) => f.refer) || null;
+  const weekFocuses = plan.focuses.filter((f) => !f.refer);
+
   /* What the four folds render. Built here rather than inline so the list of
      sections above stays a list of sections. */
   const ctx = {
@@ -810,6 +831,8 @@ export default function HealthAnalysis({
         </div>
       )}</>,
     historyCount: reports.length,
+    refer: referFocus,
+    referCard: referFocus ? <FocusCard focus={referFocus} /> : null,
   };
 
   return (
@@ -973,9 +996,17 @@ export default function HealthAnalysis({
             ? `依 ${plan.anchor} 的報告安排，這一輪到 ${plan.cycle.end}`
             : "還沒有健檢報告，先顧每天的三項基本目標。上傳報告後這裡會跟著調整。"}
         </p>
-        {plan.focuses.map((focus) => (
+        {weekFocuses.map((focus) => (
           <FocusCard key={focus.id} focus={focus} />
         ))}
+        {/* Never let it vanish silently: the card says how many there are and
+            where they went. */}
+        {referFocus && (
+          <p className="refer-pointer">
+            另有 {referFocus.items.length} 項需要醫師判讀，在下方「其他資訊 → 這幾項請帶報告去問醫師」。
+          </p>
+        )}
+        {weekFocuses.length === 0 && !referFocus && null}
       </div>
 
       {/* --- the month --- */}
@@ -1055,13 +1086,13 @@ export default function HealthAnalysis({
              回診提醒預設是開的那一項，因為它是唯一會逾期的東西。 */}
       <div className="card">
         <div className="section-title">其他資訊</div>
-        {OTHER_SECTIONS.map((sec) => {
+        {OTHER_SECTIONS.filter((sec) => !sec.only || sec.only(ctx)).map((sec) => {
           const open = otherOpen === sec.key;
           return (
             <div className="fold-section" key={sec.key}>
               <button
                 type="button"
-                className="fold-head"
+                className={`fold-head ${sec.tone === "alert" ? "is-alert" : ""}`}
                 aria-expanded={open}
                 onClick={() => setOtherOpen(open ? null : sec.key)}
               >
