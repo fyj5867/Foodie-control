@@ -13,6 +13,7 @@ import {
   calcRiskScore,
   calcWaterTarget,
   calcBMI,
+  bmiFor,
   sleepZones,
   CONTENT_REVIEW,
 } from "../lib/health.js";
@@ -98,6 +99,39 @@ ok(
 /* --- BMI sanity, since everything above leans on it --- */
 ok("BMI of 68kg at 160cm is about 26.6", Math.abs(calcBMI(68, 160) - 26.5625) < 0.001);
 check("BMI with no weight is null", calcBMI("", 160), null);
+
+
+/* --- which BMI gets shown ---
+ * There are two of them: the one the scale printed (using whatever height is
+ * set on the scale) and the one this app can work out from the profile's
+ * height and the latest weight. A centimetre of disagreement between those two
+ * heights is 0.15 of BMI — enough that typing 23.9 and then seeing 24.0 on the
+ * overview looks like the app quietly rounded her number away. */
+const PROFILE = { height: 160, weight: 62 };
+
+check("the recorded figure wins", bmiFor({ bmi: 23.9, weight: 62 }, PROFILE), 23.9);
+ok(
+  "and it is not the computed one",
+  Math.abs(calcBMI(62, 160) - 23.9) > 0.2,
+  `computed ${calcBMI(62, 160)}`
+);
+/* Nothing recorded is the case the fallback exists for — a profile with a
+ * weight but no body record still has a BMI worth showing. */
+check("with no recorded BMI it is worked out", Number(bmiFor({ weight: 64 }, PROFILE).toFixed(2)), 25);
+check("with no record at all it falls back to the profile", Number(bmiFor(null, PROFILE).toFixed(3)), 24.219);
+check("no height means no BMI", bmiFor({ weight: 62 }, { height: null }), null);
+check("and no weight anywhere means none either", bmiFor({}, { height: 160 }), null);
+
+/* Zero and empty string are not readings: `parseFloat("")` is NaN and a stored
+ * 0 would sail through a plain `!= null` check and show as a BMI of 0. */
+check("an empty recorded value falls through", Number(bmiFor({ bmi: "", weight: 64 }, PROFILE).toFixed(2)), 25);
+check("a zero recorded value falls through too", Number(bmiFor({ bmi: 0, weight: 64 }, PROFILE).toFixed(2)), 25);
+check("a recorded string still counts", bmiFor({ bmi: "23.9", weight: 62 }, PROFILE), 23.9);
+
+/* The record's own weight is what its BMI is worked out from, not the latest
+ * one — otherwise an old row in the history would be recomputed against
+ * today's weight and the trend line would be flat by construction. */
+check("an older row uses its own weight", Number(bmiFor({ weight: 70 }, PROFILE).toFixed(2)), 27.34);
 
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {

@@ -60,6 +60,7 @@ import {
   CONTENT_REVIEW,
   FOOD_DB,
   calcBMI,
+  bmiFor,
   bmiCategory,
   calcRiskScore,
   riskZone,
@@ -2135,8 +2136,8 @@ export default function App() {
   }
 
   const latestRecord = records.length ? records[records.length - 1] : null;
-  const bmiWeight = latestRecord?.weight != null && latestRecord.weight !== "" ? latestRecord.weight : profile?.weight;
-  const bmi = useMemo(() => calcBMI(bmiWeight, profile?.height), [bmiWeight, profile]);
+  /* The figure she wrote down beats the one we can work out — see bmiFor. */
+  const bmi = useMemo(() => bmiFor(latestRecord, profile), [latestRecord, profile]);
   const bmiCat = bmiCategory(bmi);
   const riskScore = useMemo(() => calcRiskScore(profile), [profile]);
   const zone = riskZone(riskScore);
@@ -2154,7 +2155,7 @@ export default function App() {
   const chartData = records.map((r) => ({
     date: r.date.slice(5),
     weight: r.weight,
-    bmi: r.bmi != null ? r.bmi : profile?.height && r.weight ? Number(calcBMI(r.weight, profile.height).toFixed(1)) : null,
+    bmi: bmiFor(r, profile) != null ? Number(bmiFor(r, profile).toFixed(1)) : null,
     waist: r.waist != null ? r.waist : null,
     bodyFat: r.bodyFat != null ? r.bodyFat : null,
     skeletalMuscle: r.skeletalMuscle != null ? r.skeletalMuscle : null,
@@ -5695,7 +5696,7 @@ function TrackingTab({
   }
 
   function renderRecordRow(r) {
-    const rBmi = r.bmi != null ? r.bmi : profile?.height ? calcBMI(r.weight, profile.height) : null;
+    const rBmi = bmiFor(r, profile);
     return (
       <div className="record-row record-row-clickable" key={r.date} onClick={() => onEditRecord(r)}>
         <div>

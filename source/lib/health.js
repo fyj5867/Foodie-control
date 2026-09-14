@@ -1347,6 +1347,27 @@ function calcBMI(weightKg, heightCm) {
   return w / (m * m);
 }
 
+/**
+ * 該顯示哪一個 BMI —— 她記下來的那個，除非那天沒記。
+ *
+ * 會有兩個數字是因為 BMI 有兩個來源：體重計自己算好一個（用它自己設定的身高）
+ * 印在螢幕上，而這個 App 也能用「個人資料的身高 ＋ 最新體重」自己算一個。
+ * 兩邊的身高差一公分，算出來就差 0.15 —— 使用者輸入 23.9、總覽顯示 24.0，
+ * 看起來就像 App 偷偷把她的數字四捨五入掉了。
+ *
+ * 規則是**她抄下來的優先**：那是她在體重計上真正看到的數字，而重算出來的那個
+ * 只是我們的估計。體態紀錄的清單和趨勢圖本來就是這樣挑的，總覽沒有跟上，
+ * 所以同一天的 BMI 在兩頁長得不一樣。集中在這裡是為了不要有第四份各自漂移。
+ */
+function bmiFor(record, profile) {
+  if (record && record.bmi != null && record.bmi !== "") {
+    const recorded = parseFloat(record.bmi);
+    if (Number.isFinite(recorded) && recorded > 0) return recorded;
+  }
+  const weight = record && record.weight != null && record.weight !== "" ? record.weight : profile?.weight;
+  return calcBMI(weight, profile?.height);
+}
+
 function bmiCategory(bmi) {
   if (bmi == null || isNaN(bmi)) return { label: "—", tone: "neutral" };
   if (bmi < 18.5) return { label: "體重過輕", tone: "yellow" };
@@ -1670,6 +1691,7 @@ export {
   CONTENT_REVIEW,
   FOOD_DB,
   calcBMI,
+  bmiFor,
   bmiCategory,
   calcRiskScore,
   riskZone,
