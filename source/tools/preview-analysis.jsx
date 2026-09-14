@@ -147,8 +147,15 @@ const RICE = { foodName: "白飯", estimatedCalories: 280, carbsG: 60, proteinG:
 const FISH = { foodName: "烤鯖魚", estimatedCalories: 260, carbsG: 0, proteinG: 24, fatG: 18, light: "green", confidence: "medium", sourceType: "estimate", tags: ["omega3", "lean_protein"] };
 const GREENS = { foodName: "燙青菜", estimatedCalories: 45, carbsG: 6, proteinG: 3, fatG: 1, light: "green", confidence: "high", sourceType: "estimate", tags: ["vegetable", "high_fiber", "light_cooking"] };
 
+/* Distinguishable stand-in photos: the grid is about telling the plates
+   apart at a glance, so a transparent pixel would test nothing. */
+const swatch = (hue) =>
+  `data:image/svg+xml;utf8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90"><rect width="120" height="90" fill="hsl(${hue},55%,62%)"/></svg>`
+  )}`;
+
 function multi(readings) {
-  const shots = readings.map((r) => ({ imageDataUrl: r ? PIXEL : null, reading: r }));
+  const shots = readings.map((r, i) => ({ imageDataUrl: r ? swatch(i * 70 + 20) : null, reading: r }));
   const result = mergeFoodReadings(readings);
   return { shots, imageDataUrl: PIXEL, result, memoryHint: null, aiCalories: result.estimatedCalories };
 }

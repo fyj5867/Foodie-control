@@ -700,7 +700,13 @@ export function AnalysisModal({ analyzing, analysisProgress, analysisError, anal
 
         {!analyzing && analysisPreview && r && (
           <div className="analysis-card" style={{ border: "none", padding: 0, marginBottom: 0 }}>
-            {analysisPreview.imageDataUrl && <img src={analysisPreview.imageDataUrl} alt="食物相片" />}
+            {/* One photo gets the full-width picture it always had. Several
+                do not: that picture showed only the first plate, which is a
+                misleading thing to put at the top of a card whose number is
+                the sum of all of them. */}
+            {analysisPreview.imageDataUrl && (!analysisPreview.shots || analysisPreview.shots.length <= 1) && (
+              <img src={analysisPreview.imageDataUrl} alt="食物相片" />
+            )}
             <div className="analysis-card-body">
               {/* Editable, because the name is the thing the model gets wrong
                   most often and everything downstream hangs off it: the diary
@@ -746,23 +752,30 @@ export function AnalysisModal({ analyzing, analysisProgress, analysisError, anal
                   dish shot twice becomes two portions, and on screen that is
                   just a slightly larger number. */}
               {analysisPreview.shots && analysisPreview.shots.length > 1 && (
-                <div className="shot-list">
+                <div className="shot-grid">
                   {analysisPreview.shots.map((sh, i) => (
-                    <div className={`shot-row ${sh.reading ? "" : "is-dead"}`} key={i}>
+                    <div className={`shot-cell ${sh.reading ? "" : "is-dead"}`} key={i}>
                       {sh.imageDataUrl ? (
-                        <img src={sh.imageDataUrl} alt="" className="shot-thumb" />
+                        <img src={sh.imageDataUrl} alt="" />
                       ) : (
-                        <span className="shot-thumb is-blank" />
+                        <span className="shot-blank">讀不出來</span>
                       )}
-                      <span className="shot-name">
-                        {sh.reading ? sh.reading.foodName : `第 ${i + 1} 張讀不出來`}
-                      </span>
-                      <span className="shot-kcal">
-                        {sh.reading ? `${Math.round(Number(sh.reading.estimatedCalories) || 0)} 大卡` : "—"}
-                      </span>
-                      <button type="button" className="icon-btn" aria-label="移除這張" onClick={() => onRemovePhoto(i)}>
-                        <X size={13} />
+                      <button
+                        type="button"
+                        className="shot-remove"
+                        aria-label={`移除第 ${i + 1} 張`}
+                        onClick={() => onRemovePhoto(i)}
+                      >
+                        <X size={12} />
                       </button>
+                      <div className="shot-cap">
+                        <span className="shot-name">
+                          {sh.reading ? sh.reading.foodName : `第 ${i + 1} 張`}
+                        </span>
+                        <span className="shot-kcal">
+                          {sh.reading ? `${Math.round(Number(sh.reading.estimatedCalories) || 0)} 大卡` : "—"}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -4042,27 +4055,68 @@ export default function App() {
         /* Pinned to the bottom of the scroll area. Before this, a long reading
            pushed the buttons past the bottom of the screen and the entry could
            not be saved at all. */
-        .shot-list{ margin-top:10px; }
-        .shot-row{
+        /* The plates as a contact sheet rather than a list of rows. Each
+           photo is worth seeing at a glance — that is how she spots the same
+           dish shot twice, which is the one way adding several photos together
+           can go quietly wrong. Two columns: at 320px that is about 130px a
+           tile, which is enough to recognise a bowl of rice. */
+        .shot-grid{
+          display:grid;
+          grid-template-columns:repeat(2,1fr);
+          gap:8px;
+          margin-top:10px;
+        }
+        .shot-cell{
+          position:relative;
+          border-radius:12px;
+          overflow:hidden;
+          background:var(--surface-2);
+          border:1px solid var(--line);
+        }
+        .shot-cell.is-dead{ opacity:.7; }
+        .shot-cell img{
+          display:block;
+          width:100%;
+          /* Square, so the grid stays a grid whatever shape the photos are. */
+          aspect-ratio:1 / 1;
+          object-fit:cover;
+        }
+        .shot-blank{
           display:flex;
           align-items:center;
-          gap:8px;
-          padding:5px 0;
-          border-bottom:1px solid var(--line);
-          font-size:12px;
+          justify-content:center;
+          aspect-ratio:1 / 1;
+          font-size:11.5px;
+          color:var(--ink-soft);
         }
-        .shot-row.is-dead{ color:var(--ink-soft); opacity:.75; }
-        .shot-thumb{
-          width:32px;
-          height:32px;
-          flex:none;
-          border-radius:8px;
-          object-fit:cover;
-          background:var(--line);
+        /* Over the photo, not under it: a row of buttons below the tiles would
+           add a line of height to every cell. */
+        .shot-remove{
+          position:absolute;
+          top:5px;
+          right:5px;
+          width:22px;
+          height:22px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          border:none;
+          border-radius:50%;
+          background:rgba(20,26,22,.55);
+          color:#fff;
+          cursor:pointer;
+          padding:0;
         }
-        .shot-thumb.is-blank{ display:inline-block; }
-        /* Flex children do not shrink below their content, so a long dish name
-           would push the calories and the remove button off the card. */
+        .shot-cap{
+          display:flex;
+          align-items:baseline;
+          gap:6px;
+          padding:5px 7px 6px;
+          font-size:11px;
+          background:var(--card);
+        }
+        /* Grid children do not shrink below their content, so a long dish name
+           would push the calories out of the tile. */
         .shot-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .shot-kcal{ flex:none; font-weight:700; color:var(--ink-soft); }
 
