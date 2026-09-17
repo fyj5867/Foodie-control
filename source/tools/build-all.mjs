@@ -20,7 +20,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, statSync, readFileSync } from "node:fs";
+import { existsSync, statSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
@@ -62,6 +62,34 @@ node(
   "測試沒過，所以沒有打包 —— app.bundle.js 還是上一版。\n" +
     "上面列出的是沒過的項目；修好之後再跑一次 npm run rebuild。"
 );
+
+/* The version the app shows on screen.
+ *
+ * Written from sw.js's CACHE_NAME rather than kept by hand, because the one
+ * question that keeps costing a round trip is 「她手機上到底是哪一版」 —— and a
+ * number that has to be updated in two places to stay true would answer it
+ * wrongly. If it is on screen and it matches the cache name, there is nothing
+ * left to guess. */
+step("寫入版本號");
+{
+  const swPath = new URL("../../sw.js", import.meta.url);
+  const sw = readFileSync(swPath, "utf8");
+  const found = sw.match(/CACHE_NAME\s*=\s*"healthy-care-(v\d+)"/);
+  if (!found) {
+    process.stdout.write("sw.js 裡找不到 CACHE_NAME，無法寫入版本號。\n");
+    process.exit(1);
+  }
+  const built = new Date().toISOString().slice(0, 10);
+  writeFileSync(
+    new URL("../lib/version.js", import.meta.url),
+    `/* 這個檔案是 tools/build-all.mjs 產生的，不要手改。
+   版本號取自 sw.js 的 CACHE_NAME，兩邊永遠一致。 */
+export const APP_VERSION = "${found[1]}";
+export const BUILT_ON = "${built}";
+`
+  );
+  process.stdout.write(`  ${found[1]}（${built}）\n`);
+}
 
 step("打包");
 node([

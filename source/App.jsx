@@ -92,6 +92,7 @@ import DailyCoach from "./components/DailyCoach.jsx";
 import { coachSlot, dailyMessage, eveningSummary } from "./lib/coach.js";
 import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM, KEYS, loadFoodMemory, saveFoodMemory } from "./lib/storage.js";
 import { fitWithin, tooBigMessage, VISION_MAX_DIM, REPORT_MAX_DIM } from "./lib/photo.js";
+import { APP_VERSION } from "./lib/version.js";
 import { remember, forget, lookup, suggestion, sortedMemory, isLearnable } from "./lib/foodMemory.js";
 import { askAboutImage, FOOD_PROMPT, LAB_PROMPT, BODY_PROMPT } from "./lib/vision.js";
 import { applyReadingToForm } from "./lib/bodyScan.js";
@@ -697,7 +698,7 @@ function WaterCard({
   );
 }
 
-export function AnalysisModal({ analyzing, analysisProgress, analysisError, analysisPreview, onConfirm, onDiscard, onEditCalories, onEditName, onUseEstimate, onSetPortion, onRemovePhoto, report, gender }) {
+export function AnalysisModal({ analyzing, analysisProgress, analysisError, analysisDetail, analysisPreview, onConfirm, onDiscard, onEditCalories, onEditName, onUseEstimate, onSetPortion, onRemovePhoto, report, gender }) {
   if (!analyzing && !analysisError && !analysisPreview) return null;
   const r = analysisPreview?.result;
 
@@ -717,6 +718,9 @@ export function AnalysisModal({ analyzing, analysisProgress, analysisError, anal
           <>
             <h3>分析未成功</h3>
             <div className="analysis-error">{analysisError}</div>
+            {/* 一個沒有後端的 App 沒有 log 可以看：失敗的時候畫面上沒有寫出來的
+                事情，就是永遠查不到的事情。這一行是給「把它念給我聽」用的。 */}
+            {analysisDetail && <div className="analysis-detail">{analysisDetail}</div>}
             <button className="btn btn-secondary btn-block" onClick={onDiscard}>
               關閉
             </button>
@@ -941,6 +945,8 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState("");
   const [analysisPreview, setAnalysisPreview] = useState(null); // { photos, result }
   const [analysisProgress, setAnalysisProgress] = useState(null); // { done, total }
+  /** One line naming the provider, the model, the photo size and the raw error. */
+  const [analysisDetail, setAnalysisDetail] = useState("");
   const [manualForm, setManualForm] = useState({ name: "", calories: "" });
   /** Calorie figures corrected by hand, per food. See lib/foodMemory.js. */
   const [foodMemory, setFoodMemory] = useState([]);
@@ -1638,12 +1644,14 @@ export default function App() {
     if (!files.length) return;
 
     setAnalysisError("");
+    setAnalysisDetail("");
     setAnalyzing(true);
     setAnalysisPreview(null);
     setAnalysisProgress(files.length > 1 ? { done: 0, total: files.length } : null);
 
     const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
     const shots = [];
+    const sizes = [];
     let lastError = null;
 
     for (let i = 0; i < files.length; i++) {
@@ -1654,6 +1662,7 @@ export default function App() {
            same shrunk copy is what the card shows, so the preview is cheap and
            the thumbnail is made from something already small. */
         const { base64, mediaType } = await fileToVisionImage(file);
+        sizes.push(`${Math.round((base64.length * 3) / 4 / 1024)}KB`);
         const tooBig = tooBigMessage(base64);
         if (tooBig) throw new Error(tooBig);
         shots.push({
@@ -1673,6 +1682,18 @@ export default function App() {
 
     if (shots.every((sh) => !sh.reading)) {
       setAnalysisError(lastError?.message || "照片分析失敗，請重新拍攝或改用手動輸入。");
+      /* Everything needed to tell one cause from another, in one readable line. */
+      setAnalysisDetail(
+        [
+          APP_VERSION,
+          aiProvider === "gemini" ? `Gemini ${geminiModel || "預設模型"}` : "Anthropic",
+          activeKey ? "已設金鑰" : "沒有金鑰",
+          sizes.length ? `照片 ${sizes.join("、")}` : "照片沒讀到",
+          lastError ? String(lastError.message || lastError).slice(0, 120) : "",
+        ]
+          .filter(Boolean)
+          .join(" ・ ")
+      );
       return;
     }
 
@@ -4177,6 +4198,18 @@ export default function App() {
         .shot-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .shot-kcal{ flex:none; font-weight:700; color:var(--ink-soft); }
 
+        .analysis-detail{
+          margin-top:8px;
+          padding:8px 10px;
+          border-radius:8px;
+          background:var(--surface-2);
+          color:var(--ink-soft);
+          font-size:11px;
+          line-height:1.6;
+          /* Long, and meant to be read out loud rather than skimmed. */
+          word-break:break-all;
+        }
+
         .analysis-source{
           font-size:11.5px;
           line-height:1.5;
@@ -4490,6 +4523,10 @@ export default function App() {
         <header className="app-header">
           <h1 className="app-title">
             Healthy Care
+            {/* 手機上到底跑的是哪一版，一直是回報問題時最花時間的一格資訊：
+                改好了推上去，但她的 App 可能還是上一版，而畫面上看不出來。
+                版本號由打包程式從 sw.js 的 CACHE_NAME 寫進來，不會對不上。 */}
+            <small>{APP_VERSION}</small>
           </h1>
         </header>
 
@@ -4746,6 +4783,7 @@ export default function App() {
         onSetPortion={setAnalysisPortion}
         onRemovePhoto={removeAnalysisPhoto}
         analysisProgress={analysisProgress}
+        analysisDetail={analysisDetail}
         report={latestReport(reports)}
         gender={profile && profile.gender === "male" ? "male" : "female"}
       />
