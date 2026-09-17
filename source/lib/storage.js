@@ -13,6 +13,7 @@
  */
 
 import { daysAgoStr } from "./health.js";
+import { THUMB_MAX_DIM } from "./photo.js";
 import { backfillSummaries, upsertSummary } from "./goals.js";
 import { normalizeMemory } from "./foodMemory.js";
 import { normalizeReports } from "./reports.js";
@@ -66,9 +67,10 @@ export const RETENTION_DAYS = {
  */
 export const PHOTO_DAYS = 30;
 
-/** Longest-dimension the captured photo is stored at, and what an aged entry
- * would be reduced to if photos were kept rather than dropped. */
-export const PHOTO_MAX_DIM = 640;
+/** Longest-dimension the captured photo is stored at. The number itself lives
+ * in lib/photo.js with the other image sizes — two names for one value is how
+ * they end up disagreeing. */
+export const PHOTO_MAX_DIM = THUMB_MAX_DIM;
 
 async function readRaw(key) {
   try {

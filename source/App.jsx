@@ -91,6 +91,7 @@ import AvatarPicker from "./components/AvatarPicker.jsx";
 import DailyCoach from "./components/DailyCoach.jsx";
 import { coachSlot, dailyMessage, eveningSummary } from "./lib/coach.js";
 import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM, KEYS, loadFoodMemory, saveFoodMemory } from "./lib/storage.js";
+import { fitWithin, tooBigMessage, VISION_MAX_DIM, REPORT_MAX_DIM } from "./lib/photo.js";
 import { remember, forget, lookup, suggestion, sortedMemory, isLearnable } from "./lib/foodMemory.js";
 import { askAboutImage, FOOD_PROMPT, LAB_PROMPT, BODY_PROMPT } from "./lib/vision.js";
 import { applyReadingToForm } from "./lib/bodyScan.js";
@@ -139,28 +140,23 @@ function fileToBase64(file) {
   });
 }
 
-/** Shrinks an image data URL down to a small JPEG thumbnail so photos can be
- * stored alongside food-log entries without blowing up localStorage size. */
+/** Redraw an image data URL smaller, as a JPEG. The size arithmetic lives in
+ * lib/photo.js so it can be tested without a browser. */
 function compressImageDataUrl(dataUrl, maxDim = 180, quality = 0.55) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      let { width, height } = img;
-      if (width > height) {
-        if (width > maxDim) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        }
-      } else if (height > maxDim) {
-        width = Math.round((width * maxDim) / height);
-        height = maxDim;
+      const size = fitWithin(img.width, img.height, maxDim);
+      if (!size) {
+        reject(new Error("圖片縮圖處理失敗"));
+        return;
       }
       try {
         const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = size.width;
+        canvas.height = size.height;
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
+        ctx.drawImage(img, 0, 0, size.width, size.height);
         resolve(canvas.toDataURL("image/jpeg", quality));
       } catch (e) {
         reject(e);
@@ -169,6 +165,35 @@ function compressImageDataUrl(dataUrl, maxDim = 180, quality = 0.55) {
     img.onerror = () => reject(new Error("圖片縮圖處理失敗"));
     img.src = dataUrl;
   });
+}
+
+/**
+ * Turn a chosen file into something the API will actually accept.
+ *
+ * This is the fix for 「拍照讀取失敗，大概八成」. The photo used to be sent at
+ * full resolution: an iPhone's 12MP picture is 3-5MB, and base64 makes it a
+ * third bigger again — past Anthropic's 5MB-per-image limit outright, and a
+ * 30-second upload on mobile data for Gemini. Redrawing it through a canvas
+ * first cuts it to roughly a twentieth, and hands back a JPEG whatever went in,
+ * which is also what makes an iPhone HEIC work at all.
+ *
+ * If the canvas cannot decode the file we send the original bytes rather than
+ * giving up: a format the browser will not draw might still be one the model
+ * reads, and failing here would take away the only route she has.
+ */
+async function fileToVisionImage(file, maxDim = VISION_MAX_DIM, quality = 0.82) {
+  const mediaType = file.type || "image/jpeg";
+  const original = await fileToBase64(file);
+  try {
+    const shrunk = await compressImageDataUrl(`data:${mediaType};base64,${original}`, maxDim, quality);
+    const base64 = String(shrunk).split(",")[1];
+    /* Tiny pictures can come out bigger as a re-encoded JPEG than they went in;
+       there is no reason to send the larger of the two. */
+    if (base64 && base64.length < original.length) return { base64, mediaType: "image/jpeg" };
+  } catch (e) {
+    /* fall through to the original bytes */
+  }
+  return { base64: original, mediaType };
 }
 
 /**
@@ -1264,8 +1289,11 @@ export default function App() {
    * until she has seen them and pressed save. See lib/reports.js.
    */
   async function analyzeReportPhoto(file) {
-    const base64 = await fileToBase64(file);
-    const mediaType = file.type || "image/jpeg";
+    /* A bigger cap than food: this one is reading printed digits, and a blurred
+       0.8 is not a small loss, it is the whole page wasted. */
+    const { base64, mediaType } = await fileToVisionImage(file, REPORT_MAX_DIM, 0.9);
+    const tooBig = tooBigMessage(base64, "報告照片");
+    if (tooBig) throw new Error(tooBig);
     const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
     return analyzeLabReport(base64, mediaType, aiProvider, activeKey, geminiModel);
   }
@@ -1283,8 +1311,10 @@ export default function App() {
     setBodyScanning(true);
     setBodyScanNote(null);
     try {
-      const base64 = await fileToBase64(file);
-      const mediaType = file.type || "image/jpeg";
+      /* Also digits on a screen, so the same larger cap as the report. */
+      const { base64, mediaType } = await fileToVisionImage(file, REPORT_MAX_DIM, 0.9);
+      const tooBig = tooBigMessage(base64, "照片");
+      if (tooBig) throw new Error(tooBig);
       const activeKey = aiProvider === "gemini" ? geminiKey : apiKey;
       const reading = await analyzeBodyPhoto(base64, mediaType, aiProvider, activeKey, geminiModel);
       const applied = applyReadingToForm(recordForm, reading);
@@ -1455,8 +1485,31 @@ export default function App() {
     // Photos are dropped once they pass the window; the entry's text is kept
     // indefinitely so the diary has a real history. See PHOTO_DAYS.
     const aged = agePhotos(next, PHOTO_DAYS);
-    await window.storage.set("food-log", JSON.stringify(aged), false);
-    setFoodLog(aged);
+    try {
+      await window.storage.set("food-log", JSON.stringify(aged), false);
+      setFoodLog(aged);
+      return;
+    } catch (e) {
+      /* Almost certainly the storage quota: pictures are the only thing in here
+         big enough to fill it, and a browser gives a few megabytes. Losing the
+         meal because the picture would not fit is the wrong trade — the number
+         is what the day is counted from, the picture is a nicety. So the oldest
+         pictures go, oldest first, until it fits. */
+      let trimmed = aged;
+      for (let i = 0; i < trimmed.length; i++) {
+        if (!trimmed[i].photo) continue;
+        trimmed = trimmed.map((entry, n) => (n === i ? { ...entry, photo: null } : entry));
+        try {
+          await window.storage.set("food-log", JSON.stringify(trimmed), false);
+          setFoodLog(trimmed);
+          flashSaved("已儲存，但空間不足，較舊的照片被刪掉了");
+          return;
+        } catch (again) {
+          /* keep dropping */
+        }
+      }
+      throw e;
+    }
   }
 
   async function persistWaterLog(next) {
@@ -1596,9 +1649,13 @@ export default function App() {
     for (let i = 0; i < files.length; i++) {
       if (files.length > 1) setAnalysisProgress({ done: i, total: files.length });
       const file = files[i];
-      const mediaType = file.type || "image/jpeg";
       try {
-        const base64 = await fileToBase64(file);
+        /* Shrunk before it goes anywhere: full-size is what was failing. The
+           same shrunk copy is what the card shows, so the preview is cheap and
+           the thumbnail is made from something already small. */
+        const { base64, mediaType } = await fileToVisionImage(file);
+        const tooBig = tooBigMessage(base64);
+        if (tooBig) throw new Error(tooBig);
         shots.push({
           imageDataUrl: `data:${mediaType};base64,${base64}`,
           reading: await analyzeFoodPhoto(base64, mediaType, aiProvider, activeKey, geminiModel),
