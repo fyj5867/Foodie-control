@@ -57,7 +57,20 @@ ok(
   appSrc.includes("buildBackupFrom({"),
   "handleExportBackup should call buildBackupFrom"
 );
-const exportBody = appSrc.slice(appSrc.indexOf("async function handleExportBackup"), appSrc.indexOf("const filename ="));
+/* The end marker has to be searched for AFTER the start, not from the top of
+ * the file: `const filename =` also appears in the calendar handler six hundred
+ * lines earlier, so the naive two-argument form sliced backwards and produced
+ * an empty string — and every assertion below it passed by examining nothing.
+ * A test that silently stops testing is worse than no test, so the slice is
+ * asserted to contain what it is supposed to contain. */
+const exportStart = appSrc.indexOf("async function handleExportBackup");
+const exportBody = appSrc.slice(exportStart, appSrc.indexOf("const filename =", exportStart));
+ok("the export function was found", exportStart >= 0, "handleExportBackup is missing from App.jsx");
+ok(
+  "and the slice really holds its body",
+  exportBody.includes("buildBackupFrom({") && exportBody.length > 100,
+  `sliced ${exportBody.length} chars`
+);
 ok(
   "and does not build a backup literal of its own",
   !/app:\s*"healthy-care"/.test(exportBody),
@@ -66,6 +79,20 @@ ok(
 
 /* Everything the export screen passes in must be a field the file keeps. */
 const passedIn = [...exportBody.matchAll(/^\s{8}([A-Za-z][\w]*)[,:]/gm)].map((m) => m[1]);
+/* ...and the reverse, which is the direction that actually bites.
+ *
+ * buildBackupFrom writes `state[field] ?? null`, so a field added to
+ * BACKUP_FIELDS but never passed in by the export screen still APPEARS in the
+ * downloaded file — as null. The key is there, the data is not, and the backup
+ * looks complete right up to the day it is needed. That is exactly what
+ * happened with 熱量標準值, and it nearly happened again with 心情. */
+for (const field of BACKUP_FIELDS) {
+  ok(
+    `the export screen actually passes ${field}`,
+    passedIn.includes(field),
+    `handleExportBackup passes: ${passedIn.join(", ")}`
+  );
+}
 for (const field of passedIn) {
   ok(`${field} passed by the screen is a real backup field`, BACKUP_FIELDS.includes(field), JSON.stringify(passedIn));
 }

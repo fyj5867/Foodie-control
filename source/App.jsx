@@ -89,8 +89,9 @@ import ActivityPanel, { WeekCard } from "./components/ActivityPanel.jsx";
 import DietDiary from "./components/DietDiary.jsx";
 import AvatarPicker from "./components/AvatarPicker.jsx";
 import DailyCoach from "./components/DailyCoach.jsx";
-import { coachSlot, dailyMessage, eveningSummary } from "./lib/coach.js";
-import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM, KEYS, loadFoodMemory, saveFoodMemory } from "./lib/storage.js";
+import { coachSlot, dailyMessage, eveningSummary, eveningReminder, REMIND_FROM, EVENING_FROM } from "./lib/coach.js";
+import { moodFor, setMood } from "./lib/mood.js";
+import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM, KEYS, loadFoodMemory, saveFoodMemory, loadMoods, saveMoods } from "./lib/storage.js";
 import { fitWithin, tooBigMessage, VISION_MAX_DIM, REPORT_MAX_DIM } from "./lib/photo.js";
 import { APP_VERSION } from "./lib/version.js";
 import { remember, forget, lookup, suggestion, sortedMemory, isLearnable } from "./lib/foodMemory.js";
@@ -527,6 +528,9 @@ function WaterCard({
   target,
   breakdown,
   consumedToday,
+  /* Passed in rather than read from the clock here, so this card turns over at
+     midnight with the rest of the page instead of on its next re-render. */
+  todayKey = null,
   todayWaterEntries,
   recentWaterEntries,
   weeklyWaterChartData,
@@ -541,13 +545,13 @@ function WaterCard({
   // Split today from the rest so today can stay visible while the others
   // collapse. Hooks must run before the early return below.
   const waterRows = useMemo(() => {
-    const t = todayStr();
+    const t = todayKey || todayStr();
     const entries = recentWaterEntries || [];
     return {
       today: entries.filter((e) => e.date === t),
       earlier: entries.filter((e) => e.date !== t),
     };
-  }, [recentWaterEntries]);
+  }, [recentWaterEntries, todayKey]);
 
   if (target == null) {
     return (
@@ -947,6 +951,8 @@ export default function App() {
   const [analysisProgress, setAnalysisProgress] = useState(null); // { done, total }
   /** One line naming the provider, the model, the photo size and the raw error. */
   const [analysisDetail, setAnalysisDetail] = useState("");
+  /** 今日心情 —— 一天一筆，晚上十一點的總結裡問。 */
+  const [moods, setMoods] = useState([]);
   const [manualForm, setManualForm] = useState({ name: "", calories: "" });
   /** Calorie figures corrected by hand, per food. See lib/foodMemory.js. */
   const [foodMemory, setFoodMemory] = useState([]);
@@ -1020,6 +1026,7 @@ export default function App() {
       }
       try {
         setFoodMemory(await loadFoodMemory());
+      setMoods(await loadMoods());
       } catch (e) {
         /* nothing corrected yet */
       }
@@ -1993,6 +2000,7 @@ export default function App() {
         workoutLinks,
         clinicVisits: visits,
         examPlans,
+        moods,
       });
       blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     } catch (e) {
@@ -2257,6 +2265,15 @@ export default function App() {
   const calorieOverrideValue = calorieOverride && !isNaN(Number(calorieOverride)) ? Number(calorieOverride) : null;
   const dailyCalorieTarget = calorieOverrideValue != null ? calorieOverrideValue : calorieBreakdown ? calorieBreakdown.target : null;
 
+  /* Which day it is, read once per render so it can be a dependency.
+   *
+   * Declared here, above the first thing that uses it: every memo that
+   * filters by 「今天」 has to list it, and a const declared in the middle of a
+   * component leaves everything above it in the temporal dead zone — which
+   * shows up as a blank screen, not as a build error.
+   */
+  const today = todayStr();
+
   /* Today's verdict against the three conditions, and the garden rolled up
    * from every day recorded so far. `ready` holds the one-time rebuild back
    * until the app's own data has finished loading — running it against empty
@@ -2276,12 +2293,42 @@ export default function App() {
     exerciseLog,
     calorieTarget: dailyCalorieTarget,
     ready: !loading,
+    /* Recomputed on every render, and the clock tick below forces a render at
+       midnight — which is what makes the rings start the new day empty. */
+    dayKey: today,
   });
 
-  /* The morning greeting or the evening summary, whichever the clock calls
-   * for. Nothing shows in between — the three rows say it better by then. */
+  /**
+   * Re-render when the day turns over.
+   *
+   * Every record on screen is selected by `todayStr()`, which is read during
+   * render — so an app left open past midnight keeps showing yesterday as
+   * today: yesterday's meals, yesterday's saying, yesterday's rings. Nothing
+   * was wrong with the data; nothing had told React the date moved.
+   *
+   * One timeout to the next boundary, then the next. The same tick carries the
+   * app across 20:00 and 23:00, so the reminder and the summary appear on their
+   * own rather than waiting for her to reopen the app.
+   */
+  const [clockTick, setClockTick] = useState(0);
+  useEffect(() => {
+    const now = new Date();
+    const next = new Date(now);
+    /* The next of midnight / 20:00 / 23:00, whichever comes first. */
+    const hours = [REMIND_FROM, EVENING_FROM, 24];
+    const nextHour = hours.find((h) => h > now.getHours());
+    next.setHours(nextHour, 0, 1, 0);
+    const wait = Math.max(1000, next - now);
+    const timer = setTimeout(() => setClockTick((n) => n + 1), wait);
+    return () => clearTimeout(timer);
+  }, [clockTick]);
+
+  /* 真乘心語 until 20:00, then what is still short, then the summary. There is
+   * always one of the three — see coachSlot. */
   const slot = coachSlot();
-  const coachKey = `${todayStr()}:${slot || "none"}`;
+  /* Dismissing is per day AND per slot: putting away the morning saying must
+     not also put away tonight's summary. */
+  const coachKey = `${today}:${slot || "none"}`;
   const coachVisible = Boolean(slot) && coachDismissed !== coachKey;
   const coachMorning = useMemo(
     () =>
@@ -2292,15 +2339,42 @@ export default function App() {
             hour: new Date().getHours(),
           })
         : null,
-    [slot, profile]
+    /* `today` is a dependency, not a leftover: the saying is chosen by date, so
+       without it the app would still show yesterday's at 00:05. */
+    [slot, profile, today]
+  );
+  const coachRemind = useMemo(
+    () =>
+      slot === "remind"
+        ? eveningReminder({ day: todayGoals, nickname: (profile && profile.nickname) || "" })
+        : null,
+    [slot, todayGoals, profile, today]
   );
   const coachEvening = useMemo(
     () =>
       slot === "evening"
         ? eveningSummary({ day: todayGoals, garden, nickname: (profile && profile.nickname) || "" })
         : null,
-    [slot, todayGoals, garden, profile]
+    [slot, todayGoals, garden, profile, today]
   );
+
+  /**
+   * Record (or clear) today's mood.
+   *
+   * Written straight through rather than staged behind a save button: it is one
+   * tap answering one question, and a 「儲存」 next to four words would be more
+   * ceremony than the thing deserves. Nothing reads this back to draw a
+   * conclusion — see lib/mood.js.
+   */
+  async function pickMood(mood) {
+    const next = setMood(moods, todayStr(), mood);
+    setMoods(next);
+    try {
+      await saveMoods(next);
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
+    }
+  }
 
   async function dismissCoach() {
     setCoachDismissed(coachKey);
@@ -2310,7 +2384,7 @@ export default function App() {
       /* dismissing is a convenience; losing it is harmless */
     }
   }
-  const todayEntries = useMemo(() => foodLog.filter((e) => e.date === todayStr()), [foodLog]);
+  const todayEntries = useMemo(() => foodLog.filter((e) => e.date === today), [foodLog, today]);
   const recentFoodEntries = useMemo(() => {
     const cutoff = daysAgoStr(6);
     return foodLog
@@ -2326,11 +2400,11 @@ export default function App() {
   );
   const remainingToday = dailyCalorieTarget != null ? dailyCalorieTarget - consumedToday : null;
   const calZone = calorieZone(consumedToday, dailyCalorieTarget);
-  const weeklyCalorieData = useMemo(() => buildWeeklyCalorieData(foodLog), [foodLog]);
+  const weeklyCalorieData = useMemo(() => buildWeeklyCalorieData(foodLog), [foodLog, today]);
 
   const waterBreakdown = useMemo(() => calcWaterTargetBreakdown(profile, latestRecord), [profile, latestRecord]);
   const waterTarget = waterBreakdown ? waterBreakdown.target : null;
-  const todayWaterEntries = useMemo(() => waterLog.filter((e) => e.date === todayStr()), [waterLog]);
+  const todayWaterEntries = useMemo(() => waterLog.filter((e) => e.date === today), [waterLog, today]);
   const recentWaterEntries = useMemo(() => {
     const cutoff = daysAgoStr(6);
     return waterLog.filter((e) => e.date >= cutoff).sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -2450,6 +2524,23 @@ export default function App() {
           border-radius:16px; padding:14px 16px 16px; margin-bottom:14px;
         }
         .coach-morning{ background:var(--amber-soft); border-color:#EBDCC0; }
+        /* 提醒用跟總結一樣的版面，但底色不同：同一件事，不同的「還來不來得及」。 */
+        .coach-remind{ background:var(--brand-soft); border-color:#C9DED4; }
+
+        .mood-block{ margin-top:12px; }
+        .mood-row{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+        .mood-chip{
+          border:1px solid var(--line);
+          background:var(--card);
+          color:var(--ink-soft);
+          border-radius:999px;
+          padding:6px 14px;
+          font-family:'Noto Sans TC', sans-serif;
+          font-size:13px;
+          font-weight:700;
+          cursor:pointer;
+        }
+        .mood-chip.is-on{ background:var(--brand); border-color:var(--brand); color:#fff; }
         .coach-evening{ background:var(--brand-soft); border-color:#CFE3DA; }
         .coach-head{ display:flex; align-items:center; gap:7px; }
         .coach-icon{ display:inline-flex; color:var(--ink-soft); }
@@ -4565,7 +4656,11 @@ export default function App() {
               goTracking={() => setTab("tracking")}
               todayGoals={todayGoals}
               garden={garden}
+              today={today}
               coachSlotName={coachVisible ? slot : null}
+              coachRemind={coachRemind}
+              todayMood={moodFor(moods, todayStr())}
+              onPickMood={pickMood}
               coachMorning={coachMorning}
               coachEvening={coachEvening}
               onDismissCoach={dismissCoach}
@@ -4843,11 +4938,15 @@ function OverviewTab({
   goDiet,
   goExercise,
   goTracking,
+  today,
   todayGoals,
   garden,
   coachSlotName,
   coachMorning,
+  coachRemind,
   coachEvening,
+  todayMood,
+  onPickMood,
   onDismissCoach,
 }) {
   const [showRisk, setShowRisk] = useState(false);
@@ -4879,6 +4978,7 @@ function OverviewTab({
           原本它排在樹苗、風險評分和今日熱量後面，每次補記一杯都要先捲過
           一千四百像素 —— 一個常用的動作被擺在不常看的東西後面。 */}
       <WaterCard
+        todayKey={today}
         target={waterTarget}
         breakdown={waterBreakdown}
         consumedToday={consumedWaterToday}
@@ -4895,12 +4995,26 @@ function OverviewTab({
         <GrowthPanel day={todayGoals} garden={garden} onGoActivity={goExercise} />
       ) : null}
 
+      {/* 提醒和總結都排在三項下面，因為到那個時候，那些數字就是它們在講的東西。
+          早上的心語相反，它排在最上面 —— 問候要先講。 */}
+      {coachSlotName === "remind" ? (
+        <DailyCoach
+          slot="remind"
+          reminder={coachRemind}
+          nickname={profile.nickname}
+          avatar={profile.avatar}
+          onDismiss={onDismissCoach}
+        />
+      ) : null}
+
       {coachSlotName === "evening" ? (
         <DailyCoach
           slot="evening"
           summary={coachEvening}
           nickname={profile.nickname}
           avatar={profile.avatar}
+          mood={todayMood}
+          onPickMood={onPickMood}
           onDismiss={onDismissCoach}
         />
       ) : null}

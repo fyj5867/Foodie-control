@@ -21,11 +21,22 @@ import { WATER_GOAL_ML, EXERCISE_GOAL_MIN, CALORIE_CEILING } from "./goals.js";
 import { quoteForDate } from "./quotes.js";
 
 /**
- * Before this hour the line is greeted as 早安; after it, the same line stays
- * but under a neutral title. From EVENING_FROM the summary takes over.
+ * The day, by the clock (all local time — see todayStr).
+ *
+ *   00:00  the day starts empty. 真乘心語 for today appears, and every record
+ *          on screen is today's, which is to say none yet.
+ *   11:00  the same saying stays, but the 早安 greeting drops.
+ *   20:00  the reminder: what is still short, while there is time to do it.
+ *   23:00  the summary, and the one question only tonight can answer —
+ *          how the day felt.
+ *
+ * The reminder exists because the summary cannot do that job: at 23:00 the day
+ * is over, and telling someone then that they are 450cc short is information
+ * with nowhere to go. Three hours earlier it is still actionable.
  */
 export const MORNING_UNTIL = 11;
-export const EVENING_FROM = 19;
+export const REMIND_FROM = 20;
+export const EVENING_FROM = 23;
 
 /**
  * The daily line: one 真乘心語 saying, from the user's own document.
@@ -125,10 +136,57 @@ export function eveningSummary({ day, garden, nickname = "" }) {
 /**
  * Which message belongs on screen right now.
  *
- * There is always one: the daily line until the evening, then the summary.
- * An earlier version showed nothing between late morning and 7pm, which is
- * most of the waking day — so the daily line was effectively invisible.
+ * There is always one. An early version showed nothing between late morning
+ * and the evening, which is most of the waking day — so the daily line was
+ * effectively invisible. A feature you cannot see most of the time is not a
+ * feature.
  */
 export function coachSlot(now = new Date()) {
-  return now.getHours() >= EVENING_FROM ? "evening" : "morning";
+  const hour = now.getHours();
+  if (hour >= EVENING_FROM) return "evening";
+  if (hour >= REMIND_FROM) return "remind";
+  return "morning";
+}
+
+/**
+ * 20:00 — what is still short, while the evening can still fix it.
+ *
+ * Same rule as the summary: name something that went right first. A card that
+ * opens with what she failed at, three hours before bed, is the kind of thing
+ * that gets dismissed permanently.
+ *
+ * On a day already complete it says so and asks for nothing — a reminder that
+ * fires when there is nothing to remind about teaches her to ignore it.
+ */
+export function eveningReminder({ day, nickname = "" }) {
+  const met = day?.metCount || 0;
+  const order = ["water", "exercise", "calorie"];
+  const done = [];
+  const left = [];
+
+  for (const key of order) {
+    if (day && day[key]) done.push(winFor(key, day));
+    else left.push(nudgeFor(key, day || {}));
+  }
+
+  if (met === 3) {
+    return {
+      title: "晚上八點",
+      headline: nickname ? `${nickname}，三項都到了。` : "三項都到了。",
+      wins: done,
+      watch: [],
+      met,
+    };
+  }
+
+  const headline = met === 0 ? "還有幾個小時，先挑一件最好做的。" : `已經到了 ${met} 項，還有時間。`;
+
+  return {
+    title: "晚上八點",
+    headline: nickname ? `${nickname}，${headline}` : headline,
+    /* Never an empty encouraging column, even at 0 of 3. */
+    wins: done.length ? done : ["現在看還來得及，這就是提醒的用處"],
+    watch: left,
+    met,
+  };
 }

@@ -12,7 +12,15 @@
  *
  * Run from source/:  node tools/test-coach.mjs
  */
-import { dailyMessage, eveningSummary, coachSlot, MORNING_UNTIL, EVENING_FROM } from "../lib/coach.js";
+import {
+  dailyMessage,
+  eveningSummary,
+  eveningReminder,
+  coachSlot,
+  MORNING_UNTIL,
+  REMIND_FROM,
+  EVENING_FROM,
+} from "../lib/coach.js";
 import { QUOTES, quoteForDate } from "../lib/quotes.js";
 import { CALORIE_CEILING } from "../lib/goals.js";
 import { evaluateDay, gardenState } from "../lib/goals.js";
@@ -56,12 +64,40 @@ function metDays(n) {
  * There must always be one. Showing nothing between late morning and 7pm
  * meant the daily line was invisible for most of the waking day, which is
  * how a built feature comes to look like a missing one. */
+/* Three slots now, and the boundaries are the whole specification:
+ * 00:00 the saying, 20:00 the reminder, 23:00 the summary. */
+check("the stroke of midnight is already the new day's saying", coachSlot(new Date(2026, 8, 8, 0, 0)), "morning");
 check("early morning is the daily line", coachSlot(new Date(2026, 8, 8, 7, 0)), "morning");
 check("late morning still shows the line", coachSlot(new Date(2026, 8, 8, MORNING_UNTIL, 30)), "morning");
 check("mid-afternoon still shows the line", coachSlot(new Date(2026, 8, 8, 14, 0)), "morning");
-check("an hour before evening still shows the line", coachSlot(new Date(2026, 8, 8, EVENING_FROM - 1, 59)), "morning");
-check("evening cutoff shows the summary", coachSlot(new Date(2026, 8, 8, EVENING_FROM, 0)), "evening");
-check("late night is still evening", coachSlot(new Date(2026, 8, 8, 23, 30)), "evening");
+check("a minute before eight is still the line", coachSlot(new Date(2026, 8, 8, REMIND_FROM - 1, 59)), "morning");
+check("eight is the reminder", coachSlot(new Date(2026, 8, 8, REMIND_FROM, 0)), "remind");
+check("and it holds until eleven", coachSlot(new Date(2026, 8, 8, EVENING_FROM - 1, 59)), "remind");
+check("eleven is the summary", coachSlot(new Date(2026, 8, 8, EVENING_FROM, 0)), "evening");
+check("late night is still the summary", coachSlot(new Date(2026, 8, 8, 23, 59)), "evening");
+/* The reminder has to sit strictly between them, or one of the three has no
+ * part of the day to itself. */
+ok("the reminder comes before the summary", REMIND_FROM < EVENING_FROM, `${REMIND_FROM} / ${EVENING_FROM}`);
+ok("and after the morning greeting", MORNING_UNTIL < REMIND_FROM, `${MORNING_UNTIL} / ${REMIND_FROM}`);
+
+/* --- the 20:00 reminder ---
+ * It exists because the summary cannot do this job: at 23:00 "還差 450cc" is
+ * information with nowhere to go. Three hours earlier it is still actionable. */
+const shortDay = { calories: 900, waterMl: 1200, exerciseMin: 10, calorie: false, water: false, exercise: false, metCount: 0 };
+const remind = eveningReminder({ day: shortDay, nickname: "小美" });
+check("the reminder is titled by its hour", remind.title, "晚上八點");
+ok("it names what is left", remind.watch.length === 3, JSON.stringify(remind.watch));
+/* Same rule as the summary: something that went right comes first. A card that
+ * opens with failure, three hours before bed, gets dismissed for good. */
+ok("and never leaves the encouraging column empty", remind.wins.length > 0, JSON.stringify(remind.wins));
+ok("it says there is still time", /還有時間|來得及|先挑一件/.test(remind.headline), remind.headline);
+
+/* A reminder that fires when there is nothing to remind about teaches her to
+ * ignore it, so a finished day asks for nothing. */
+const doneDay = { calories: 1200, waterMl: 2100, exerciseMin: 40, calorie: true, water: true, exercise: true, metCount: 3 };
+const noneLeft = eveningReminder({ day: doneDay, nickname: "小美" });
+check("a finished day has nothing outstanding", noneLeft.watch, []);
+ok("and says so", /都到了/.test(noneLeft.headline), noneLeft.headline);
 
 /* --- the sayings themselves --- */
 ok("there are enough sayings to last two months", QUOTES.length >= 50, String(QUOTES.length));
@@ -186,6 +222,12 @@ ok(
   finished.wins.some((w) => w.includes("種進花園")),
   JSON.stringify(finished.wins)
 );
+
+/* The reminder's own wording, checked against the same blacklist as every
+ * other line the app writes about her day. */
+for (const line of [remind.headline, ...remind.wins, ...remind.watch]) {
+  ok(`reminder line avoids judgement: ${line}`, !BANNED.some((w) => line.includes(w)), line);
+}
 
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {

@@ -14,6 +14,7 @@
 
 import { daysAgoStr } from "./health.js";
 import { THUMB_MAX_DIM } from "./photo.js";
+import { normalizeMoods } from "./mood.js";
 import { backfillSummaries, upsertSummary } from "./goals.js";
 import { normalizeMemory } from "./foodMemory.js";
 import { normalizeReports } from "./reports.js";
@@ -41,6 +42,8 @@ export const KEYS = {
   clinicVisits: "clinic-visits",
   /** 排定的檢查: a suggestion she has put a date on. */
   examPlans: "exam-plans",
+  /** 今日心情: one of four words per day, asked for at 23:00. */
+  moods: "daily-mood",
   calorieOverride: "calorie-target-override",
   anthropicKey: "anthropic-api-key",
   geminiKey: "gemini-api-key",
@@ -249,6 +252,16 @@ export async function saveVisits(visits) {
   return clean;
 }
 
+export async function loadMoods() {
+  return normalizeMoods(await readArray(KEYS.moods));
+}
+
+export async function saveMoods(moods) {
+  const clean = normalizeMoods(moods);
+  await writeJson(KEYS.moods, clean);
+  return clean;
+}
+
 export async function loadPlans() {
   return normalizePlans(await readArray(KEYS.examPlans));
 }
@@ -305,6 +318,9 @@ export const BACKUP_FIELDS = [
   "workoutLinks",
   "clinicVisits",
   "examPlans",
+  /* Four words a day, and the only record here she cannot reconstruct from
+     anything else — nothing computes a mood. */
+  "moods",
 ];
 
 /** Assemble a backup from values already in hand. Used by the export screen. */
@@ -328,6 +344,7 @@ export async function buildBackup() {
     workoutLinks: await loadWorkoutLinks(),
     clinicVisits: await loadVisits(),
     examPlans: await loadPlans(),
+    moods: await loadMoods(),
   });
 }
 
@@ -390,6 +407,10 @@ export async function restoreBackup(data) {
   if (Array.isArray(data.examPlans)) {
     const saved = await savePlans(data.examPlans);
     if (saved.length) restored.push(`排定的檢查 ${saved.length} 筆`);
+  }
+  if (Array.isArray(data.moods)) {
+    const saved = await saveMoods(data.moods);
+    if (saved.length) restored.push(`心情紀錄 ${saved.length} 天`);
   }
 
   return restored;

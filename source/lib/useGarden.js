@@ -19,7 +19,15 @@ function sameVerdict(a, b) {
   return a.date === b.date && a.c === b.c && a.e === b.e && a.w === b.w;
 }
 
-export default function useGarden({ foodLog, waterLog, exerciseLog, calorieTarget, ready }) {
+export default function useGarden({ foodLog, waterLog, exerciseLog, calorieTarget, ready, dayKey = null }) {
+  /* Which day "today" means.
+   *
+   * It has to come in from outside, or at least be able to: the verdict below
+   * is memoised, and at midnight none of the logs change — so an app left open
+   * overnight kept showing yesterday's rings against yesterday's date. The
+   * caller re-renders on the hour boundaries and passes the new date in; the
+   * fallback keeps this hook usable on its own. */
+  const dateStr = dayKey || todayStr();
   const [summaries, setSummaries] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [backfillReport, setBackfillReport] = useState(null);
@@ -42,10 +50,11 @@ export default function useGarden({ foodLog, waterLog, exerciseLog, calorieTarge
     };
   }, []);
 
-  /** Today's verdict, recomputed whenever any of the three logs move. */
+  /** Today's verdict, recomputed when any of the three logs move — or when
+   * the day itself does. */
   const today = useMemo(
-    () => evaluateDay(todayStr(), { foodLog, waterLog, exerciseLog, calorieTarget }),
-    [foodLog, waterLog, exerciseLog, calorieTarget]
+    () => evaluateDay(dateStr, { foodLog, waterLog, exerciseLog, calorieTarget }),
+    [dateStr, foodLog, waterLog, exerciseLog, calorieTarget]
   );
 
   /* One-time rebuild from whatever history the trimmed logs still hold.
