@@ -18,6 +18,32 @@
 const GEMINI_DEFAULT_MODEL = "gemini-3.6-flash";
 const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 
+/**
+ * The provider's own explanation, short enough to show on a card.
+ *
+ * Both APIs put a readable reason in the body. Throwing it away and printing a
+ * fixed sentence is what made every failure look the same — and a failure that
+ * looks the same as every other is one nobody can diagnose, least of all in an
+ * app with no logs.
+ */
+async function readProviderError(response) {
+  try {
+    const body = await response.text();
+    if (!body) return "";
+    let message = "";
+    try {
+      const parsed = JSON.parse(body);
+      message = parsed?.error?.message || parsed?.message || "";
+    } catch (e) {
+      message = body;
+    }
+    message = String(message).trim().replace(/\s+/g, " ");
+    return message ? `：${message.slice(0, 140)}` : "";
+  } catch (e) {
+    return "";
+  }
+}
+
 function missingKeyError(provider) {
   return new Error(
     provider === "gemini"
@@ -42,8 +68,25 @@ export function parseJsonReply(text) {
   } catch (e) {
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1));
-    throw new Error("辨識結果格式不正確，請再試一次。");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1));
+      } catch (inner) {
+        /* fall through to the error below */
+      }
+    }
+    /* A reply that opens a brace and never closes it is a cut-off reply, not a
+       malformed one — and the two need different advice. Saying 「格式不正確」
+       to someone whose answer was simply too long sends them back to retake the
+       same photo, which changes nothing. */
+    if (start >= 0 && end <= start) {
+      throw new Error("辨識結果被截斷了（回覆太長）。請再試一次；若一直發生，請改用手動輸入。");
+    }
+    const err = new Error("辨識結果格式不正確，請再試一次。");
+    /* Kept for the diagnostic line on the card — without it a static app has no
+       way at all to find out what the model actually said. */
+    err.reply = cleaned.slice(0, 160);
+    throw err;
   }
 }
 
@@ -52,7 +95,9 @@ export function parseJsonReply(text) {
  *
  * @param prompt      what to ask — the only thing that differs between uses
  * @param base64Data  the image, base64 without the data: prefix
- * @param maxTokens   a report page holds far more numbers than a lunch does
+ * @param maxTokens   how much room the reply gets. The default suits a single
+ *                    short answer; the food and report prompts both ask for
+ *                    considerably more than that and pass their own.
  */
 export async function askAboutImage({
   prompt,
@@ -75,23 +120,62 @@ export async function askAboutImage({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mediaType, data: base64Data } }] }],
+        /* The request used to carry no generationConfig at all, which left two
+           things to luck:
+           - **responseMimeType** — without it the model is free to answer with
+             a sentence, a markdown fence, or its own reasoning before the JSON,
+             and we were left scraping for braces. Asking for application/json
+             makes the API itself guarantee parseable JSON.
+           - **maxOutputTokens** — unset means the model's default, and a reply
+             that runs out mid-object arrives as a broken brace. The food reply
+             is the long one (每一道菜 plus macros plus tags), so it gets room.
+           temperature 0 because this is transcription and recognition, not
+           writing: the same plate should not come back as a different number
+           twice in a row. */
+        generationConfig: {
+          responseMimeType: "application/json",
+          maxOutputTokens: maxTokens,
+          temperature: 0,
+        },
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 400 || response.status === 403)
-        throw new Error("Gemini API Key 無效，請到設定重新輸入，或確認金鑰有效。");
+      /* Google says why in the body. Reading it is the difference between a
+         message she can act on and a guess: a 400 is a bad key, an unsupported
+         field, a rejected image or an oversized request, and only one of those
+         is fixed by retyping the key. */
+      const why = await readProviderError(response);
+      if (response.status === 403) throw new Error(`Gemini 拒絕這個金鑰${why}`);
+      if (response.status === 400) {
+        if (/API key not valid|API_KEY_INVALID/i.test(why))
+          throw new Error("Gemini API Key 無效，請到設定重新輸入，或確認金鑰有效。");
+        throw new Error(`Gemini 不接受這個請求${why}`);
+      }
       if (response.status === 404)
         throw new Error(`找不到模型「${model}」，Google 可能已更新模型名稱，請到設定的「進階」欄位更新模型名稱。`);
       if (response.status === 429) throw new Error("已達到 Gemini 免費額度上限（有速率限制），請稍後再試。");
-      throw new Error("辨識服務暫時無法使用，請稍後再試。");
+      throw new Error(`辨識服務暫時無法使用（${response.status}）${why}`);
     }
 
     const data = await response.json();
-    const parts = data?.candidates?.[0]?.content?.parts || [];
-    const textPart = parts.find((p) => typeof p.text === "string");
-    if (!textPart) throw new Error("未取得辨識結果");
-    return parseJsonReply(textPart.text);
+    const candidate = data?.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
+    /* Join every text part rather than taking the first: a thinking model puts
+       its reasoning in one part and the answer in another, and picking [0] gets
+       the reasoning. */
+    const text = parts
+      .filter((part) => typeof part.text === "string")
+      .map((part) => part.text)
+      .join("");
+    if (candidate?.finishReason === "MAX_TOKENS") {
+      throw new Error("辨識結果被截斷了（回覆太長）。請再試一次；若一直發生，請改用手動輸入。");
+    }
+    if (candidate?.finishReason === "SAFETY" || candidate?.finishReason === "PROHIBITED_CONTENT") {
+      throw new Error("Gemini 拒絕分析這張照片。請換一張，或改用手動輸入。");
+    }
+    if (!text.trim()) throw new Error(`未取得辨識結果（${candidate?.finishReason || "沒有內容"}）`);
+    return parseJsonReply(text);
   }
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -118,14 +202,22 @@ export async function askAboutImage({
   });
 
   if (!response.ok) {
+    const why = await readProviderError(response);
     if (response.status === 401) throw new Error("API Key 無效或已過期，請到設定重新輸入。");
     if (response.status === 429) throw new Error("已達到 API 使用額度上限，請稍後再試。");
-    throw new Error("辨識服務暫時無法使用，請稍後再試。");
+    /* 400 here is most often the image: too large, or a format the API will not
+       take. Saying so beats 「暫時無法使用」, which suggests waiting — and waiting
+       never fixes an image that is too big. */
+    if (response.status === 400) throw new Error(`這個請求被拒絕${why}`);
+    throw new Error(`辨識服務暫時無法使用（${response.status}）${why}`);
   }
 
   const data = await response.json();
+  if (data.stop_reason === "max_tokens") {
+    throw new Error("辨識結果被截斷了（回覆太長）。請再試一次；若一直發生，請改用手動輸入。");
+  }
   const textBlock = (data.content || []).find((b) => b.type === "text");
-  if (!textBlock) throw new Error("未取得辨識結果");
+  if (!textBlock) throw new Error(`未取得辨識結果（${data.stop_reason || "沒有內容"}）`);
   return parseJsonReply(textBlock.text);
 }
 

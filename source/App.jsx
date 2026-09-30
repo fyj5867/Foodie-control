@@ -206,7 +206,13 @@ async function fileToVisionImage(file, maxDim = VISION_MAX_DIM, quality = 0.82) 
  * path, and two copies of the fetch-and-unwrap-the-JSON dance would drift.
  */
 async function analyzeFoodPhoto(base64Data, mediaType, provider, apiKey, geminiModel) {
-  return askAboutImage({ prompt: FOOD_PROMPT, base64Data, mediaType, provider, apiKey, geminiModel });
+  /* 2000, not the 1000 default. The food reply is not short: a name,每一道菜
+     一列, three macros, a portion note, a reason, and the tags — all in
+     Chinese, which costs more tokens per character than English. At 1000 a
+     four-dish meal could run out of room mid-object, and a JSON reply that
+     stops halfway is indistinguishable from a broken one. The report prompt
+     already passed its own for the same reason. */
+  return askAboutImage({ prompt: FOOD_PROMPT, base64Data, mediaType, provider, apiKey, geminiModel, maxTokens: 2000 });
 }
 
 /**
@@ -1697,6 +1703,10 @@ export default function App() {
           activeKey ? "已設金鑰" : "沒有金鑰",
           sizes.length ? `照片 ${sizes.join("、")}` : "照片沒讀到",
           lastError ? String(lastError.message || lastError).slice(0, 120) : "",
+          /* parseJsonReply attaches the model's own words when it could not
+             make JSON of them — the one thing that tells a truncation from a
+             refusal from a model that ignored the format. */
+          lastError && lastError.reply ? `回覆開頭：${lastError.reply}` : "",
         ]
           .filter(Boolean)
           .join(" ・ ")
