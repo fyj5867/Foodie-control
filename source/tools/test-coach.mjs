@@ -23,7 +23,7 @@ import {
 } from "../lib/coach.js";
 import { QUOTES, quoteForDate } from "../lib/quotes.js";
 import { CALORIE_CEILING } from "../lib/goals.js";
-import { evaluateDay, gardenState } from "../lib/goals.js";
+import { evaluateDay, gardenState, TREE_DAYS } from "../lib/goals.js";
 import { todayStr, daysAgoStr } from "../lib/health.js";
 
 let passed = 0;
@@ -215,8 +215,13 @@ ok(
   JSON.stringify(unlogged.watch)
 );
 
-/* Reaching a tree is worth saying out loud. */
-const finished = eveningSummary({ day: day(1200, 2100, 35), garden: gardenState(metDays(30)), nickname: "" });
+/* Reaching a tree is worth saying out loud.
+ *
+ * Counted in whole trees rather than a fixed 30 days: this used to say
+ * metDays(30), which landed exactly on a finished tree only while TREE_DAYS
+ * was 15. Shortening it to 7 left 30 days two days into the fifth tree, and
+ * the assertion failed for a reason that had nothing to do with the summary. */
+const finished = eveningSummary({ day: day(1200, 2100, 35), garden: gardenState(metDays(TREE_DAYS * 2)), nickname: "" });
 ok(
   "finishing a tree is called out",
   finished.wins.some((w) => w.includes("種進花園")),

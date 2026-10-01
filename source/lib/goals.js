@@ -44,27 +44,32 @@ export const CALORIE_MIN_LOGGED = 500;
 /**
  * One finished tree.
  *
- * Fifteen met days, not thirty. A month of perfect attendance is a long way to
- * go before anything visibly finishes, and the point of the garden is to be
- * the reason to keep going — a reward that far out stops working as one.
- * Slipping a day still never resets progress; it only pushes the finish out.
+ * Seven met days (was thirty, then fifteen). The garden exists to be the
+ * reason to keep going, and a reward a fortnight out stops working as one —
+ * seven is a week, which is a length of time a person can actually hold in
+ * their head. Slipping a day still never resets progress; it only pushes the
+ * finish out.
+ *
+ * Seven also happens to be the number that makes the stages fall out evenly:
+ * eight illustrations over seven days means **every single met day changes the
+ * picture**, which is as often as it can possibly change.
  *
  * **Changing this number re-reads the whole garden.** Trees are not stored;
  * they are recomputed from the met-day history every time (see gardenState),
- * so halving this doubles the number of finished trees she already has. That
- * is the intended effect here — it is the same history, counted in shorter
- * runs — but it means this constant can never be changed casually.
+ * so shortening it multiplies the trees she already has — the same history,
+ * counted in shorter runs. That is the intended effect, but it is also why
+ * this constant can never be changed casually.
  */
-export const TREE_DAYS = 15;
+export const TREE_DAYS = 7;
 
 /**
  * Growth stages within one plant, keyed on met days accumulated toward it.
  *
  * Eight stages, names and order taken from the Health Forest 植物養成圖示系統
  * canvas — the artwork in components/Sprout.jsx is drawn for exactly these,
- * so the two lists have to stay in step. Days are spread over TREE_DAYS with
- * the early steps close together: the first few days are when a habit is
- * easiest to abandon, so that is where visible progress should come fastest.
+ * so the two lists have to stay in step. At seven days the spread is simply
+ * one stage a day — the early steps no longer need to be bunched up, because
+ * there is no late part of the run to spread out.
  *
  * Over fifteen days that spacing means something changes on screen after
  * almost every met day early on, and never more than three days pass without
@@ -74,10 +79,10 @@ export const STAGES = [
   { key: "seed", label: "種子", days: 0, note: "開始養成" },
   { key: "sprout", label: "發芽", days: 1, note: "萌芽出土" },
   { key: "shoot", label: "幼芽", days: 2, note: "兩葉成長" },
-  { key: "seedling", label: "小苗", days: 4, note: "葉片增加" },
-  { key: "growing", label: "成長", days: 6, note: "枝葉茂盛" },
-  { key: "mature", label: "成熟", days: 9, note: "花苞出現" },
-  { key: "ready", label: "破土", days: 12, note: "準備移植" },
+  { key: "seedling", label: "小苗", days: 3, note: "葉片增加" },
+  { key: "growing", label: "成長", days: 4, note: "枝葉茂盛" },
+  { key: "mature", label: "成熟", days: 5, note: "花苞出現" },
+  { key: "ready", label: "破土", days: 6, note: "準備移植" },
   { key: "forest", label: "森林之樹", days: TREE_DAYS, note: "種入森林" },
 ];
 
