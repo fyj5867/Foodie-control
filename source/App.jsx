@@ -95,7 +95,7 @@ import { agePhotos, PHOTO_DAYS, PHOTO_MAX_DIM, KEYS, loadFoodMemory, saveFoodMem
 import { fitWithin, tooBigMessage, VISION_MAX_DIM, REPORT_MAX_DIM } from "./lib/photo.js";
 import { APP_VERSION } from "./lib/version.js";
 import { remember, forget, lookup, suggestion, sortedMemory, isLearnable } from "./lib/foodMemory.js";
-import { askAboutImage, FOOD_PROMPT, LAB_PROMPT, BODY_PROMPT } from "./lib/vision.js";
+import { askAboutImage, testVisionConnection, FOOD_PROMPT, LAB_PROMPT, BODY_PROMPT } from "./lib/vision.js";
 import { applyReadingToForm } from "./lib/bodyScan.js";
 import { upsertReport, removeReport, latestReport } from "./lib/reports.js";
 import {
@@ -957,6 +957,8 @@ export default function App() {
   const [analysisProgress, setAnalysisProgress] = useState(null); // { done, total }
   /** One line naming the provider, the model, the photo size and the raw error. */
   const [analysisDetail, setAnalysisDetail] = useState("");
+  /** 測試 AI 連線 的結果，顯示在設定裡。 */
+  const [connTest, setConnTest] = useState({ running: false, result: null });
   /** 今日心情 —— 一天一筆，晚上十一點的總結裡問。 */
   const [moods, setMoods] = useState([]);
   const [manualForm, setManualForm] = useState({ name: "", calories: "" });
@@ -1990,6 +1992,25 @@ export default function App() {
     });
     setShowReset(false);
     setTab("overview");
+  }
+
+  /**
+   * 測試 AI 連線 —— one tap, and the server's own answer on screen.
+   *
+   * The reason this is a button and not a log line: this app has no backend
+   * and therefore no logs, and a photo that "fails" can be the key, the model
+   * name, the network, the image or the reply, all of which looked the same
+   * from outside. Asking her to read an error off a card she has already
+   * dismissed has not worked; a button she can press on purpose does.
+   */
+  async function handleTestConnection() {
+    setConnTest({ running: true, result: null });
+    const result = await testVisionConnection({
+      provider: aiProvider,
+      apiKey: aiProvider === "gemini" ? geminiKey : apiKey,
+      geminiModel,
+    });
+    setConnTest({ running: false, result });
   }
 
   async function handleExportBackup() {
@@ -4299,6 +4320,24 @@ export default function App() {
         .shot-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .shot-kcal{ flex:none; font-weight:700; color:var(--ink-soft); }
 
+        .conn-test{ margin-top:10px; }
+        .conn-result{
+          display:flex;
+          flex-direction:column;
+          gap:3px;
+          margin-top:8px;
+          padding:9px 11px;
+          border-radius:10px;
+          font-size:11.5px;
+          line-height:1.6;
+          /* Meant to be read out or screenshotted, so it wraps rather than
+             truncating — a cut-off error message is no better than none. */
+          word-break:break-all;
+        }
+        .conn-result.is-ok{ background:var(--brand-soft); color:var(--brand); }
+        .conn-result.is-bad{ background:var(--red-soft); color:var(--red); }
+        .conn-result strong{ font-size:12.5px; }
+
         .analysis-detail{
           margin-top:8px;
           padding:8px 10px;
@@ -4701,6 +4740,8 @@ export default function App() {
               setGeminiModelInput={setGeminiModelInput}
               onSaveGeminiModel={handleSaveGeminiModel}
               onExportBackup={handleExportBackup}
+              connTest={connTest}
+              onTestConnection={handleTestConnection}
               onImportBackup={handleImportBackup}
             />
           )}
@@ -5144,6 +5185,8 @@ function ProfileTab({
   setGeminiModelInput,
   onSaveGeminiModel,
   onExportBackup,
+  connTest,
+  onTestConnection,
   onImportBackup,
 }) {
   return (
@@ -5418,6 +5461,7 @@ function ProfileTab({
             <p style={{ fontSize: "11px", color: geminiKey ? "var(--green)" : "var(--ink-soft)", marginTop: "10px" }}>
               {geminiKey ? "✓ 已設定 Gemini 金鑰，拍照分析功能可以使用" : "尚未設定金鑰，拍照分析功能暫時無法使用"}
             </p>
+            <ConnectionTest connTest={connTest} onTest={onTestConnection} />
           </>
         ) : (
           <>
@@ -5457,10 +5501,46 @@ function ProfileTab({
             <p style={{ fontSize: "11px", color: apiKey ? "var(--green)" : "var(--ink-soft)", marginTop: "8px" }}>
               {apiKey ? "✓ 已設定金鑰，拍照分析功能可以使用" : "尚未設定金鑰，拍照分析功能暫時無法使用"}
             </p>
+            <ConnectionTest connTest={connTest} onTest={onTestConnection} />
           </>
         )}
       </div>
     </form>
+  );
+}
+
+/**
+ * 測試 AI 連線.
+ *
+ * Deliberately shows the raw answer rather than a tidy 「成功／失敗」: the tidy
+ * version is what the app has been saying for a fortnight, and it is exactly
+ * what made the problem impossible to find. The point of this box is that its
+ * contents can be read aloud or screenshotted to somebody who can act on them.
+ */
+function ConnectionTest({ connTest, onTest }) {
+  const result = connTest?.result;
+  return (
+    <div className="conn-test">
+      <button type="button" className="btn btn-secondary btn-block" onClick={onTest} disabled={connTest?.running}>
+        {connTest?.running ? (
+          <>
+            <Loader2 size={14} className="spin" /> 測試中…
+          </>
+        ) : (
+          "測試 AI 連線"
+        )}
+      </button>
+      {result ? (
+        <div className={`conn-result ${result.ok ? "is-ok" : "is-bad"}`}>
+          <strong>{result.summary}</strong>
+          <span>{result.detail}</span>
+        </div>
+      ) : (
+        <p className="fine-print" style={{ marginTop: "6px" }}>
+          送一張 1×1 的小圖去問一個字，確認金鑰、模型名稱和網路都通。失敗時會把伺服器原本的回覆顯示出來。
+        </p>
+      )}
+    </div>
   );
 }
 

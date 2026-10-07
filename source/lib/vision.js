@@ -91,6 +91,64 @@ export function parseJsonReply(text) {
 }
 
 /**
+ * Can this phone reach the model at all, and if not, what exactly did the
+ * server say?
+ *
+ * This exists because of a fortnight of guessing. A photo "failing" can be the
+ * key, the model name, the network, the image, its size, the output format, or
+ * a reply that was cut off — and from the outside every one of them looked
+ * identical. A static app keeps no logs, so unless a failure names itself at
+ * the moment it happens, nobody will ever find out what it was.
+ *
+ * One tap, one tiny request, and whatever comes back repeated word for word.
+ * It sends a 1x1 image and asks for one word: the smallest thing that still
+ * exercises the whole path — key, model name, network, vision, JSON.
+ *
+ * It never throws. Every outcome is a report, because an exception here would
+ * be precisely the silence this is meant to break.
+ */
+export async function testVisionConnection({ provider, apiKey, geminiModel }) {
+  const model =
+    provider === "gemini"
+      ? (geminiModel && geminiModel.trim()) || GEMINI_DEFAULT_MODEL
+      : ANTHROPIC_MODEL;
+
+  if (!apiKey) {
+    return { ok: false, model, summary: "沒有金鑰", detail: "這個供應商還沒有填 API Key。" };
+  }
+
+  /* A 1x1 transparent GIF — the smallest valid image there is. */
+  const PIXEL = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+  try {
+    const started = Date.now();
+    const reply = await askAboutImage({
+      prompt: '請只回傳這個 JSON，不要其他文字：{"ok":true}',
+      base64Data: PIXEL,
+      mediaType: "image/gif",
+      provider,
+      apiKey,
+      geminiModel,
+      maxTokens: 200,
+    });
+    return {
+      ok: true,
+      model,
+      summary: "連線正常",
+      detail: `${model}（${Date.now() - started}ms）${JSON.stringify(reply).slice(0, 60)}`,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      model,
+      /* The provider's own words. That is the entire point of this button. */
+      detail: `${model}｜${String(e.message || e).slice(0, 220)}${e.reply ? `｜回覆開頭：${e.reply}` : ""}`,
+      summary: "連線失敗",
+    };
+  }
+}
+
+/**
  * Ask a vision model about an image and return the parsed JSON reply.
  *
  * @param prompt      what to ask — the only thing that differs between uses
@@ -134,7 +192,14 @@ export async function askAboutImage({
            twice in a row. */
         generationConfig: {
           responseMimeType: "application/json",
-          maxOutputTokens: maxTokens,
+          /* Four times what the answer needs, and that is deliberate.
+             On a thinking model the budget covers the thinking as well — so a
+             cap sized for the answer alone can be spent entirely on reasoning,
+             coming back as MAX_TOKENS with no text at all. This may well be
+             what the last change made worse rather than better: 2000 is
+             generous for the reply and tight for reply-plus-thinking. Asking
+             for room costs nothing when it is not used. */
+          maxOutputTokens: maxTokens * 4,
           temperature: 0,
         },
       }),
