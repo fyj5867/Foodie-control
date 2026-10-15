@@ -557,6 +557,13 @@ function WaterCard({
 }) {
   const [customAmount, setCustomAmount] = useState("");
   const [showEarlierWater, setShowEarlierWater] = useState(false);
+  /* Which day the buttons write to. Reset whenever the day turns over, so an
+     app left open overnight does not keep yesterday selected. */
+  const [entryDate, setEntryDate] = useState(todayKey || todayStr());
+  useEffect(() => {
+    setEntryDate(todayKey || todayStr());
+  }, [todayKey]);
+  const isToday = entryDate === (todayKey || todayStr());
 
   // Split today from the rest so today can stay visible while the others
   // collapse. Hooks must run before the early return below.
@@ -618,14 +625,36 @@ function WaterCard({
         </details>
       )}
 
+      {/* Which day these buttons write to. Today unless she says otherwise —
+          and when it is not today, the card says so loudly, because a date
+          picker quietly left on Tuesday would put tonight's water on Tuesday
+          and neither number would be right. */}
+      <div className="water-day-row">
+        <label htmlFor="water-day">記到</label>
+        <input
+          id="water-day"
+          type="date"
+          value={entryDate}
+          min={daysAgoStr(BACKFILL_DAYS)}
+          max={todayKey || todayStr()}
+          onChange={(e) => setEntryDate(e.target.value || (todayKey || todayStr()))}
+        />
+        {!isToday && (
+          <button type="button" className="inline-toggle" onClick={() => setEntryDate(todayKey || todayStr())}>
+            回到今天
+          </button>
+        )}
+      </div>
+      {!isToday && <div className="water-backfill-note">正在補登 {entryDate.slice(5).replace("-", "/")} 的喝水量</div>}
+
       <div className="water-quick-row">
-        <button type="button" className="water-quick-btn" onClick={() => onAddWater(200)}>
+        <button type="button" className="water-quick-btn" onClick={() => onAddWater(200, entryDate)}>
           🥤 +200ml
         </button>
-        <button type="button" className="water-quick-btn" onClick={() => onAddWater(350)}>
+        <button type="button" className="water-quick-btn" onClick={() => onAddWater(350, entryDate)}>
           🍶 +350ml
         </button>
-        <button type="button" className="water-quick-btn" onClick={() => onAddWater(600)}>
+        <button type="button" className="water-quick-btn" onClick={() => onAddWater(600, entryDate)}>
           🧴 +600ml
         </button>
       </div>
@@ -635,7 +664,7 @@ function WaterCard({
           e.preventDefault();
           const v = Number(customAmount);
           if (v > 0) {
-            onAddWater(v);
+            onAddWater(v, entryDate);
             setCustomAmount("");
           }
         }}
@@ -1550,21 +1579,34 @@ export default function App() {
     setWaterLog(trimmed);
   }
 
-  async function handleAddWater(amountMl) {
+  /**
+   * Record water — today by default, or any day in the backfill window.
+   *
+   * 運動 has had a date field all along; 喝水 was the one of the three that
+   * could only ever be today, so a day she drank and forgot to tap could never
+   * be put right. The same seven-day window applies, and the summary for that
+   * day is re-judged on the next render.
+   */
+  async function handleAddWater(amountMl, forDate = null) {
     const amount = Math.round(Number(amountMl));
     if (!amount || amount <= 0) return;
     const today = todayStr();
-    const existingIdx = waterLog.findIndex((e) => e.date === today);
+    const date = forDate && forDate !== today ? forDate : today;
+    if (date !== today && !canBackfill(date)) {
+      flashSaved(`只能補登最近 ${BACKFILL_DAYS} 天`);
+      return;
+    }
+    const existingIdx = waterLog.findIndex((e) => e.date === date);
     let next;
     if (existingIdx >= 0) {
       next = [...waterLog];
       next[existingIdx] = { ...next[existingIdx], amountMl: next[existingIdx].amountMl + amount };
     } else {
-      next = [...waterLog, { id: `${Date.now()}`, date: today, amountMl: amount }];
+      next = [...waterLog, { id: `${Date.now()}`, date, amountMl: amount }];
     }
     try {
       await persistWaterLog(next);
-      flashSaved(`已記錄 ${amount} ml`);
+      flashSaved(date === today ? `已記錄 ${amount} ml` : `已補登 ${date.slice(5)} ${amount} ml`);
     } catch (e) {
       flashSaved("儲存失敗，請再試一次");
     }
@@ -4125,6 +4167,30 @@ export default function App() {
           color:var(--ink-soft);
           margin-top:4px;
           line-height:1.5;
+        }
+
+        .water-day-row{
+          display:flex; align-items:center; gap:8px;
+          margin-top:12px; font-size:12px; color:var(--ink-soft);
+        }
+        .water-day-row label{ font-weight:700; flex:none; }
+        .water-day-row input{
+          flex:1; min-width:0;
+          border:1px solid var(--line); border-radius:9px;
+          padding:6px 8px; font-size:12.5px;
+          font-family:'Noto Sans TC', sans-serif;
+          background:#fff; color:var(--ink);
+          /* iOS sizes a native date control to its own content and ignores a
+             percentage width — see the 體態紀錄 note. */
+          -webkit-appearance:none;
+        }
+        /* Loud on purpose: the quick buttons are tapped without reading, so the
+           one time she must read something is when they are not pointing at
+           today. */
+        .water-backfill-note{
+          margin-top:8px; padding:7px 10px; border-radius:9px;
+          background:var(--amber-soft); color:#8A5A3B;
+          font-size:11.5px; font-weight:700;
         }
 
         .water-quick-row{

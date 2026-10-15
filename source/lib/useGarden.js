@@ -14,8 +14,23 @@ import { todayStr } from "./health.js";
 import { loadSummaries, saveSummaries, backfillOnce, clearSummaries, clearBackfillFlag } from "./storage.js";
 import { upsertSummary } from "./goals.js";
 
-function sameDates(a, b) {
-  return a.length === b.length && a.every((d, i) => d === b[i]);
+/**
+ * A fingerprint of what this pass decided, for the re-render guard.
+ *
+ * It has to include the verdicts, not just which dates moved. An earlier
+ * version compared the date list alone, and that silently dropped a real
+ * update: top a day up past the water goal and the changed-date list is the
+ * same ["2026-10-12"] as the write before it, so the guard treated a genuine
+ * flip from unmet to met as a duplicate and skipped it. The row only came
+ * right later, when an unrelated edit happened to re-include that date.
+ */
+function signatureOf(dates, summaries) {
+  return dates
+    .map((date) => {
+      const row = summaries.find((s) => s.date === date);
+      return `${date}:${row && row.c ? 1 : 0}${row && row.e ? 1 : 0}${row && row.w ? 1 : 0}`;
+    })
+    .join("|");
 }
 
 export default function useGarden({ foodLog, waterLog, exerciseLog, calorieTarget, ready, dayKey = null }) {
@@ -96,11 +111,12 @@ export default function useGarden({ foodLog, waterLog, exerciseLog, calorieTarge
       dateStr
     );
     if (!changed.length) return;
-    /* Guard against a re-render racing the save: the same set of dates twice
+    /* Guard against a re-render racing the save: the identical decision twice
        running means the write is already on its way. */
-    if (sameDates(changed, lastWritten.current || [])) return;
+    const signature = signatureOf(changed, next);
+    if (signature === lastWritten.current) return;
 
-    lastWritten.current = changed;
+    lastWritten.current = signature;
     setSummaries(next);
     saveSummaries(next).catch(() => {
       // Storage is full or unavailable — keep the in-memory value so the
