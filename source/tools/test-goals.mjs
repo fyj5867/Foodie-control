@@ -13,6 +13,9 @@ import {
   stageForDays,
   nextStageForDays,
   canBackfill,
+  backfillDates,
+  recomputeRecent,
+  BACKFILL_DAYS,
   toSummary,
   TREE_DAYS,
   WATER_GOAL_ML,
@@ -222,10 +225,66 @@ check("backfill marks it met", bf[0], { date: daysAgoStr(2), c: true, e: true, w
 const bfEmpty = backfillSummaries({ foodLog: [], waterLog: [], exerciseLog: [], calorieTarget: target });
 check("backfill of nothing is empty", bfEmpty.length, 0);
 
-/* --- backfill window is limited to yesterday --- */
+/* --- the backfill window: seven days, not one ---
+ * Raised because the days being recovered are ones she genuinely recorded and
+ * lost to a flat battery or a photo that would not upload. Both ends are
+ * pinned, because an off-by-one here either loses a day she can still fix or
+ * lets in one whose detailed logs may already be trimmed. */
 check("yesterday can be backfilled", canBackfill(daysAgoStr(1)), true);
-check("today is not a backfill", canBackfill(todayStr()), false);
-check("two days ago cannot be backfilled", canBackfill(daysAgoStr(2)), false);
+check("so can the far end of the window", canBackfill(daysAgoStr(BACKFILL_DAYS)), true);
+check("one day past the window cannot", canBackfill(daysAgoStr(BACKFILL_DAYS + 1)), false);
+check("today is not a backfill — it records live", canBackfill(todayStr()), false);
+check("nor is a date in the future", canBackfill("2099-01-01"), false);
+check("rubbish is not a date", canBackfill(""), false);
+/* Deliberately NOT tied to TREE_DAYS. They are the same number today, and
+ * that is a coincidence: one is how long a plant takes, the other is how long
+ * a correction stays possible. Asserting them equal would make a future change
+ * to either one fail a test about the other — the exact trap that caught
+ * test-coach.mjs when TREE_DAYS moved. */
+ok("the window is days, not weeks", BACKFILL_DAYS >= 2 && BACKFILL_DAYS <= 14, String(BACKFILL_DAYS));
+check("the window lists every day in it", backfillDates().length, BACKFILL_DAYS);
+check("newest first", backfillDates()[0], daysAgoStr(1));
+check("and never today", backfillDates().includes(todayStr()), false);
+
+/* --- recomputing after an edit ---
+ * The garden is derived from the summary rows, and only today's row used to be
+ * kept in step: correcting Tuesday's water on Thursday changed the diary and
+ * left the met-day count alone, so the correction did not count. */
+const past = daysAgoStr(3);
+const logsAfterEdit = {
+  foodLog: [{ date: past, estimatedCalories: 1400 }],
+  waterLog: [{ date: past, amountMl: 2100 }],
+  exerciseLog: [{ date: past, durationMin: 35 }],
+  calorieTarget: target,
+};
+const before = [{ date: past, c: false, e: false, w: false }];
+const after = recomputeRecent(before, logsAfterEdit);
+check("a corrected day is re-judged", after.changed, [past]);
+check("and now counts as met", after.summaries.find((x) => x.date === past), { date: past, c: true, e: true, w: true });
+/* Running it twice must not keep rewriting — the hook calls this on every
+ * render that touches a log. */
+check("nothing changes the second time", recomputeRecent(after.summaries, logsAfterEdit).changed, []);
+
+/* A day with no entries at all is left exactly as it was. A restored backup
+ * carries summary rows whose detailed logs are long gone, and re-judging those
+ * against an empty log would quietly delete her history. */
+const restored = [{ date: past, c: true, e: true, w: true }];
+const noLogs = { foodLog: [], waterLog: [], exerciseLog: [], calorieTarget: target };
+check("an empty log does not un-meet a stored day", recomputeRecent(restored, noLogs).changed, []);
+check("and the row survives", recomputeRecent(restored, noLogs).summaries, restored);
+
+/* Nothing outside the window is touched, however the logs look — beyond it the
+ * food log has been trimmed, so "no entries" means nothing at all. */
+const old = daysAgoStr(BACKFILL_DAYS + 3);
+const oldRow = [{ date: old, c: true, e: true, w: true }];
+const oldLogs = {
+  foodLog: [{ date: old, estimatedCalories: 20 }],
+  waterLog: [],
+  exerciseLog: [],
+  calorieTarget: target,
+};
+check("a day outside the window is never re-judged", recomputeRecent(oldRow, oldLogs).changed, []);
+check("even with logs that would fail it", recomputeRecent(oldRow, oldLogs).summaries, oldRow);
 
 /* --- summary shape stays compact --- */
 check("summary has only four keys", Object.keys(toSummary(day(1410, 2000, 32))), ["date", "c", "e", "w"]);

@@ -9,14 +9,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { evaluateDay, gardenState, toSummary } from "./goals.js";
+import { evaluateDay, gardenState, recomputeRecent } from "./goals.js";
 import { todayStr } from "./health.js";
 import { loadSummaries, saveSummaries, backfillOnce, clearSummaries, clearBackfillFlag } from "./storage.js";
 import { upsertSummary } from "./goals.js";
 
-function sameVerdict(a, b) {
-  if (!a || !b) return false;
-  return a.date === b.date && a.c === b.c && a.e === b.e && a.w === b.w;
+function sameDates(a, b) {
+  return a.length === b.length && a.every((d, i) => d === b[i]);
 }
 
 export default function useGarden({ foodLog, waterLog, exerciseLog, calorieTarget, ready, dayKey = null }) {
@@ -79,30 +78,35 @@ export default function useGarden({ foodLog, waterLog, exerciseLog, calorieTarge
     })();
   }, [loaded, ready, foodLog, waterLog, exerciseLog, calorieTarget]);
 
-  /* Keep today's row in step with the logs. Written only when the verdict
-   * actually changes, so ordinary typing does not hammer storage. */
+  /* Keep the recent days in step with the logs — not just today.
+   *
+   * This used to judge today alone, which meant a correction to an earlier day
+   * never reached the garden: fill in Tuesday's water on Thursday and the
+   * diary changed while the met-day count did not. The whole backfill window
+   * is re-judged instead, so editing or adding to any day inside it counts the
+   * same as recording it at the time.
+   *
+   * Nothing outside the window is touched, and a day with no entries at all is
+   * left alone — see recomputeRecent for why both of those matter. */
   useEffect(() => {
     if (!loaded || !ready) return;
-    const verdict = toSummary(today);
-    const stored = summaries.find((s) => s.date === verdict.date);
+    const { summaries: next, changed } = recomputeRecent(
+      summaries,
+      { foodLog, waterLog, exerciseLog, calorieTarget },
+      dateStr
+    );
+    if (!changed.length) return;
+    /* Guard against a re-render racing the save: the same set of dates twice
+       running means the write is already on its way. */
+    if (sameDates(changed, lastWritten.current || [])) return;
 
-    /* A day with nothing recorded and no target to judge against is not a
-     * failed day — it is a day that has not started. Writing it would stamp
-     * "all three missed" on every day before the profile exists. Once
-     * anything is logged, or a row already exists, keep it up to date. */
-    const hasActivity = (today.calories || 0) > 0 || (today.waterMl || 0) > 0 || (today.exerciseMin || 0) > 0;
-    if (!stored && !hasActivity) return;
-
-    if (sameVerdict(stored, verdict) || sameVerdict(lastWritten.current, verdict)) return;
-
-    lastWritten.current = verdict;
-    const next = upsertSummary(summaries, today);
+    lastWritten.current = changed;
     setSummaries(next);
     saveSummaries(next).catch(() => {
       // Storage is full or unavailable — keep the in-memory value so the
       // screen stays correct for this session rather than reverting.
     });
-  }, [loaded, ready, today, summaries]);
+  }, [loaded, ready, dateStr, foodLog, waterLog, exerciseLog, calorieTarget, summaries]);
 
   const garden = useMemo(() => gardenState(summaries), [summaries]);
 

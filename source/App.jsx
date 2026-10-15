@@ -79,7 +79,17 @@ import {
   calorieZone,
   buildWeeklyCalorieData,
 } from "./lib/health.js";
-import { STAGES, VITALITY, canBackfill, WATER_GOAL_ML, EXERCISE_GOAL_MIN, TREE_DAYS } from "./lib/goals.js";
+import {
+  STAGES,
+  VITALITY,
+  canBackfill,
+  backfillDates,
+  BACKFILL_DAYS,
+  WATER_GOAL_ML,
+  EXERCISE_GOAL_MIN,
+  CALORIE_CEILING,
+  TREE_DAYS,
+} from "./lib/goals.js";
 import useGarden from "./lib/useGarden.js";
 import Sprout from "./components/Sprout.jsx";
 import GardenScene from "./components/Garden.jsx";
@@ -1867,6 +1877,72 @@ export default function App() {
       if (!prev) return prev;
       return { ...prev, result: { ...prev.result, estimatedCalories: value } };
     });
+  }
+
+  /**
+   * 補登 —— record the three figures for a day already past.
+   *
+   * It writes ordinary entries into the three logs rather than stamping the
+   * summary directly. That matters: the summary is derived, and a row written
+   * straight into it would be a second source of truth that the next recompute
+   * would silently overwrite. Going through the logs means a backfilled day is
+   * indistinguishable from one recorded at the time — it shows in the diary,
+   * it can be corrected again, and it survives a restore.
+   *
+   * Blank fields are left alone rather than written as zero, so filling in the
+   * water she remembers does not claim she ate nothing.
+   */
+  async function handleBackfillDay({ date, calories, waterMl, exerciseMin }) {
+    if (!canBackfill(date)) {
+      flashSaved("只能補登最近七天");
+      return;
+    }
+    const cal = Number(calories);
+    const water = Number(waterMl);
+    const mins = Number(exerciseMin);
+    if (!cal && !water && !mins) {
+      flashSaved("至少填一項");
+      return;
+    }
+
+    try {
+      if (cal > 0) {
+        /* Replaces any earlier backfill for that day rather than stacking on
+           top of it — pressing save twice must not double the calories. */
+        const rest = foodLog.filter((e) => !(e.date === date && e.source === "backfill"));
+        await persistFoodLog([
+          ...rest,
+          {
+            id: `bf-${date}`,
+            date,
+            time: "",
+            foodName: "補登",
+            estimatedCalories: Math.round(cal),
+            carbsG: null,
+            proteinG: null,
+            fatG: null,
+            light: "yellow",
+            reason: "補登當日總熱量",
+            confidence: "manual",
+            source: "backfill",
+          },
+        ]);
+      }
+      if (water > 0) {
+        const rest = waterLog.filter((e) => e.date !== date);
+        await persistWaterLog([...rest, { id: `bf-${date}`, date, amountMl: Math.round(water) }]);
+      }
+      if (mins > 0) {
+        const rest = exerciseLog.filter((e) => !(e.date === date && e.activityId === "backfill"));
+        await persistExerciseLog([
+          ...rest,
+          { id: `bf-${date}`, date, activityId: "backfill", activityLabel: "補登運動", durationMin: Math.round(mins) },
+        ]);
+      }
+      flashSaved(`已補登 ${date}`);
+    } catch (e) {
+      flashSaved("儲存失敗，請再試一次");
+    }
   }
 
   async function handleAddManualEntry(e) {
@@ -4786,6 +4862,7 @@ export default function App() {
               summaries={goalSummaries}
               weeklyChartData={weeklyExerciseChartData}
               thisWeekEntries={thisWeekExerciseEntries}
+              onBackfillDay={handleBackfillDay}
               exerciseForm={exerciseForm}
               setExerciseForm={setExerciseForm}
               onAddExerciseEntry={handleAddExerciseEntry}
@@ -5811,6 +5888,120 @@ function DietTab({
   );
 }
 
+/**
+ * 補登前幾天 —— the three figures for a day already gone.
+ *
+ * It lives next to 運動紀錄 because that is where she already comes to write
+ * down what she did. Each day in the window shows what is already recorded, so
+ * the question is never "what did I put yesterday?" — the answer is on screen
+ * before she types.
+ *
+ * Blank means "leave this alone", not zero: filling in the water she remembers
+ * must not claim she ate nothing that day.
+ */
+function BackfillCard({ summaries, onBackfillDay }) {
+  const [open, setOpen] = useState(false);
+  const dates = useMemo(() => backfillDates(), []);
+  const [date, setDate] = useState(dates[0] || "");
+  const [form, setForm] = useState({ calories: "", waterMl: "", exerciseMin: "" });
+
+  const stored = (summaries || []).find((row) => row.date === date);
+  const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+
+  async function save() {
+    await onBackfillDay({ date, ...form });
+    setForm({ calories: "", waterMl: "", exerciseMin: "" });
+  }
+
+  return (
+    <div className="card">
+      <div className="section-title">補登前幾天</div>
+      {!open ? (
+        <>
+          <button type="button" className="btn btn-secondary btn-block" onClick={() => setOpen(true)}>
+            <Plus size={14} /> 補登最近 {BACKFILL_DAYS} 天的紀錄
+          </button>
+          <p className="fine-print" style={{ marginTop: "8px" }}>
+            忘了記、或當天沒電的日子，七天內都還補得回來，補上之後養成進度會跟著重算。
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="field">
+            <label>哪一天</label>
+            <div className="chip-grid">
+              {dates.map((d) => (
+                <button
+                  type="button"
+                  key={d}
+                  className={`chip ${date === d ? "active" : ""}`}
+                  onClick={() => setDate(d)}
+                >
+                  {d.slice(5).replace("-", "/")}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* What that day already holds, so she is correcting rather than
+              guessing. */}
+          <p className="fine-print">
+            {stored
+              ? `這天目前：熱量${stored.c ? "達標" : "未達標"}、運動${stored.e ? "達標" : "未達標"}、喝水${stored.w ? "達標" : "未達標"}`
+              : "這天目前沒有任何紀錄"}
+          </p>
+
+          <div className="field-row">
+            <div className="field">
+              <label>當天總熱量（大卡）</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={form.calories}
+                onChange={(e) => set("calories", e.target.value)}
+                placeholder={`例：${CALORIE_CEILING - 200}`}
+              />
+            </div>
+            <div className="field">
+              <label>喝水（cc）</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={form.waterMl}
+                onChange={(e) => set("waterMl", e.target.value)}
+                placeholder={`例：${WATER_GOAL_ML}`}
+              />
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>運動（分鐘）</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={form.exerciseMin}
+                onChange={(e) => set("exerciseMin", e.target.value)}
+                placeholder={`例：${EXERCISE_GOAL_MIN}`}
+              />
+            </div>
+            <div className="field" />
+          </div>
+          <p className="fine-print">沒填的欄位不會被動到，只會更新你填的那幾項。</p>
+
+          <div className="btn-row">
+            <button type="button" className="btn btn-secondary" onClick={() => setOpen(false)}>
+              收起
+            </button>
+            <button type="button" className="btn btn-primary" onClick={save}>
+              <Check size={14} /> 存這一天
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ExerciseTab({
   plan,
   feedback,
@@ -5822,6 +6013,7 @@ function ExerciseTab({
   onDeleteExerciseEntry,
   onUpdateExerciseEntry,
   onPersistExerciseEntry,
+  onBackfillDay,
   todayGoals,
   summaries,
   /** The 運動建議 card, rendered just above 日常小習慣. */
@@ -5950,6 +6142,8 @@ function ExerciseTab({
           </button>
         )}
       </div>
+
+      <BackfillCard summaries={summaries} onBackfillDay={onBackfillDay} />
 
       <WeekCard summaries={summaries} today={todayGoals} />
 

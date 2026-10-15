@@ -287,8 +287,82 @@ export function shouldNudge(day, now = new Date()) {
   return false;
 }
 
-/** Backfilling is limited to yesterday: being able to fill in a whole week
- * afterwards would make the met-day count stop meaning anything. */
-export function canBackfill(date) {
-  return date === daysAgoStr(1);
+/**
+ * How far back a day can still be filled in or corrected.
+ *
+ * Seven days, raised from one. The original worry was that filling in a whole
+ * week afterwards makes the met-day count stop meaning anything — but that
+ * assumed the entries would be invented. In practice the thing being recovered
+ * is a day she genuinely did record, on paper or in her head, and lost to a
+ * flat battery or a photo that would not upload. Refusing those does not make
+ * the count more honest, it just makes it incomplete.
+ *
+ * Seven is also the length of one tree, so the worst case is that one tree's
+ * worth of history is in play at a time.
+ */
+export const BACKFILL_DAYS = 7;
+
+/**
+ * Can this date still be edited?
+ *
+ * Today is excluded because today is not backfilling — it is simply recording,
+ * and it already updates live.
+ */
+export function canBackfill(date, today = todayStr()) {
+  if (!date || date >= today) return false;
+  return date >= daysAgoStr(BACKFILL_DAYS);
+}
+
+/** The window itself, newest first — the days a correction can still reach. */
+export function backfillDates(today = todayStr()) {
+  const out = [];
+  for (let i = 1; i <= BACKFILL_DAYS; i++) {
+    const date = daysAgoStr(i);
+    if (date < today) out.push(date);
+  }
+  return out;
+}
+
+/**
+ * Re-judge the recent days against the logs as they stand now.
+ *
+ * The garden is derived from the summary rows, and until now only *today's*
+ * row was kept in step with the logs. Correct yesterday's water, or fill in a
+ * meal you forgot, and the diary changed while the garden did not — the
+ * correction simply did not count.
+ *
+ * Two rules keep this from doing harm:
+ *
+ *   1. **Only inside the backfill window.** The detailed logs are trimmed at
+ *      30/60/90 days, so re-judging anything older would read an aged-out food
+ *      log as "ate nothing" and turn a met day into a failed one. Within seven
+ *      days all three logs are intact.
+ *   2. **A day with nothing logged is left exactly as it was.** Absence of
+ *      entries is not evidence of a failed day: a restored backup can carry
+ *      summary rows whose detailed logs are long gone, and recomputing those
+ *      from an empty log would quietly delete her history. The cost is that
+ *      deleting every entry for a day does not un-meet it — the safer of the
+ *      two mistakes by a wide margin.
+ *
+ * @returns the summaries to store, and which dates changed
+ */
+export function recomputeRecent(summaries, logs, today = todayStr()) {
+  const dates = [today, ...backfillDates(today)];
+  let next = summaries || [];
+  const changed = [];
+
+  for (const date of dates) {
+    const day = evaluateDay(date, logs);
+    const hasActivity = (day.calories || 0) > 0 || (day.waterMl || 0) > 0 || (day.exerciseMin || 0) > 0;
+    if (!hasActivity) continue;
+
+    const stored = next.find((s) => s.date === date);
+    const verdict = toSummary(day);
+    if (stored && stored.c === verdict.c && stored.e === verdict.e && stored.w === verdict.w) continue;
+
+    next = upsertSummary(next, day);
+    changed.push(date);
+  }
+
+  return { summaries: next, changed };
 }
