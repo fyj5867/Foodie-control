@@ -26,6 +26,23 @@ const ANTHROPIC_MODEL = "claude-sonnet-4-6";
  * looks the same as every other is one nobody can diagnose, least of all in an
  * app with no logs.
  */
+/**
+ * fetch, but a dropped connection comes back as something worth retrying.
+ *
+ * On a phone this is the common one: the request leaves as she walks out of
+ * wifi range and the promise simply rejects. That is not a reason to tell her
+ * the photo failed.
+ */
+async function fetchOrRetryable(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    const offline = new Error("連不上網路，請確認收訊後再試一次。");
+    offline.retryable = true;
+    throw offline;
+  }
+}
+
 async function readProviderError(response) {
   try {
     const body = await response.text();
@@ -157,7 +174,61 @@ export async function testVisionConnection({ provider, apiKey, geminiModel }) {
  *                    short answer; the food and report prompts both ask for
  *                    considerably more than that and pass their own.
  */
-export async function askAboutImage({
+/**
+ * Statuses worth trying again, and the ones that will never fix themselves.
+ *
+ * 503 is the one that mattered here: Google answers a busy free-tier model with
+ * "This model is currently experiencing high demand… please try again later",
+ * and the app took that literally as a failure and gave up. It is advice, and
+ * following it turns most of those into a successful read.
+ *
+ * 400/401/403/404 are excluded on purpose — a bad key or a wrong model name is
+ * not going to come right on the second attempt, and retrying only makes the
+ * person wait longer to be told the same thing.
+ */
+const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+/** Wait, with a little jitter so several photos in a row do not march back in
+ * lockstep and hit the same busy moment together. */
+function pause(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms + Math.random() * 400));
+}
+
+/**
+ * Ask the model, and try again when the answer was "I am busy".
+ *
+ * Three attempts, roughly 1.5s then 4s apart. Short enough that a person
+ * holding a phone still believes it is working, long enough for a demand spike
+ * to pass — which is what a 503 from Google usually is.
+ *
+ * @param onAttempt  told which try is starting, so the screen can say so
+ *                   rather than appearing to hang
+ */
+export const RETRY_DELAYS = [1500, 4000];
+
+export async function askAboutImage(options) {
+  /* Overridable so the tests can exercise the retry without actually sleeping
+     six seconds on every build — the waits are the point in production and
+     pure cost in a test. */
+  const { onAttempt, delays = RETRY_DELAYS } = options;
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    if (attempt > 0) {
+      await pause(delays[attempt - 1]);
+    }
+    if (onAttempt) onAttempt({ attempt: attempt + 1, total: delays.length + 1 });
+    try {
+      return await askOnce(options);
+    } catch (e) {
+      lastError = e;
+      if (!e.retryable) throw e;
+    }
+  }
+  throw lastError;
+}
+
+async function askOnce({
   prompt,
   base64Data,
   mediaType,
@@ -173,7 +244,7 @@ export async function askAboutImage({
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
       model
     )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const response = await fetch(url, {
+    const response = await fetchOrRetryable(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -211,6 +282,18 @@ export async function askAboutImage({
          field, a rejected image or an oversized request, and only one of those
          is fixed by retyping the key. */
       const why = await readProviderError(response);
+      if (RETRY_STATUSES.has(response.status)) {
+        /* Google's own words carry the advice ("try again later"), so they are
+           repeated rather than replaced — and the flag is what lets the caller
+           act on that advice instead of just printing it. */
+        const busy = new Error(
+          response.status === 429
+            ? `已達到 Gemini 免費額度上限（有速率限制），請稍後再試${why}`
+            : `Gemini 的模型現在太忙（${response.status}）${why}`
+        );
+        busy.retryable = true;
+        throw busy;
+      }
       if (response.status === 403) throw new Error(`Gemini 拒絕這個金鑰${why}`);
       if (response.status === 400) {
         if (/API key not valid|API_KEY_INVALID/i.test(why))
@@ -219,7 +302,6 @@ export async function askAboutImage({
       }
       if (response.status === 404)
         throw new Error(`找不到模型「${model}」，Google 可能已更新模型名稱，請到設定的「進階」欄位更新模型名稱。`);
-      if (response.status === 429) throw new Error("已達到 Gemini 免費額度上限（有速率限制），請稍後再試。");
       throw new Error(`辨識服務暫時無法使用（${response.status}）${why}`);
     }
 
@@ -243,7 +325,7 @@ export async function askAboutImage({
     return parseJsonReply(text);
   }
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetchOrRetryable("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -269,7 +351,15 @@ export async function askAboutImage({
   if (!response.ok) {
     const why = await readProviderError(response);
     if (response.status === 401) throw new Error("API Key 無效或已過期，請到設定重新輸入。");
-    if (response.status === 429) throw new Error("已達到 API 使用額度上限，請稍後再試。");
+    if (RETRY_STATUSES.has(response.status)) {
+      const busy = new Error(
+        response.status === 429
+          ? "已達到 API 使用額度上限，請稍後再試。"
+          : `服務現在太忙（${response.status}）${why}`
+      );
+      busy.retryable = true;
+      throw busy;
+    }
     /* 400 here is most often the image: too large, or a format the API will not
        take. Saying so beats 「暫時無法使用」, which suggests waiting — and waiting
        never fixes an image that is too big. */

@@ -215,14 +215,14 @@ async function fileToVisionImage(file, maxDim = VISION_MAX_DIM, quality = 0.82) 
  * lib/vision.js now — the health check report reads photos through the same
  * path, and two copies of the fetch-and-unwrap-the-JSON dance would drift.
  */
-async function analyzeFoodPhoto(base64Data, mediaType, provider, apiKey, geminiModel) {
+async function analyzeFoodPhoto(base64Data, mediaType, provider, apiKey, geminiModel, onAttempt) {
   /* 2000, not the 1000 default. The food reply is not short: a name,每一道菜
      一列, three macros, a portion note, a reason, and the tags — all in
      Chinese, which costs more tokens per character than English. At 1000 a
      four-dish meal could run out of room mid-object, and a JSON reply that
      stops halfway is indistinguishable from a broken one. The report prompt
      already passed its own for the same reason. */
-  return askAboutImage({ prompt: FOOD_PROMPT, base64Data, mediaType, provider, apiKey, geminiModel, maxTokens: 2000 });
+  return askAboutImage({ prompt: FOOD_PROMPT, base64Data, mediaType, provider, apiKey, geminiModel, maxTokens: 2000, onAttempt });
 }
 
 /**
@@ -757,9 +757,11 @@ export function AnalysisModal({ analyzing, analysisProgress, analysisError, anal
         {analyzing && (
           <div className="analyzing-row" style={{ justifyContent: "center", padding: "24px 0" }}>
             <Loader2 size={20} className="spin" />{" "}
-            {analysisProgress
-              ? `正在分析第 ${analysisProgress.done + 1} / ${analysisProgress.total} 張…`
-              : "正在分析照片中的食物與熱量…"}
+            {analysisProgress?.attempt > 1
+              ? `伺服器忙碌，正在重試（第 ${analysisProgress.attempt} / ${analysisProgress.attempts} 次）…`
+              : analysisProgress
+                ? `正在分析第 ${analysisProgress.done + 1} / ${analysisProgress.total} 張…`
+                : "正在分析照片中的食物與熱量…"}
           </div>
         )}
 
@@ -1734,7 +1736,17 @@ export default function App() {
         if (tooBig) throw new Error(tooBig);
         shots.push({
           imageDataUrl: `data:${mediaType};base64,${base64}`,
-          reading: await analyzeFoodPhoto(base64, mediaType, aiProvider, activeKey, geminiModel),
+          reading: await analyzeFoodPhoto(base64, mediaType, aiProvider, activeKey, geminiModel, ({ attempt, total }) => {
+            /* A retry that looks like a freeze is worse than a quick failure.
+               Only said from the second try — the first is just "working". */
+            setAnalysisProgress(
+              attempt > 1
+                ? { done: i, total: files.length, attempt, attempts: total }
+                : files.length > 1
+                  ? { done: i, total: files.length }
+                  : null
+            );
+          }),
         });
       } catch (e) {
         lastError = e;

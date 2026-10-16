@@ -16,7 +16,7 @@
  *
  * Run from source/:  node tools/test-vision.mjs
  */
-import { parseJsonReply, FOOD_PROMPT, LAB_PROMPT, BODY_PROMPT } from "../lib/vision.js";
+import { parseJsonReply, askAboutImage, FOOD_PROMPT, LAB_PROMPT, BODY_PROMPT } from "../lib/vision.js";
 
 let passed = 0;
 const failures = [];
@@ -90,6 +90,106 @@ ok("the report prompt asks for JSON too", LAB_PROMPT.includes("純 JSON"));
 ok("and the scale prompt", BODY_PROMPT.includes("純 JSON"));
 /* Transcribe, do not interpret — the same rule, stated in the prompt itself. */
 ok("the scale prompt forbids commentary", /不要解讀|不要評論/.test(BODY_PROMPT), "BODY_PROMPT");
+
+
+/* --- retrying a busy model ---
+ * The failure that was actually happening, nine times in ten: Google answers a
+ * busy free-tier model with 503 "This model is currently experiencing high
+ * demand… Please try again later." The app printed that advice and then did not
+ * take it. These tests pin which failures are worth a second go and which are
+ * not — retrying a bad API key just makes someone wait longer to hear the same
+ * thing. `fetch` is stubbed, so nothing here touches the network. */
+const realFetch = globalThis.fetch;
+
+function stubFetch(responses) {
+  let i = 0;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: init && init.body });
+    const next = responses[Math.min(i, responses.length - 1)];
+    i += 1;
+    if (next.throw) throw new Error("network down");
+    return {
+      ok: next.status === 200,
+      status: next.status,
+      async json() {
+        return next.json || {};
+      },
+      async text() {
+        return JSON.stringify(next.json || { error: { message: next.message || "" } });
+      },
+    };
+  };
+  return { calls, count: () => i };
+}
+
+const geminiOk = {
+  status: 200,
+  json: { candidates: [{ finishReason: "STOP", content: { parts: [{ text: '{"ok":true}' }] } }] },
+};
+const busy503 = { status: 503, message: "This model is currently experiencing high demand." };
+const badKey = { status: 400, message: "API key not valid. Please pass a valid API key." };
+
+const ask = (extra = {}) =>
+  askAboutImage({
+    prompt: "x",
+    base64Data: "AA",
+    mediaType: "image/gif",
+    provider: "gemini",
+    apiKey: "k",
+    maxTokens: 50,
+    /* The real backoff is seconds long, which is right on a phone and pure
+       waiting here. The behaviour under test is which failures are retried,
+       not how long the pause is. */
+    delays: [1, 1],
+    ...extra,
+  });
+
+/* A spike that passes: first call busy, second fine. Before this change that
+ * photo was simply lost. */
+let stub = stubFetch([busy503, geminiOk]);
+const recovered = await ask();
+check("a busy model is tried again and succeeds", recovered, { ok: true });
+check("which took two calls", stub.count(), 2);
+
+/* Still busy after every attempt: the error must carry Google's own words,
+ * because "try again later" is the actionable part. */
+stub = stubFetch([busy503]);
+let failed = null;
+try {
+  await ask();
+} catch (e) {
+  failed = e;
+}
+ok("a model busy throughout still fails", Boolean(failed), String(failed));
+ok("after more than one attempt", stub.count() >= 3, String(stub.count()));
+ok("and says the service is busy, not that the photo is bad", /忙|額度/.test(failed.message), failed.message);
+ok("and does not blame her photo", !/重新拍攝|照片不/.test(failed.message), failed.message);
+
+/* A bad key will not come right on the second attempt; retrying it only makes
+ * her wait longer to be told the same thing. */
+stub = stubFetch([badKey]);
+let keyErr = null;
+try {
+  await ask();
+} catch (e) {
+  keyErr = e;
+}
+check("a bad key is not retried", stub.count(), 1);
+ok("and says so plainly", /API Key/.test(keyErr.message), keyErr.message);
+
+/* A dropped connection is the phone's problem, not the photo's — and it is
+ * worth a second go, because walking back into signal fixes it. */
+stub = stubFetch([{ throw: true }, geminiOk]);
+check("a dropped connection is retried", await ask(), { ok: true });
+
+/* The screen has to be able to say "retrying" rather than appear to hang. */
+stub = stubFetch([busy503, geminiOk]);
+const attempts = [];
+await ask({ onAttempt: (info) => attempts.push(info.attempt) });
+check("each attempt is announced", attempts, [1, 2]);
+
+globalThis.fetch = realFetch;
 
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
