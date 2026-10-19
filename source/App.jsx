@@ -1999,6 +1999,42 @@ export default function App() {
     }
   }
 
+  /**
+   * Log a remembered food in one tap.
+   *
+   * These figures already existed — they are the ones she corrected by hand —
+   * but the list could only view and delete them, which made it a settings
+   * screen for something that is really a shortcut. A food she eats often is
+   * a food she will log often, and she has already told us what it costs.
+   *
+   * It does NOT touch 熱量標準值. Tapping is using the standard, not setting
+   * it: bumping 改過 N 次 here would turn a count of her corrections into a
+   * count of her lunches, and that number is what the card uses to say how
+   * settled a figure is.
+   */
+  async function handleQuickAddRemembered(item) {
+    const entry = {
+      id: `${Date.now()}`,
+      date: todayStr(),
+      time: nowTimeStr(),
+      foodName: item.name,
+      estimatedCalories: Number(item.calories) || 0,
+      carbsG: null,
+      proteinG: null,
+      fatG: null,
+      light: "yellow",
+      reason: "從常吃清單加入",
+      confidence: "manual",
+      source: "manual",
+    };
+    try {
+      await persistFoodLog([...foodLog, entry]);
+      flashSaved(`已加入 ${item.name} ${entry.estimatedCalories} 大卡`);
+    } catch (err) {
+      flashSaved("儲存失敗，請再試一次");
+    }
+  }
+
   async function handleAddManualEntry(e) {
     e.preventDefault();
     if (!manualForm.name || !manualForm.calories) {
@@ -4714,6 +4750,26 @@ export default function App() {
           font-size:12.5px;
         }
         .memory-row:last-child{ border-bottom:none; }
+        /* The whole row is the tap target, so it has to be a real button —
+           a div with onClick is unreachable by keyboard and silent to a screen
+           reader. It is styled flat so the list still reads as a list. */
+        .memory-pick{
+          display:flex;
+          align-items:center;
+          gap:8px;
+          flex:1;
+          min-width:0;
+          border:none;
+          background:none;
+          padding:4px 0;
+          font-family:'Noto Sans TC', sans-serif;
+          font-size:12.5px;
+          color:var(--ink);
+          text-align:left;
+          cursor:pointer;
+        }
+        .memory-pick:active{ opacity:.6; }
+        .memory-plus{ flex:none; color:var(--brand); }
         .memory-row .memory-name{ flex:1; min-width:0; overflow-wrap:anywhere; }
         .memory-row .memory-cal{
           font-family:'JetBrains Mono', monospace;
@@ -4928,6 +4984,7 @@ export default function App() {
               onPersistFoodEntryCalories={handlePersistFoodEntryCalories}
               foodMemory={foodMemory}
               onForgetCalories={forgetCalories}
+              onQuickAdd={handleQuickAddRemembered}
               report={latestReport(reports)}
             />
           )}
@@ -5726,6 +5783,7 @@ function DietTab({
   onPersistFoodEntryCalories,
   foodMemory,
   onForgetCalories,
+  onQuickAdd,
   report,
 }) {
   const [showMemory, setShowMemory] = useState(false);
@@ -5890,7 +5948,7 @@ function DietTab({
               photo is taken; the only reason to open this is to correct or
               delete one, and that is rare. */}
           <button type="button" className="fold-head" onClick={() => setShowMemory((v) => !v)}>
-            <span className="fold-title">我的熱量標準值</span>
+            <span className="fold-title">常吃的食物</span>
             <span className="fold-count">{remembered.length} 項</span>
             <span className="fold-caret">{showMemory ? "▲" : "▼"}</span>
           </button>
@@ -5898,14 +5956,25 @@ function DietTab({
           {showMemory && (
             <>
               <p style={{ fontSize: "11.5px", color: "var(--ink-soft)", margin: "8px 0", lineHeight: 1.6 }}>
-                你改過熱量的食物會記在這裡，下次拍到同一樣東西就直接用這個數字，不必再改一次。
-                數字記錯了就刪掉，下次會重新讓 AI 估。
+                你改過熱量的食物會記在這裡。<strong>點一下就直接加進今天的紀錄</strong>，
+                拍到同一樣東西時也會自動帶入這個數字。數字記錯了就刪掉，下次會重新讓 AI 估。
               </p>
               {remembered.map((item) => (
                 <div className="memory-row" key={item.key}>
-                  <span className="memory-name">{item.name}</span>
-                  <span className="memory-cal">{item.calories}</span>
-                  <span className="memory-times">大卡{item.times > 1 ? `・改過 ${item.times} 次` : ""}</span>
+                  {/* The row itself is the button. Typing a name and a number
+                      she has already typed before is the work this removes —
+                      and when the model is busy, it is the way round it. */}
+                  <button
+                    type="button"
+                    className="memory-pick"
+                    onClick={() => onQuickAdd(item)}
+                    aria-label={`加入 ${item.name} ${item.calories} 大卡`}
+                  >
+                    <Plus size={13} className="memory-plus" />
+                    <span className="memory-name">{item.name}</span>
+                    <span className="memory-cal">{item.calories}</span>
+                    <span className="memory-times">大卡{item.times > 1 ? `・改過 ${item.times} 次` : ""}</span>
+                  </button>
                   <button
                     type="button"
                     className="icon-btn"
