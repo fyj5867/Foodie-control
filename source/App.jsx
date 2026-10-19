@@ -1016,11 +1016,6 @@ export default function App() {
   /** Reading 體態紀錄 off a photo of the scale. */
   const [bodyScanning, setBodyScanning] = useState(false);
   const [bodyScanNote, setBodyScanNote] = useState(null);
-  /* Which diary rows had their calories actually typed in this session. A
-     figure only counts as a correction if the person changed it — reading
-     back an untouched row would teach the AI's own guess as a standard. */
-  const editedCaloriesRef = useRef(new Set());
-
   const [apiKey, setApiKey] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
@@ -1861,17 +1856,15 @@ export default function App() {
     };
     try {
       await persistFoodLog([...foodLog, entry]);
-      // Learn only what the person changed. Accepting a remembered figure
-      // counts too — it confirms the standard rather than setting a new one.
-      //
-      // But never learn from a part-portion. 「吃一半」 on a 251 大卡 rice ball
-      // is 126 for today, not a new standard of 126 for every rice ball after
-      // it — and the standard is applied automatically next time, so getting
-      // this wrong would quietly halve that food for good.
-      const wholePortion = !(r.portionFactor != null && r.portionFactor !== 1);
-      if (wholePortion && entry.estimatedCalories !== analysisPreview.aiCalories) {
-        await rememberCalories(entry.foodName, entry.estimatedCalories);
-      }
+      /* Correcting a photo no longer teaches 常吃的食物 (2026-10-19, at her
+         request). Only 手動輸入 does.
+         The reason is what that list became: once it was a set of shortcuts
+         she taps, every name the model invented — 「鯖魚定食（糙米飯、燙青菜）」
+         — was clutter in a list meant to hold 「地瓜」. The cost is real and she
+         chose it knowingly: photograph the same rice ball tomorrow and the
+         model estimates it afresh.
+         Looking a figure UP is untouched — if she typed that food in by hand
+         once, the photo card still fills in her number. */
       setAnalysisPreview(null);
       flashSaved("已加入今日飲食紀錄");
     } catch (e) {
@@ -2057,7 +2050,9 @@ export default function App() {
     };
     try {
       await persistFoodLog([...foodLog, entry]);
-      // A hand-typed figure is a standard for that food by definition.
+      /* The only thing that teaches 常吃的食物 now. A figure she typed herself
+         is a standard for that food by definition, and the name is one she
+         chose — which is what makes the list worth tapping. */
       await rememberCalories(entry.foodName, entry.estimatedCalories);
       setManualForm({ name: "", calories: "" });
       flashSaved("已加入今日飲食紀錄");
@@ -2078,7 +2073,6 @@ export default function App() {
   function handleUpdateFoodEntryCalories(id, rawValue) {
     // onChange only fires when the value actually changes, which is exactly
     // the definition of a correction being wanted here.
-    editedCaloriesRef.current.add(id);
     setFoodLog((prev) => prev.map((e) => (e.id === id ? { ...e, estimatedCalories: rawValue } : e)));
   }
 
@@ -2086,11 +2080,11 @@ export default function App() {
     const entry = foodLog.find((e) => e.id === id);
     if (!entry) return;
     const cleaned = Number(entry.estimatedCalories) || 0;
-    const wasEdited = editedCaloriesRef.current.has(id);
-    editedCaloriesRef.current.delete(id);
+    /* Fixing a number in the diary corrects that meal and nothing else — it no
+       longer writes a standard. Same reason as the photo card above: 常吃的食物
+       is a list of shortcuts she chose, not a log of every figure she touched. */
     try {
       await persistFoodLog(foodLog.map((e) => (e.id === id ? { ...e, estimatedCalories: cleaned } : e)));
-      if (wasEdited) await rememberCalories(entry.foodName, cleaned);
     } catch (e) {
       flashSaved("更新失敗，請再試一次");
     }
@@ -5956,8 +5950,8 @@ function DietTab({
           {showMemory && (
             <>
               <p style={{ fontSize: "11.5px", color: "var(--ink-soft)", margin: "8px 0", lineHeight: 1.6 }}>
-                你改過熱量的食物會記在這裡。<strong>點一下就直接加進今天的紀錄</strong>，
-                拍到同一樣東西時也會自動帶入這個數字。數字記錯了就刪掉，下次會重新讓 AI 估。
+                你用「手動輸入」記過的食物會留在這裡。<strong>點一下就直接加進今天的紀錄</strong>，
+                拍到同名的東西時也會自動帶入這個數字。數字記錯了就刪掉。
               </p>
               {remembered.map((item) => (
                 <div className="memory-row" key={item.key}>
